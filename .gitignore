@@ -1,0 +1,7 @@
+node_modules
+dist
+THIRD-PARTY-LICENSES
+.trae
+.env
+.DS_Store
+SKILL.md
