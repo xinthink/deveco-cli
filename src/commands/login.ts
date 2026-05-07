@@ -14,8 +14,9 @@ const loginCommand = new Command('login')
     try {
       const userInfo = await loginService.login();
       console.log(green('✓ Login successful'));
-      console.log(green(`  Welcome, ${userInfo.userName}!`));
-      console.log(green(`  User ID: ${userInfo.userId}`));
+      console.log(
+        green(`  Welcome, ${userInfo.userName}! User ID:${userInfo.userId}`)
+      );
     } catch (error) {
       const e = error as Error;
       console.log(red('✗ Login failed'));

@@ -11,10 +11,10 @@ const logoutCommand = new Command('logout')
   .action(async () => {
     try {
       await loginService.logout();
-      console.log(green('Logged out successfully'));
+      console.log(green('✓ Logout successful')); 
     } catch (error) {
       const e = error as Error;
-      console.log(red('Logout failed'));
+      console.log(red('✗ Logout failed'));
       if (e.message) {
         console.error(red(e.message));
       }

@@ -8,14 +8,14 @@ import { Knowledge, normalizeBigSearchQuestion } from '../utils/knowledge';
 import { loginService } from '../auth/login-service';
 
 interface KnowledgeCliOptions {
-  content: string | string[];
+  keywords: string | string[];
 }
 
 const knowledgeCommand = new Command('knowledge')
   .description('Call big-search API (POST with content in JSON body)')
   .requiredOption(
-    '--content <words...>',
-    'Question: multiple words allowed without quotes (e.g. --content ArkTS Row 布局)',
+    '--keywords <words...>',
+    'Question: multiple words allowed without quotes (e.g. --keywords ArkTS Row 布局)',
   )
   .action(async (opts: KnowledgeCliOptions) => {
     if (!(await loginService.isLoggedIn())) {
@@ -24,7 +24,7 @@ const knowledgeCommand = new Command('knowledge')
       return;
     }
     try {
-      const content = normalizeBigSearchQuestion(opts.content);
+      const content = normalizeBigSearchQuestion(opts.keywords);
       if (!content) {
         console.error(red('content is empty after normalization'));
         process.exitCode = 1;
