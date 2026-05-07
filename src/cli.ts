@@ -11,6 +11,7 @@ import deviceCommand from './commands/device.js';
 import emulatorCommand from './commands/emulator.js';
 import loginCommand from './commands/login';
 import logoutCommand from './commands/logout';
+import skillsCommand from './commands/skills.js';
 program
   .name('deveco')
   .description('HarmonyOS application development command line tool')
@@ -22,6 +23,7 @@ program.addCommand(deviceCommand);
 program.addCommand(emulatorCommand);
 program.addCommand(loginCommand);
 program.addCommand(logoutCommand);
+program.addCommand(skillsCommand);
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(err);
