@@ -2,10 +2,11 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import fs from 'fs';
+import fs, { existsSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import regedit from 'regedit';
+import { join } from 'path';
 
 interface RegeditResult {
   [key: string]: {
@@ -41,6 +42,7 @@ export class ToolProvider {
   public sdkPath: string;
   public hdcPath: string;
   public emulatorPath: string;
+  public emulatorLauncherPath: String | undefined;
 
   private constructor(
     devecoStudioPath: string,
@@ -50,7 +52,8 @@ export class ToolProvider {
     javaPath: string,
     sdkPath: string,
     hdcPath: string,
-    emulatorPath: string
+    emulatorPath: string,
+    emulatorLauncherPath: String | undefined
   ) {
     this.devecoStudioPath = devecoStudioPath;
     this.nodePath = nodePath;
@@ -60,12 +63,14 @@ export class ToolProvider {
     this.sdkPath = sdkPath;
     this.hdcPath = hdcPath;
     this.emulatorPath = emulatorPath;
+    this.emulatorLauncherPath = emulatorLauncherPath;
   }
 
   public static async new(): Promise<ToolProvider> {
     const devecoStudioPath = await ToolProvider.findDevEcoStudio();
     const { nodePath, ohpmJsPath, hvigorJsPath, javaPath, sdkPath, hdcPath, emulatorPath } =
       ToolProvider.resolveTools(devecoStudioPath);
+    const emulatorLauncherPath = await ToolProvider.getEmulatorExe();
     return new ToolProvider(
       devecoStudioPath,
       nodePath,
@@ -74,7 +79,8 @@ export class ToolProvider {
       javaPath,
       sdkPath,
       hdcPath,
-      emulatorPath
+      emulatorPath,
+      emulatorLauncherPath ?? undefined
     );
   }
 
@@ -299,5 +305,45 @@ export class ToolProvider {
     if (!fs.existsSync(javaPath)) {
       throw new Error(`java executable not found at: ${javaPath}`);
     }
+  }
+
+  /**
+   * 获取模拟器可执行文件路径
+   * @returns 模拟器可执行文件路径，如果不存在或不支持的平台则返回 null
+   */
+  private static async getEmulatorExe(): Promise<string | null> {
+    const platform = os.platform();
+    // Linux 平台不支持
+    if (platform === 'linux') {
+      return null;
+    }
+    const devecoStudioPath = await ToolProvider.findDevEcoStudio();
+    let path: string;
+
+    // Windows 平台
+    if (platform === 'win32') {
+      path = join(devecoStudioPath, 'tools', 'emulator', 'Emulator.exe');
+    }
+    // macOS 平台
+    else if (platform === 'darwin') {
+      path = join(
+        devecoStudioPath,
+        'contents',
+        'tools',
+        'emulator',
+        'Emulator'
+      );
+    }
+    // 其他平台
+    else {
+      return null;
+    }
+
+    // 检查路径是否存在
+    if (existsSync(path)) {
+      return path;
+    }
+
+    return null;
   }
 }

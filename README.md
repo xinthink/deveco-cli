@@ -116,3 +116,33 @@ deveco device --uninstall com.example.entry                                # Uni
 deveco device --uninstall com.example.entry -t <serial>                    # Uninstall from a specific device
 ```
 
+### log
+
+Log management commands (list, info, install, uninstall).
+
+#### Usage
+
+```text
+Usage: deveco log [options]
+
+Obtain device application logs
+
+Options:
+  --crash               Only obtain the crash log
+  --target <device>     Target device ID
+  --level <level>       Log level filtering: D, I, W, E, F
+  --bundle-name <name>  Application package name filtering
+  --keyword <pattern>   Keyword filtering
+  -h, --help            display help for command
+```
+
+#### Example
+
+```bash
+deveco log                                  					# Displaying common logs
+deveco log --crash                          					# Displaying crash logs
+deveco log --target 127.0.0.1:5555          					# Filtering and displaying common logs of the device whose ID is 127.0.0.1:5555
+deveco log --level I                        					# Filtering and displaying logs whose log level is I 
+deveco log --bundle-name com.example.myapplication    # Filtering and displaying logs whose application package name is "com.example.myapplication" 
+deveco log --keyword err:1002               					# Filtering and displaying logs with the keyword is "err:1002"
+```
