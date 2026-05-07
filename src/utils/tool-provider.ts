@@ -39,6 +39,8 @@ export class ToolProvider {
   public hvigorJsPath: string;
   public javaPath: string;
   public sdkPath: string;
+  public hdcPath: string;
+  public emulatorPath: string;
 
   private constructor(
     devecoStudioPath: string,
@@ -46,7 +48,9 @@ export class ToolProvider {
     ohpmJsPath: string,
     hvigorJsPath: string,
     javaPath: string,
-    sdkPath: string
+    sdkPath: string,
+    hdcPath: string,
+    emulatorPath: string
   ) {
     this.devecoStudioPath = devecoStudioPath;
     this.nodePath = nodePath;
@@ -54,11 +58,13 @@ export class ToolProvider {
     this.hvigorJsPath = hvigorJsPath;
     this.javaPath = javaPath;
     this.sdkPath = sdkPath;
+    this.hdcPath = hdcPath;
+    this.emulatorPath = emulatorPath;
   }
 
   public static async new(): Promise<ToolProvider> {
     const devecoStudioPath = await ToolProvider.findDevEcoStudio();
-    const { nodePath, ohpmJsPath, hvigorJsPath, javaPath, sdkPath } =
+    const { nodePath, ohpmJsPath, hvigorJsPath, javaPath, sdkPath, hdcPath, emulatorPath } =
       ToolProvider.resolveTools(devecoStudioPath);
     return new ToolProvider(
       devecoStudioPath,
@@ -66,7 +72,9 @@ export class ToolProvider {
       ohpmJsPath,
       hvigorJsPath,
       javaPath,
-      sdkPath
+      sdkPath,
+      hdcPath,
+      emulatorPath
     );
   }
 
@@ -195,6 +203,8 @@ export class ToolProvider {
     hvigorJsPath: string;
     javaPath: string;
     sdkPath: string;
+    hdcPath: string;
+    emulatorPath: string;
   } {
     const platform = os.platform();
     let nodePath: string;
@@ -231,7 +241,44 @@ export class ToolProvider {
 
     ToolProvider.verifyTools(nodePath, ohpmJsPath, hvigorJsPath, javaPath);
 
-    return { nodePath, ohpmJsPath, hvigorJsPath, javaPath, sdkPath };
+    const hdcPath = ToolProvider.resolveHdcPath(sdkPath, platform);
+    const emulatorPath = ToolProvider.resolveEmulatorPath(devecoStudioPath, platform);
+
+    return { nodePath, ohpmJsPath, hvigorJsPath, javaPath, sdkPath, hdcPath, emulatorPath };
+  }
+
+  private static resolveHdcPath(sdkPath: string, platform: string): string {
+    const ext = platform === 'win32' ? '.exe' : '';
+    const hdcPaths = [
+      path.join(sdkPath, 'default', 'openharmony', 'toolchains', `hdc${ext}`),
+      path.join(sdkPath, 'toolchains', `hdc${ext}`),
+    ];
+
+    for (const p of hdcPaths) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    }
+
+    throw new Error(`hdc executable not found. Searched in:\n${hdcPaths.join('\n')}`);
+  }
+
+  private static resolveEmulatorPath(devecoStudioPath: string, platform: string): string {
+    let emulatorPath: string;
+
+    if (platform === 'win32') {
+      emulatorPath = path.join(devecoStudioPath, 'tools', 'emulator', 'Emulator.exe');
+    } else if (platform === 'darwin') {
+      emulatorPath = path.join(devecoStudioPath, 'Contents', 'tools', 'emulator', 'Emulator');
+    } else {
+      throw new Error('Linux is not fully supported yet');
+    }
+
+    if (!fs.existsSync(emulatorPath)) {
+      throw new Error(`Emulator executable not found at: ${emulatorPath}`);
+    }
+
+    return emulatorPath;
   }
 
   private static verifyTools(
