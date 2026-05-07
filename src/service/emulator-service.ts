@@ -20,63 +20,61 @@ export class EmulatorService {
      * 获取所有可用设备（包括已连接和已安装的模拟器）
      */
     async getAvailableDevices(): Promise<DeviceInfo[]> {
-        const devices: DeviceInfo[] = [];
+        const connectedDevices = await this.getConnectedDevices();
+        const installedEmulators = await this.getInstalledEmulators(connectedDevices);
+        return [...connectedDevices, ...installedEmulators];
+    }
+
+    /**
+     * 获取已连接的设备列表
+     */
+    private async getConnectedDevices(): Promise<DeviceInfo[]> {
         const hdcPath = this.toolProvider.hdcPath;
-
-        // 1. 获取已连接的设备 ID
         const connectedIds = await this.getConnectedDevicesIds(hdcPath);
+        const devices: DeviceInfo[] = [];
         for (const id of connectedIds) {
-            if (this.isEmulatorDevice(id)) {
-                // 获取模拟器名称.
-                try {
-                    const name = await this.getEmulatorName(hdcPath, id);
-                    devices.push({
-                        deviceId: id,
-                        isEmulator: true,
-                        name,
-                        isConnected: true,
-                    });
-                } catch (error) {
-                    console.error(`get emulator name error: ${(error as Error).message}`);
-                }
-            } else {
-                // 获取真机名称
-                try {
-                    const name = await this.getRealDeviceName(hdcPath, id);
-                    devices.push({
-                        deviceId: id,
-                        isEmulator: false,
-                        name,
-                        isConnected: true,
-                    });
-                } catch (error) {
-                    console.error(`get real device name error: ${(error as Error).message}`);
-                }
+            const device = await this.createDeviceInfo(id, hdcPath);
+            if (device) {
+                devices.push(device);
             }
         }
-
-        // 3. 获取已安装的模拟器（可能未运行）
-        const emulatorPath = this.getEmulatorExecutable();
-        if (emulatorPath) {
-            try {
-                const emulatorList = await this.listEmulatorsInternal(emulatorPath);
-                for (const emuName of emulatorList) {
-                    // 检查是否已在运行中
-                    if (!devices.some((d) => d.isEmulator && d.name === emuName)) {
-                        devices.push({
-                            deviceId: '', // 尚未连接
-                            isEmulator: true,
-                            name: emuName,
-                            isConnected: false,
-                        });
-                    }
-                }
-            } catch (error) {
-                console.error(`get list emulators internal error: ${(error as Error).message}`);
-            }
-        }
-
         return devices;
+    }
+
+    /**
+     * 创建单个已连接设备的信息
+     */
+    private async createDeviceInfo(id: string, hdcPath: string): Promise<DeviceInfo | null> {
+        const isEmulator = this.isEmulatorDevice(id);
+        try {
+            const name = isEmulator
+                ? await this.getEmulatorName(hdcPath, id)
+                : await this.getRealDeviceName(hdcPath, id);
+            return { deviceId: id, isEmulator, name, isConnected: true };
+        } catch (error) {
+            const deviceType = isEmulator ? 'emulator' : 'real device';
+            console.error(`get ${deviceType} name error: ${(error as Error).message}`);
+            return null;
+        }
+    }
+
+    /**
+     * 获取已安装但未运行的模拟器列表
+     */
+    private async getInstalledEmulators(connectedDevices: DeviceInfo[]): Promise<DeviceInfo[]> {
+        const emulatorPath = this.getEmulatorExecutable();
+        if (!emulatorPath) {
+            return [];
+        }
+        try {
+            const emulatorList = await this.listEmulatorsInternal(emulatorPath);
+            return emulatorList
+                .filter((emuName) => !connectedDevices.some((d) => d.isEmulator && d.name === emuName))
+                .map((emuName) => ({ deviceId: '', isEmulator: true, name: emuName, isConnected: false }));
+        } catch (error) {
+            console.error(`get list emulators internal error: ${(error as Error).message}`);
+            return [];
+        }
     }
 
     /**

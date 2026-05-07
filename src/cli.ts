@@ -6,6 +6,7 @@
 
 import { program } from 'commander';
 import buildCommand from './commands/build.js';
+import runCommand from './commands/run.js';
 import updateCommand from './commands/update.js';
 import deviceCommand from './commands/device.js';
 import emulatorCommand from './commands/emulator.js';
@@ -21,6 +22,7 @@ program
   .version(process.env.npm_package_version || '0.1.0');
 
 program.addCommand(buildCommand);
+program.addCommand(runCommand);
 program.addCommand(updateCommand);
 program.addCommand(deviceCommand);
 program.addCommand(emulatorCommand);

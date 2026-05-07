@@ -45,34 +45,56 @@ function determineModulesToBuild(
   project: Project,
   options: BuildOptions
 ): string[] {
-  if (options.modules) {
-    return options.modules;
-  }
+  let initialModules: string[];
 
-  // Default behavior: find entry module or the only module
-  const allModules = project.profile.modules;
-  const entryModules = allModules.filter((m) => {
-    const type = project.getModuleType(m.name);
-    return type === 'entry';
-  });
-
-  if (allModules.length === 1) {
-    // Only one module, build it
-    return [allModules[0].name];
-  } else if (entryModules.length === 1) {
-    // Exactly one entry module, build it
-    return [entryModules[0].name];
-  } else if (entryModules.length > 1) {
-    throw new Error(
-      `Multiple entry modules found (${entryModules.map((m) => m.name).join(', ')}). ` +
-        `Please specify which module to build with --modules.`
-    );
+  if (options.modules && options.modules.length > 0) {
+    initialModules = options.modules;
   } else {
-    throw new Error(
-      `No entry module found and multiple modules available (${allModules.map((m) => m.name).join(', ')}). ` +
-        `Please specify which module to build with --modules.`
-    );
+    // Default behavior: find entry module or the only module
+    const allModules = project.profile.modules;
+    const entryModules = allModules.filter((m) => {
+      const type = project.getModuleType(m.name);
+      return type === 'entry';
+    });
+
+    if (allModules.length === 1) {
+      initialModules = [allModules[0].name];
+    } else if (entryModules.length === 1) {
+      initialModules = [entryModules[0].name];
+    } else if (entryModules.length > 1) {
+      throw new Error(
+        `Multiple entry modules found (${entryModules.map((m) => m.name).join(', ')}). ` +
+          `Please specify which module to build with --modules.`
+      );
+    } else {
+      throw new Error(
+        `No entry module found and multiple modules available (${allModules.map((m) => m.name).join(', ')}). ` +
+          `Please specify which module to build with --modules.`
+      );
+    }
   }
+
+  // Resolve HSP dependencies for each initial module
+  const finalModulesSet = new Set<string>();
+  for (const moduleArg of initialModules) {
+    finalModulesSet.add(moduleArg);
+
+    const splitIndex = moduleArg.indexOf('@');
+    const moduleName =
+      splitIndex !== -1 ? moduleArg.substring(0, splitIndex) : moduleArg;
+    const targetName =
+      splitIndex !== -1 ? moduleArg.substring(splitIndex + 1) : null;
+
+    const hspDeps = new Set<string>();
+    project.resolveHspDependencies(moduleName, hspDeps);
+
+    for (const hsp of hspDeps) {
+      const depArg = targetName ? `${hsp}@${targetName}` : hsp;
+      finalModulesSet.add(depArg);
+    }
+  }
+
+  return Array.from(finalModulesSet);
 }
 
 function processModuleTasks(
@@ -85,21 +107,6 @@ function processModuleTasks(
     const splitIndex = moduleArg.indexOf('@');
     const moduleName =
       splitIndex !== -1 ? moduleArg.substring(0, splitIndex) : moduleArg;
-    const targetName =
-      splitIndex !== -1 ? moduleArg.substring(splitIndex + 1) : null;
-
-    // Check if module exists
-    const moduleProfile = project.getModuleProfile(moduleName);
-
-    // Check if target exists (if specified)
-    if (targetName) {
-      const found = moduleProfile.targets.some((t) => t.name === targetName);
-      if (!found) {
-        throw new Error(
-          `Target '${targetName}' not found for module '${moduleName}' in its build-profile.json5.`
-        );
-      }
-    }
 
     // Determine module type and required task
     const moduleType = project.getModuleType(moduleName);

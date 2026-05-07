@@ -13,6 +13,12 @@ export interface CommandResult {
   exitCode: number;
 }
 
+interface ExecFileError extends Error {
+  stdout?: string;
+  stderr?: string;
+  code?: number | string;
+}
+
 export async function runCommand(
   command: string,
   args: string[] = [],
@@ -25,11 +31,12 @@ export async function runCommand(
       stderr: typeof stderr === 'string' ? stderr.trim() : '',
       exitCode: 0,
     };
-  } catch (error: any) {
+  } catch (err: unknown) {
+    const error = err as ExecFileError;
     return {
       stdout: error.stdout?.trim() || '',
       stderr: error.stderr?.trim() || error.message,
-      exitCode: error.code || 1,
+      exitCode: typeof error.code === 'number' ? error.code : 1,
     };
   }
 }

@@ -21,6 +21,24 @@ export class HilogAdapter {
    * 获取选择的设备
    */
   async selectDevice(): Promise<string | undefined> {
+    const connectedDevices = await this.getConnectedDevices();
+    if (!connectedDevices) {
+      return undefined;
+    }
+
+    if (connectedDevices.length === 1) {
+      const device = connectedDevices[0];
+      console.log(blue(`Use the device: ${device.name} (${device.deviceId})`));
+      return device.deviceId;
+    }
+
+    return await this.promptDeviceSelection(connectedDevices);
+  }
+
+  /**
+   * 获取已连接的设备列表
+   */
+  private async getConnectedDevices(): Promise<DeviceInfo[] | null> {
     try {
       const devices = await this.getDevices();
       const connectedDevices = devices.filter((d: DeviceInfo) => d.isConnected);
@@ -30,43 +48,57 @@ export class HilogAdapter {
         console.log('Please ensure:');
         console.log('  1. The physical device is connected via USB and debugging mode is enabled');
         console.log('  2. Or an emulator is running');
-        return undefined;
+        return null;
       }
 
-      if (connectedDevices.length === 1) {
-        const device = connectedDevices[0];
-        console.log(blue(`Use the device: ${device.name} (${device.deviceId})`));
-        return device.deviceId;
-      }
-
-      // 多个设备时让用户选择
-      console.log(yellow('Multiple devices detected:'));
-      connectedDevices.forEach((device: DeviceInfo, index: number) => {
-        console.log(`  ${index + 1}. ${device.name} (${device.deviceId})`);
-      });
-
-      const readline = await import('readline');
-      const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      });
-
-      return new Promise((resolve) => {
-        rl.question('Please enter the device ID: ', (answer) => {
-          rl.close();
-          const index = parseInt(answer) - 1;
-          if (index >= 0 && index < connectedDevices.length) {
-            resolve(connectedDevices[index].deviceId);
-          } else {
-            console.error(red('Invalid device ID'));
-            resolve(undefined);
-          }
-        });
-      });
+      return connectedDevices;
     } catch (error) {
       console.error(red(`Failed to retrieve the device list: ${(error as Error).message}`));
+      return null;
+    }
+  }
+
+  /**
+   * 提示用户选择设备
+   */
+  private async promptDeviceSelection(devices: DeviceInfo[]): Promise<string | undefined> {
+    console.log(yellow('Multiple devices detected:'));
+    devices.forEach((device: DeviceInfo, index: number) => {
+      console.log(`  ${index + 1}. ${device.name} (${device.deviceId})`);
+    });
+
+    const selectedIndex = await this.getUserInput(devices.length);
+    if (selectedIndex === null) {
       return undefined;
     }
+
+    return devices[selectedIndex].deviceId;
+  }
+
+  /**
+   * 获取用户输入的设备索引
+   */
+  private async getUserInput(maxIndex: number): Promise<number | null> {
+    const readline = await import('readline');
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    const answer = await new Promise<string>((resolve) => {
+      rl.question('Please enter the device ID: ', (input) => {
+        rl.close();
+        resolve(input);
+      });
+    });
+
+    const index = parseInt(answer) - 1;
+    if (index >= 0 && index < maxIndex) {
+      return index;
+    }
+
+    console.error(red('Invalid device ID'));
+    return null;
   }
 
 
