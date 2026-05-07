@@ -9,6 +9,7 @@ import buildCommand from './commands/build.js';
 import updateCommand from './commands/update.js';
 import loginCommand from './commands/login';
 import logoutCommand from './commands/logout';
+import knowledgeCommand from './commands/knowledge.js';
 
 program
   .name('deveco')
@@ -19,6 +20,7 @@ program.addCommand(buildCommand);
 program.addCommand(updateCommand);
 program.addCommand(loginCommand);
 program.addCommand(logoutCommand);
+program.addCommand(knowledgeCommand);
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(err);
