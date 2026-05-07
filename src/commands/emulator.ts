@@ -2,6 +2,7 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
+import { spawn } from 'node:child_process';
 import { Command } from 'commander';
 import { execa } from 'execa';
 import { ToolProvider } from '../utils/tool-provider.js';
@@ -34,6 +35,28 @@ class EmulatorManager {
     return execa(this.emulatorPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, DEVECO_SDK_HOME: this.sdkPath },
+    });
+  }
+
+  /**
+   * Start the emulator without waiting for the GUI process to exit.
+   * Resolves when the OS has accepted the spawn; rejects on immediate spawn failure.
+   */
+  private executeEmulatorDetached(args: string[]): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(this.emulatorPath, args, {
+        detached: true,
+        stdio: 'ignore',
+        env: { ...process.env, DEVECO_SDK_HOME: this.sdkPath },
+        windowsHide: true,
+      });
+
+      child.once('error', reject);
+      child.once('spawn', () => {
+        child.removeAllListeners('error');
+        child.unref();
+        resolve();
+      });
     });
   }
 
@@ -84,7 +107,7 @@ class EmulatorManager {
     return emulators;
   }
 
-  public async startEmulator(name: string): Promise<void> {
+  public async startEmulator(name: string): Promise<'started' | 'already-running'> {
     const emulators = await this.listEmulators();
     const targetEmulator = emulators.find((e) => e.name === name);
 
@@ -92,13 +115,19 @@ class EmulatorManager {
       throw new Error(`Emulator "${name}" not found.`);
     }
 
+    if (targetEmulator.isRunning === true) {
+      return 'already-running';
+    }
+
+    console.log(cyan(`Starting emulator "${name}"...`));
+
     const candidates = this.buildStartCandidates(name, targetEmulator);
     let lastError: Error | undefined;
 
     for (const args of candidates) {
       try {
-        await this.executeEmulator(args);
-        return;
+        await this.executeEmulatorDetached(args);
+        return 'started';
       } catch (err) {
         lastError = err as Error;
         continue;
@@ -299,9 +328,12 @@ function handleError(action: string, name: string, error: unknown): never {
 }
 
 async function startAction(emulatorManager: EmulatorManager, name: string) {
-  console.log(cyan(`Starting emulator "${name}"...`));
   try {
-    await emulatorManager.startEmulator(name);
+    const outcome = await emulatorManager.startEmulator(name);
+    if (outcome === 'already-running') {
+      console.log(yellow(`Emulator "${name}" is already running.`));
+    }
+    console.log('');
   } catch (error) {
     handleError('start', name, error);
   }
