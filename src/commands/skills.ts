@@ -245,20 +245,19 @@ async function handleRemoveCommand(
 
 // 创建主命令
 const skillsCommand = new Command('skills').description(
-  'Manage DevEco skills for HarmonyOS development.'
+  'Manage HMOS skills.'
 );
 
 // 添加 list 子命令
 skillsCommand
   .command('list')
-  .description('List all available skills from the DevEco Skills Registry.')
+  .description('List all available HMOS skills.')
   .option(
     '-l, --long',
     'Show detailed information with description and installation status'
   )
   .action(async (options: { long?: boolean }) => {
     try {
-      // 获取 HarmonyOS 标签 ID
       const tagId = await fetchHmosTagId();
 
       // 获取所有技能
@@ -296,7 +295,6 @@ skillsCommand
   .description('Search skills by keyword.')
   .action(async (keyword: string) => {
     try {
-      // 获取 HarmonyOS 标签 ID
       const tagId = await fetchHmosTagId();
 
       // 搜索技能

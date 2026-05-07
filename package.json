@@ -41,6 +41,7 @@
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
+    "@types/natural": "^5.1.5",
     "typescript-eslint": "^8.59.1"
   },
   "dependencies": {
@@ -52,6 +53,7 @@
     "fs-extra": "^11.3.4",
     "json5": "^2.2.3",
     "ora": "^9.4.0",
+    "natural": "^8.1.1",
     "regedit": "^5.1.4"
   }
 }

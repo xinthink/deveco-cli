@@ -125,6 +125,71 @@ export async function checkAgentExists(agentName: string): Promise<boolean> {
 }
 
 /**
+ * 获取 agent 的 skills 目录路径
+ */
+function getAgentSkillsDir(agentName: string): string {
+  const agentConfig =
+    AGENT_SKILLS_CONFIG[agentName as keyof typeof AGENT_SKILLS_CONFIG];
+  return path.join(homedir(), agentConfig.path);
+}
+
+/**
+ * 获取项目的 skills 目录路径
+ */
+function getProjectSkillsDir(projectPath: string): string {
+  return path.join(projectPath, 'skills');
+}
+
+/**
+ * 准备技能安装目录
+ * 检查已存在的情况，根据 force 参数决定是否删除
+ * @returns 如果需要跳过安装则返回 true
+ */
+async function prepareSkillDirectory(
+  skillsDir: string,
+  skillName: string,
+  force: boolean
+): Promise<{ skillDir: string; shouldSkip: boolean }> {
+  const skillDir = path.join(skillsDir, skillName);
+
+  try {
+    await fsp.access(skillDir);
+    if (force) {
+      await fsp.rm(skillDir, { recursive: true, force: true });
+    } else {
+      console.log(`Skill ${skillName} exists in ${skillsDir}`);
+      return { skillDir, shouldSkip: true };
+    }
+  } catch {
+    // 目录不存在，继续安装
+  }
+
+  return { skillDir, shouldSkip: false };
+}
+
+/**
+ * 执行技能安装
+ */
+async function performSkillInstall(
+  zipBuffer: Buffer,
+  skillsDir: string,
+  skillName: string
+): Promise<void> {
+  await extractSkill(zipBuffer, skillsDir, skillName);
+  console.log(
+    `Skill ${skillName} installed to ${path.join(skillsDir, skillName)}`
+  );
+}
+
+/**
+ * 统一的安装错误处理
+ */
+function handleInstallError(error: unknown): SkillOperationResult {
+  const errorMessage = error instanceof Error ? error.message : '安装失败';
+  return { success: false, error: errorMessage };
+}
+
+/**
  * 使用已下载的 Buffer 安装技能到指定 agent
  * 避免重复下载，配合 downloadSkill 缓存使用
  * @param skillName - 技能英文名称
@@ -140,46 +205,21 @@ export async function installSkillToAgentWithBuffer(
   force: boolean = false
 ): Promise<SkillOperationResult> {
   try {
-    // 获取 agent 配置
-    const agentConfig =
-      AGENT_SKILLS_CONFIG[agentName as keyof typeof AGENT_SKILLS_CONFIG];
+    const skillsDir = getAgentSkillsDir(agentName);
+    const { shouldSkip } = await prepareSkillDirectory(
+      skillsDir,
+      skillName,
+      force
+    );
 
-    // 构建 skills 目录路径
-    const skillsDir = path.join(homedir(), agentConfig.path);
-
-    // 构建 skill 目录路径
-    const skillDir = path.join(skillsDir, skillName);
-
-    // 检查 skill 目录是否已存在
-    try {
-      await fsp.access(skillDir);
-      if (force) {
-        // 如果 force 为 true，删除旧目录
-        await fsp.rm(skillDir, { recursive: true, force: true });
-      } else {
-        console.log(`Skill ${skillName} exists in ${skillsDir}`);
-        return {
-          success: true,
-          skipped: true,
-        };
-      }
-    } catch {
-      // 目录不存在，继续安装
+    if (shouldSkip) {
+      return { success: true, skipped: true };
     }
 
-    // 解压到 skills 目录
-    await extractSkill(zipBuffer, skillsDir, skillName);
-    console.log(`Skill ${skillName} installed to ${skillDir}`);
-    // 返回成功结果
-    return {
-      success: true,
-    };
+    await performSkillInstall(zipBuffer, skillsDir, skillName);
+    return { success: true };
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : '安装失败';
-    return {
-      success: false,
-      error: errorMessage,
-    };
+    return handleInstallError(error);
   }
 }
 
@@ -198,45 +238,23 @@ export async function installSkillToProject(
   force: boolean = false
 ): Promise<SkillOperationResult> {
   try {
-    // 构建 skills 目录路径
-    const skillsDir = path.join(projectPath, 'skills');
-
-    // 如果 skills 目录不存在，创建它
+    const skillsDir = getProjectSkillsDir(projectPath);
     await fsp.mkdir(skillsDir, { recursive: true });
 
-    // 构建 skill 目录路径
-    const skillDir = path.join(skillsDir, skillName);
+    const { shouldSkip } = await prepareSkillDirectory(
+      skillsDir,
+      skillName,
+      force
+    );
 
-    // 检查 skill 目录是否已存在
-    try {
-      await fsp.access(skillDir);
-      if (force) {
-        // 如果 force 为 true，删除旧目录
-        await fsp.rm(skillDir, { recursive: true, force: true });
-      } else {
-        console.log(`Skill ${skillName} exists in ${skillsDir}`);
-        return {
-          success: true,
-          skipped: true,
-        };
-      }
-    } catch {
-      // 目录不存在，继续安装
+    if (shouldSkip) {
+      return { success: true, skipped: true };
     }
 
-    // 解压到 skills 目录
-    await extractSkill(zipBuffer, skillsDir, skillName);
-    console.log(`Skill ${skillName} installed to ${skillDir}`);
-    // 返回成功结果
-    return {
-      success: true,
-    };
+    await performSkillInstall(zipBuffer, skillsDir, skillName);
+    return { success: true };
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : '安装失败';
-    return {
-      success: false,
-      error: errorMessage,
-    };
+    return handleInstallError(error);
   }
 }
 
