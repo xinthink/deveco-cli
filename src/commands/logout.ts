@@ -7,11 +7,11 @@ import { green, red } from 'colorette';
 import { loginService } from '../auth/login-service';
 
 const logoutCommand = new Command('logout')
-  .description('Logout from DevEco account')
+  .description('Sign out of Huawei Developer account')
   .action(async () => {
     try {
       await loginService.logout();
-      console.log(green('Logged out successfully!'));
+      console.log(green('Logged out successfully'));
     } catch (error) {
       const e = error as Error;
       console.log(red('Logout failed'));
