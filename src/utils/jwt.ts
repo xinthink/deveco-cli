@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import type { JwtPayload } from '../types/index';
+import { JwtPayload } from '../types/auth';
 
 /**
  * 解析 JWT Token 的 payload 部分
