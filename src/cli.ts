@@ -7,9 +7,10 @@
 import { program } from 'commander';
 import buildCommand from './commands/build.js';
 import updateCommand from './commands/update.js';
+import deviceCommand from './commands/device.js';
+import emulatorCommand from './commands/emulator.js';
 import loginCommand from './commands/login';
 import logoutCommand from './commands/logout';
-
 program
   .name('deveco')
   .description('HarmonyOS application development command line tool')
@@ -17,6 +18,8 @@ program
 
 program.addCommand(buildCommand);
 program.addCommand(updateCommand);
+program.addCommand(deviceCommand);
+program.addCommand(emulatorCommand);
 program.addCommand(loginCommand);
 program.addCommand(logoutCommand);
 
