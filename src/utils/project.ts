@@ -33,6 +33,10 @@ export interface TargetNode {
   name: string;
 }
 
+export interface AbilityNode {
+  name: string;
+}
+
 export interface ModuleProfile {
   targets: TargetNode[];
 }
@@ -101,7 +105,9 @@ export class Project {
 
     try {
       const content = fs.readFileSync(moduleJsonPath, 'utf-8');
-      const moduleInfo = json5.parse(content);
+      const moduleInfo = json5.parse(content) as {
+        module?: { type?: string };
+      };
       return moduleInfo?.module?.type || 'entry';
     } catch (e) {
       console.warn(`Warning: Failed to parse ${moduleJsonPath}:`, e);
@@ -129,5 +135,227 @@ export class Project {
     const content = fs.readFileSync(profilePath, 'utf-8');
     const profile = json5.parse(content) as ModuleProfile;
     return profile;
+  }
+
+  public getBundleName(): string {
+    const appJson5Path = path.join(this.rootDir, 'AppScope', 'app.json5');
+    if (fs.existsSync(appJson5Path)) {
+      try {
+        const content = fs.readFileSync(appJson5Path, 'utf-8');
+        const json = json5.parse(content) as {
+          app?: { bundleName?: string };
+        };
+        if (json?.app?.bundleName) {
+          return json.app.bundleName;
+        }
+      } catch (e) {
+        console.warn(`Warning: Failed to parse ${appJson5Path}:`, e);
+      }
+    }
+    throw new Error('Could not find bundleName in AppScope/app.json5');
+  }
+
+  public getMainAbility(moduleName: string, ability?: string): string {
+    if (ability) {
+      return ability;
+    }
+
+    const moduleNode = this.profile.modules.find((m) => m.name === moduleName);
+    if (!moduleNode) {
+      return 'EntryAbility';
+    }
+
+    const moduleDir = path.join(this.rootDir, moduleNode.srcPath);
+    const moduleJsonPath = path.join(moduleDir, 'src', 'main', 'module.json5');
+
+    if (!fs.existsSync(moduleJsonPath)) {
+      return 'EntryAbility';
+    }
+
+    try {
+      const content = fs.readFileSync(moduleJsonPath, 'utf-8');
+      const json = json5.parse(content) as {
+        module?: { abilities?: AbilityNode[] };
+      };
+      const abilities = json?.module?.abilities || [];
+
+      if (abilities.length === 0) {
+        return 'EntryAbility';
+      }
+
+      const entryAbility = abilities.find((a) => a.name === 'EntryAbility');
+      return entryAbility ? entryAbility.name : abilities[0].name;
+    } catch (e) {
+      console.warn(`Warning: Failed to parse ${moduleJsonPath}:`, e);
+      return 'EntryAbility';
+    }
+  }
+
+  public resolveHspDependencies(
+    moduleName: string,
+    hspModules: Set<string>
+  ): void {
+    const moduleNode = this.profile.modules.find((m) => m.name === moduleName);
+    if (!moduleNode) {
+      return;
+    }
+
+    const pkgPath = path.join(
+      this.rootDir,
+      moduleNode.srcPath,
+      'oh-package.json5'
+    );
+    if (!fs.existsSync(pkgPath)) {
+      return;
+    }
+
+    try {
+      const content = fs.readFileSync(pkgPath, 'utf-8');
+      const pkg = json5.parse(content) as {
+        dependencies?: Record<string, string>;
+      };
+      const deps = pkg?.dependencies || {};
+
+      for (const value of Object.values(deps)) {
+        this.processSingleHspDependency(moduleNode.srcPath, value, hspModules);
+      }
+    } catch (e) {
+      console.warn(
+        `Warning: Failed to resolve dependencies for ${moduleName}:`,
+        e
+      );
+    }
+  }
+
+  private processSingleHspDependency(
+    moduleSrcPath: string,
+    depValue: string,
+    hspModules: Set<string>
+  ): void {
+    if (typeof depValue !== 'string') {
+      return;
+    }
+
+    let relativePath = depValue;
+    const isLocal =
+      relativePath.startsWith('file:') ||
+      relativePath.startsWith('.') ||
+      relativePath.startsWith('..');
+
+    if (!isLocal) {
+      return;
+    }
+
+    if (relativePath.startsWith('file:')) {
+      relativePath = relativePath.substring(5);
+    }
+
+    const depDir = path.resolve(this.rootDir, moduleSrcPath, relativePath);
+    const depModule = this.profile.modules.find(
+      (m) => path.resolve(this.rootDir, m.srcPath) === depDir
+    );
+
+    if (!depModule) {
+      return;
+    }
+
+    const type = this.getModuleType(depModule.name);
+    if (type === 'shared' && !hspModules.has(depModule.name)) {
+      hspModules.add(depModule.name);
+      this.resolveHspDependencies(depModule.name, hspModules);
+    }
+  }
+
+  public findArtifactPath(
+    moduleName: string,
+    target: string,
+    isEmulator: boolean,
+    product = 'default'
+  ): string {
+    const moduleNode = this.profile.modules.find((m) => m.name === moduleName);
+    if (!moduleNode) {
+      throw new Error(`Module '${moduleName}' not found`);
+    }
+
+    const moduleType = this.getModuleType(moduleName);
+    const metadataDir =
+      moduleType === 'shared' ? 'hsp_metadata' : 'hap_metadata';
+    const metadataKey = moduleType === 'shared' ? 'hspName' : 'hapName';
+
+    const metadataPath = path.join(
+      this.rootDir,
+      moduleNode.srcPath,
+      'build',
+      product,
+      'intermediates',
+      metadataDir,
+      target,
+      'output_metadata.json'
+    );
+
+    if (!fs.existsSync(metadataPath)) {
+      throw new Error(
+        `Build metadata not found for module '${moduleName}' at ${metadataPath}. Please build the project first.`
+      );
+    }
+
+    const { packageName, isSigned } = this.parseOutputMetadata(
+      metadataPath,
+      metadataKey
+    );
+
+    if (!isEmulator && !isSigned) {
+      throw new Error(
+        `Target device is a real device, but the artifact for '${moduleName}' is not signed. Real devices cannot install unsigned packages.`
+      );
+    }
+
+    const packagePath = path.join(
+      this.rootDir,
+      moduleNode.srcPath,
+      'build',
+      product,
+      'outputs',
+      target,
+      packageName
+    );
+
+    if (!fs.existsSync(packagePath)) {
+      throw new Error(`Generated package file does not exist: ${packagePath}`);
+    }
+
+    return packagePath;
+  }
+
+  private parseOutputMetadata(
+    metadataPath: string,
+    metadataKey: string
+  ): { packageName: string; isSigned: boolean } {
+    const content = fs.readFileSync(metadataPath, 'utf-8');
+    const parsed = json5.parse(content) as
+      | Record<string, string | boolean>[]
+      | Record<string, string | boolean>;
+
+    let packageName: string | undefined;
+    let isSigned = false;
+
+    if (Array.isArray(parsed)) {
+      const first = parsed[0];
+      if (first) {
+        packageName = first[metadataKey] as string | undefined;
+        isSigned = first.isSigned === true;
+      }
+    } else if (parsed && typeof parsed === 'object') {
+      packageName = parsed[metadataKey] as string | undefined;
+      isSigned = parsed.isSigned === true;
+    }
+
+    if (!packageName) {
+      throw new Error(
+        `Could not find ${metadataKey} in output_metadata.json at ${metadataPath}`
+      );
+    }
+
+    return { packageName, isSigned };
   }
 }
