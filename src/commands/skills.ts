@@ -13,7 +13,6 @@ import {
   getInstalledAgents,
 } from '../skills/api';
 import {
-  checkAgentExists,
   downloadSkill,
   installSkillToAgentWithBuffer,
   installSkillToProject,
@@ -21,73 +20,16 @@ import {
   removeSkillFromAgent,
   removeSkillFromProject,
 } from '../skills/installer';
-import { AGENT_SKILLS_CONFIG } from '../config/constants';
+import {
+  parseAgentList,
+  getAllExistingAgents,
+  summarizeOperationResults,
+} from '../skills/agents';
 import {
   AddOptions,
   RemoveOptions,
   SkillOperationResult,
 } from '../types/skills';
-
-/**
- * 解析和验证 agent 列表
- * @param agentOption 逗号分隔的 agent 列表字符串
- * @returns 验证通过的 agent 名称列表
- * @throws 如果任何 agent 不存在
- */
-async function parseAgentList(
-  agentOption: string | undefined
-): Promise<string[]> {
-  if (!agentOption) {
-    return [];
-  }
-
-  const agents: string[] = [];
-  const agentList = agentOption.split(',').map((a) => a.trim());
-
-  for (const agentName of agentList) {
-    if (!(await checkAgentExists(agentName))) {
-      throw new Error(`Agent ${agentName} not found`);
-    }
-    agents.push(agentName);
-  }
-
-  return agents;
-}
-
-/**
- * 获取所有实际存在的 agents
- * @returns 存在的 agent 名称列表
- */
-async function getAllExistingAgents(): Promise<string[]> {
-  const agents: string[] = [];
-
-  for (const agentName of Object.keys(AGENT_SKILLS_CONFIG)) {
-    if (await checkAgentExists(agentName)) {
-      agents.push(agentName);
-    }
-  }
-
-  return agents;
-}
-
-/**
- * 汇总并输出结果
- * @param results 结果列表
- */
-function summarizeOperationResults(results: SkillOperationResult[]): void {
-  const successCount = results.filter((r) => r.success && !r.skipped).length;
-  const skippedCount = results.filter((r) => r.skipped).length;
-  const failedCount = results.filter((r) => !r.success).length;
-  console.log();
-  console.log(cyan('Operation completed:'));
-  console.log(`  ${green('Success')}: ${successCount}`);
-  console.log(`  ${yellow('Skipped')}: ${skippedCount}`);
-  console.log(`  ${red('Failed')}: ${failedCount}`);
-
-  if (failedCount > 0) {
-    process.exitCode = 1;
-  }
-}
 
 /**
  * 获取要安装的技能名称列表
@@ -351,18 +293,19 @@ skillsCommand
 
 // 添加 remove 子命令
 skillsCommand
-  .command('remove <skill-name>')
+  .command('remove')
   .description(
     'Remove an installed skill from AI agents. Deletes the skill directory from specified agents. By default removes from all available agents.'
   )
+  .requiredOption('--skill <skill-name>', 'Skill name to remove.')
   .option(
     '--agent <agents>',
     "Target agents (comma-separated, e.g., 'codebuddy,opencode'). If omitted, removes from all available agents."
   )
   .option('--project <path>', 'Path to a project root from which to remove.')
-  .action(async (skillName: string, options: RemoveOptions) => {
+  .action(async (options: RemoveOptions) => {
     try {
-      await handleRemoveCommand(skillName, options);
+      await handleRemoveCommand(options.skill!, options);
     } catch (error: unknown) {
       console.log(red('Skills remove failed'));
       if (error instanceof Error && error.message) {

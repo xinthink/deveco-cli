@@ -29,10 +29,6 @@ export const AGENT_SKILLS_CONFIG = {
     path: '.trae-cn/skills',
     displayName: 'trae-cn',
   },
-  trae: {
-    path: '.trae/skills',
-    displayName: 'trae',
-  },
   opencode: {
     path: '.config/opencode/skills',
     displayName: 'opencode',

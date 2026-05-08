@@ -12,10 +12,12 @@ import deviceCommand from './commands/device.js';
 import emulatorCommand from './commands/emulator.js';
 import loginCommand from './commands/login';
 import logoutCommand from './commands/logout';
+import whoamiCommand from './commands/whoami';
 import skillsCommand from './commands/skills.js';
 import knowledgeCommand from './commands/knowledge.js';
 import logCommand from './commands/log.js';
 import createCommand from './commands/create.js';
+import initCommand from './commands/init.js';
 
 program
   .name('deveco')
@@ -29,10 +31,12 @@ program.addCommand(deviceCommand);
 program.addCommand(emulatorCommand);
 program.addCommand(loginCommand);
 program.addCommand(logoutCommand);
+program.addCommand(whoamiCommand);
 program.addCommand(knowledgeCommand);
 program.addCommand(skillsCommand);
 program.addCommand(logCommand);
 program.addCommand(createCommand);
+program.addCommand(initCommand);
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(err);

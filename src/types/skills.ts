@@ -219,6 +219,13 @@ export interface AddOptions {
 }
 
 export interface RemoveOptions {
+  readonly skill?: string;
   readonly agent?: string;
   readonly project?: string;
+}
+
+export interface InitOptions {
+  readonly agent?: string;
+  readonly project?: string;
+  readonly force?: boolean;
 }

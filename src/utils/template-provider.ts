@@ -4,6 +4,7 @@
  */
 import fs from 'fs-extra';
 import path from 'path';
+import * as os from 'os';
 import { fileURLToPath } from 'url';
 
 const API_CONFIGS: Record<
@@ -11,8 +12,8 @@ const API_CONFIGS: Record<
   { sdkVersion: string; modelVersion: string }
 > = {
   17: { sdkVersion: '5.0.5(17)', modelVersion: '5.0.5' },
-  18: { sdkVersion: '5.0.6(18)', modelVersion: '5.0.6' },
-  19: { sdkVersion: '5.0.7(19)', modelVersion: '5.0.7' },
+  18: { sdkVersion: '5.1.0(18)', modelVersion: '5.1.0' },
+  19: { sdkVersion: '5.1.1(19)', modelVersion: '5.1.1' },
   20: { sdkVersion: '6.0.0(20)', modelVersion: '6.0.0' },
   21: { sdkVersion: '6.0.1(21)', modelVersion: '6.0.1' },
   22: { sdkVersion: '6.0.2(22)', modelVersion: '6.0.2' },
@@ -117,7 +118,76 @@ function generateMinimalPng(): Buffer {
   ]);
 }
 
-function createPlaceholderImages(targetRoot: string): void {
+function getDevEcoTemplatePath(devecoStudioPath: string): string {
+  const platform = os.platform();
+
+  // Mac 平台：DevEco-Studio.app/Contents/plugins
+  // Windows 平台：DevEco Studio/plugins
+  if (platform === 'darwin') {
+    return path.join(
+      devecoStudioPath,
+      'Contents',
+      'plugins',
+      'codegenie-plugin',
+      'previewProjectTemplate'
+    );
+  } else {
+    return path.join(
+      devecoStudioPath,
+      'plugins',
+      'codegenie-plugin',
+      'previewProjectTemplate'
+    );
+  }
+}
+
+function copyFromDevEcoStudio(
+  targetRoot: string,
+  devecoStudioPath: string
+): boolean {
+  const templateMediaPath = getDevEcoTemplatePath(devecoStudioPath);
+
+  if (!fs.existsSync(templateMediaPath)) {
+    return false;
+  }
+
+  const imageMappings = [
+    [
+      'AppScope/resources/base/media/background.png',
+      'AppScope/resources/base/media/background.png',
+    ],
+    [
+      'AppScope/resources/base/media/foreground.png',
+      'AppScope/resources/base/media/foreground.png',
+    ],
+    [
+      'entry/src/main/resources/base/media/background.png',
+      'entry/src/main/resources/base/media/background.png',
+    ],
+    [
+      'entry/src/main/resources/base/media/foreground.png',
+      'entry/src/main/resources/base/media/foreground.png',
+    ],
+    [
+      'entry/src/main/resources/base/media/startIcon.png',
+      'entry/src/main/resources/base/media/startIcon.png',
+    ],
+  ];
+
+  for (const [relativeSrc, relativeDest] of imageMappings) {
+    const srcPath = path.join(templateMediaPath, relativeSrc);
+    const destPath = path.join(targetRoot, relativeDest);
+
+    if (fs.existsSync(srcPath)) {
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+
+  return true;
+}
+
+function generateFallbackIcons(targetRoot: string): void {
   const pngBuffer = generateMinimalPng();
 
   const imagePaths = [
@@ -135,6 +205,19 @@ function createPlaceholderImages(targetRoot: string): void {
   }
 }
 
+function createPlaceholderImages(
+  targetRoot: string,
+  devecoStudioPath?: string
+): void {
+  if (devecoStudioPath) {
+    if (copyFromDevEcoStudio(targetRoot, devecoStudioPath)) {
+      return;
+    }
+  }
+
+  generateFallbackIcons(targetRoot);
+}
+
 export interface CreateProjectResult {
   projectRoot: string;
   appName: string;
@@ -147,7 +230,8 @@ export function createProject(
   projectPath: string,
   appName: string,
   bundleName: string,
-  apiLevel: number
+  apiLevel: number,
+  devecoStudioPath?: string
 ): CreateProjectResult {
   const templateDir = getTemplateDir();
 
@@ -160,7 +244,7 @@ export function createProject(
 
   copyDirectoryContents(templateDir, targetRoot);
 
-  createPlaceholderImages(targetRoot);
+  createPlaceholderImages(targetRoot, devecoStudioPath);
 
   replaceInFile(
     path.join(
