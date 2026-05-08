@@ -63,7 +63,7 @@ function identifyModule(project: Project, moduleArg?: string): string {
   }
 
   throw new Error(
-    `No module specified. Please specify a module using -m or --module <name>.\nAvailable runnable modules:\n` +
+    `No module specified. Please specify a module using --module <name>.\nAvailable runnable modules:\n` +
       runnableModules.map((m) => `  - ${m.name}`).join('\n')
   );
 }
@@ -92,10 +92,10 @@ function resolveArtifacts(
 
 const runCommand = new Command('run')
   .description('Run project on a device')
-  .option('-m, --module <module>', 'Module name (format: module or module@target)')
-  .option('-d, --device <device>', 'Target device (name or ID)')
-  .option('-p, --product <product>', 'Product name (default: default)')
-  .option('-a, --ability <ability>', 'Ability name to launch')
+  .option('--module <module>', 'Module (format: module or module@target)')
+  .option('--device <device>', 'Target device (name or serial)')
+  .option('--product <product>', 'Product name (default: default)')
+  .option('--ability <ability>', 'Ability to launch')
   .action(async (options: RunOptions) => {
     try {
       const currentDir = process.cwd();

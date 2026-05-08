@@ -340,29 +340,8 @@ export class Knowledge {
         });
 
         const rawText = await response.text();
-        if (!response.ok || response.status !== 200) {
-            throw new Error(
-                `Failed to get big search response: HTTP ${response.status} ${response.statusText} body=${truncateForError(rawText)}`,
-            );
-        }
+        const payload = this.parseBigSearchHttpResponse(response, rawText);
 
-        let parsed: unknown;
-        try {
-            parsed = JSON.parse(rawText);
-        } catch {
-            throw new Error(
-                `Big search response is not valid JSON: ${truncateForError(rawText)}`,
-            );
-        }
-        let payload: BigSearchResponse;
-        try {
-            payload = parseBigSearchResponse(parsed);
-        } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            throw new Error(`${msg} | raw=${truncateForError(rawText)}`);
-        }
-
-        // 使用 TF-IDF + 余弦相似度计算 question 与每条结果的相关度
         const rankingList = payload.body.rankingList;
         const ranked = rankRankingListBySimilarity(content, rankingList);
         return {
@@ -372,6 +351,29 @@ export class Knowledge {
             payload,
             ranked,
         };
+    }
+
+    private parseBigSearchHttpResponse(response: Response, rawText: string): BigSearchResponse {
+        if (!response.ok || response.status !== 200) {
+            throw new Error(
+                `Failed to get big search response: HTTP ${response.status} ${response.statusText} body=${truncateForError(rawText)}`,
+            );
+        }
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(rawText);
+        } catch (err) {
+            throw new Error(
+                `Big search response is not valid JSON: ${truncateForError(rawText)}`,
+                { cause: err },
+            );
+        }
+        try {
+            return parseBigSearchResponse(parsed);
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${msg} | raw=${truncateForError(rawText)}`, { cause: err });
+        }
     }
 
     /** 与 {@link parseBigSearchResponse} 等价，失败时返回 `false` 而非抛错。 */

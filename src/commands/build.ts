@@ -179,12 +179,15 @@ async function executeBuildSteps(
 
 const buildCommand = new Command('build')
   .description('Build HarmonyOS project')
-  .option('--product <product>', 'Product to build')
+  .option('--product <product>', 'Product name (default: default)')
   .option(
     '--modules <modules...>',
-    'Modules to build. Format: module or module@target'
+    'Modules to build (format: module or module@target)'
   )
-  .option('--buildMode <buildMode>', 'Build mode (e.g., debug, release)')
+  .option(
+    '--build-mode <mode>',
+    'Build mode (buildModeSet in build-profile.json5; e.g. debug, release)'
+  )
   .action(async (options: BuildOptions) => {
     try {
       const currentDir = process.cwd();

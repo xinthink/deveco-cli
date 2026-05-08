@@ -42,7 +42,7 @@ export class ToolProvider {
   public sdkPath: string;
   public hdcPath: string;
   public emulatorPath: string;
-  public emulatorLauncherPath: String | undefined;
+  public emulatorLauncherPath: string | undefined;
 
   private constructor(
     devecoStudioPath: string,
@@ -53,7 +53,7 @@ export class ToolProvider {
     sdkPath: string,
     hdcPath: string,
     emulatorPath: string,
-    emulatorLauncherPath: String | undefined
+    emulatorLauncherPath: string | undefined
   ) {
     this.devecoStudioPath = devecoStudioPath;
     this.nodePath = nodePath;
