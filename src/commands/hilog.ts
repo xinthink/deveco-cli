@@ -11,7 +11,7 @@ import { blue, green, red } from 'colorette';
 const hilogCommand = new Command('log')
   .description('Obtain device application logs')
   .option('--crash', 'Only obtain the crash log')
-  .option('--target <device>', 'Target device ID')
+  .option('--target <device>', 'Target device ID or name')
   .option('--level <level>', 'Log level filtering: D, I, W, E, F')
   .option('--bundle-name <name>', 'Application package name filtering')
   .option('--keyword <pattern>', 'Keyword filtering')

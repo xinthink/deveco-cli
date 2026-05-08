@@ -129,7 +129,7 @@ Obtain device application logs
 
 Options:
   --crash               Only obtain the crash log
-  --target <device>     Target device ID
+  --target <device>     Target device ID or name
   --level <level>       Log level filtering: D, I, W, E, F
   --bundle-name <name>  Application package name filtering
   --keyword <pattern>   Keyword filtering
@@ -142,6 +142,7 @@ Options:
 deveco log                                  					# Displaying common logs
 deveco log --crash                          					# Displaying crash logs
 deveco log --target 127.0.0.1:5555          					# Filtering and displaying common logs of the device whose ID is 127.0.0.1:5555
+deveco log --target "deviceName"          					  # Filtering and displaying common logs of the device whose name is "deviceName"
 deveco log --level I                        					# Filtering and displaying logs whose log level is I 
 deveco log --bundle-name com.example.myapplication    # Filtering and displaying logs whose application package name is "com.example.myapplication" 
 deveco log --keyword err:1002               					# Filtering and displaying logs with the keyword is "err:1002"
