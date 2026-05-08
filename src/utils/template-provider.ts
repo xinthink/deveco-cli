@@ -12,8 +12,8 @@ const API_CONFIGS: Record<
   { sdkVersion: string; modelVersion: string }
 > = {
   17: { sdkVersion: '5.0.5(17)', modelVersion: '5.0.5' },
-  18: { sdkVersion: '5.0.6(18)', modelVersion: '5.0.6' },
-  19: { sdkVersion: '5.0.7(19)', modelVersion: '5.0.7' },
+  18: { sdkVersion: '5.1.0(18)', modelVersion: '5.1.0' },
+  19: { sdkVersion: '5.1.1(19)', modelVersion: '5.1.1' },
   20: { sdkVersion: '6.0.0(20)', modelVersion: '6.0.0' },
   21: { sdkVersion: '6.0.1(21)', modelVersion: '6.0.1' },
   22: { sdkVersion: '6.0.2(22)', modelVersion: '6.0.2' },
