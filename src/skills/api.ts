@@ -154,7 +154,7 @@ export function validateApiResponse<T extends ApiResponseBase>(
 ): T {
   // 检查 HTTP 响应状态
   if (response.statusCode !== 200) {
-    throw new Error(`${apiName} 请求失败: HTTP ${response.statusCode}`);
+    throw new Error(`${apiName} Request failed: HTTP ${response.statusCode}`);
   }
 
   // 解析响应数据
@@ -162,7 +162,9 @@ export function validateApiResponse<T extends ApiResponseBase>(
 
   // 检查业务响应码
   if (data.code !== SkillsApiConstants.SUCCESS_CODE) {
-    throw new Error(`${apiName} 返回错误: ${data.code} - ${data.message}`);
+    throw new Error(
+      `${apiName} Error returned: ${data.code} - ${data.message}`
+    );
   }
 
   return data;

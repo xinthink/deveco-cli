@@ -35,33 +35,13 @@ export async function downloadSkill(skillName: string): Promise<Buffer> {
 
   // 构建 API URL
   const url = `${SkillsApiConstants.SKILL_INSTALL_API_BASE}/${skillName}/install?format=zip`;
+  // 使用 httpClient.getBinary 下载
+  const buffer = await httpClient.getBinary(url);
 
-  try {
-    // 使用 httpClient.getBinary 下载
-    const buffer = await httpClient.getBinary(url);
+  // 存入缓存
+  downloadCache.set(skillName, buffer);
 
-    // 存入缓存
-    downloadCache.set(skillName, buffer);
-
-    return buffer;
-  } catch (error: unknown) {
-    // 处理 404 错误（Skill 不存在）
-    const httpError = error as { message?: string };
-    if (httpError.message?.includes('HTTP 404')) {
-      throw new Error(`Skill "${skillName}" 不存在`, { cause: error });
-    }
-
-    // 处理网络错误
-    if (httpError.message?.includes('timeout')) {
-      throw new Error('下载超时，请检查网络连接', { cause: error });
-    }
-
-    // 重新抛出其他错误
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error('下载失败', { cause: error });
-  }
+  return buffer;
 }
 
 /**
@@ -106,7 +86,9 @@ export async function checkAgentExists(agentName: string): Promise<boolean> {
     AGENT_SKILLS_CONFIG[agentName as keyof typeof AGENT_SKILLS_CONFIG];
 
   if (!agentConfig) {
-    return false;
+    throw new Error(
+      `Invalid agent: ${agentName}, Valid options are: ${Object.keys(AGENT_SKILLS_CONFIG).join(', ')}`
+    );
   }
 
   // 构建 agent 根目录路径（移除 '/skills' 后缀）
@@ -182,10 +164,11 @@ async function performSkillInstall(
 }
 
 /**
- * 统一的安装错误处理
+ * 统一的错误处理
  */
-function handleInstallError(error: unknown): SkillOperationResult {
-  const errorMessage = error instanceof Error ? error.message : '安装失败';
+function handleOperationError(error: unknown, defaultErrMsg: string): SkillOperationResult {
+  const errorMessage =
+    error instanceof Error ? error.message : defaultErrMsg;
   return { success: false, error: errorMessage };
 }
 
@@ -219,7 +202,7 @@ export async function installSkillToAgentWithBuffer(
     await performSkillInstall(zipBuffer, skillsDir, skillName);
     return { success: true };
   } catch (error: unknown) {
-    return handleInstallError(error);
+    return handleOperationError(error, 'Installation failed');
   }
 }
 
@@ -254,7 +237,7 @@ export async function installSkillToProject(
     await performSkillInstall(zipBuffer, skillsDir, skillName);
     return { success: true };
   } catch (error: unknown) {
-    return handleInstallError(error);
+    return handleOperationError(error, 'Installation failed');
   }
 }
 
@@ -279,7 +262,7 @@ export async function removeSkillFromAgent(
     try {
       await fsp.access(skillDir);
     } catch {
-      console.log(`Skill ${skillName} not exists in ${skillsDir}`);
+      console.log(`Skill ${skillName} does not exist in ${skillsDir}`);
       return { success: true, skipped: true };
     }
 
@@ -287,8 +270,7 @@ export async function removeSkillFromAgent(
     console.log(`Skill ${skillName} removed from ${skillDir}`);
     return { success: true };
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : '移除失败';
-    return { success: false, error: errorMessage };
+    return handleOperationError(error, 'Removal failed');
   }
 }
 
@@ -312,7 +294,7 @@ export async function removeSkillFromProject(
     try {
       await fsp.access(skillDir);
     } catch {
-      console.log(`Skill ${skillName} not exists in ${skillsDir}`);
+      console.log(`Skill ${skillName} does not exist in ${skillsDir}`);
       return { success: true, skipped: true };
     }
 
@@ -321,7 +303,6 @@ export async function removeSkillFromProject(
     console.log(`Skill ${skillName} removed from ${skillDir}`);
     return { success: true };
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : '移除失败';
-    return { success: false, error: errorMessage };
+    return handleOperationError(error, 'Removal failed');
   }
 }
