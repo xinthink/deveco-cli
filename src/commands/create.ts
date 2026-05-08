@@ -1,13 +1,11 @@
-/*
- * Copyright (c) 2026 Huawei Device Co., Ltd.
- * SPDX-License-Identifier: MIT
- */
+import path from 'path';
 import { Command } from 'commander';
 import { green, red, cyan } from 'colorette';
-import { execa } from 'execa';
-import fs from 'fs-extra';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { ToolProvider } from '../utils/tool-provider.js';
+import {
+  createProject,
+  CreateProjectResult,
+} from '../utils/template-provider.js';
 
 interface CreateOptions {
   projectPath?: string;
@@ -16,34 +14,8 @@ interface CreateOptions {
   apiLevel?: string;
 }
 
-function getProjectRoot(): string {
-  const currentFileUrl = import.meta.url;
-  const currentFilePath = fileURLToPath(currentFileUrl);
-
-  if (currentFilePath.includes('dist')) {
-    return path.dirname(path.dirname(currentFilePath));
-  }
-
-  const commandsDir = path.dirname(currentFilePath);
-  const srcDir = path.dirname(commandsDir);
-  return path.dirname(srcDir);
-}
-
-function getScriptDir(): string {
-  return path.join(getProjectRoot(), 'scripts');
-}
-
-function getTemplateDir(): string {
-  return path.join(getProjectRoot(), 'templates', 'application');
-}
-
 function deriveBundleName(appName: string): string {
   return `com.example.${appName.toLowerCase()}`;
-}
-
-async function verifyProject(projectRoot: string): boolean {
-  const buildProfile = path.join(projectRoot, 'build-profile.json5');
-  return fs.existsSync(buildProfile);
 }
 
 const createCommand = new Command('create')
@@ -76,58 +48,45 @@ const createCommand = new Command('create')
       console.log(`App name: ${appName}`);
       console.log(`Bundle name: ${bundleName}`);
 
-      const scriptPath = path.join(getScriptDir(), 'copy-template.mjs');
-      const templateDir = getTemplateDir();
+      const toolProvider = await ToolProvider.new();
 
-      const args = [
-        '--project-path',
-        projectPath,
-        '--app-name',
-        appName,
-        '--bundle-name',
-        bundleName,
-        '--template-dir',
-        templateDir,
-      ];
+      let apiLevel: number;
+      let apiLevelSource: string;
 
       if (options.apiLevel) {
-        args.push('--api-level', options.apiLevel);
-      }
-
-      const result = await execa('node', [scriptPath, ...args], {
-        stdio: 'pipe',
-      });
-
-      if (result.stdout) {
-        const projectInfo = JSON.parse(result.stdout);
-        const projectRoot = projectInfo.projectRoot;
-
-        console.log('\n' + green('Project created successfully!'));
-        console.log(`Project root: ${projectRoot}`);
-        console.log(`App name: ${projectInfo.appName}`);
-        console.log(`Bundle name: ${projectInfo.bundleName}`);
-        console.log(
-          `API level: ${projectInfo.apiLevel} (source: ${projectInfo.source})`
-        );
-
-        if (projectInfo.detectedFrom) {
-          console.log(`Detected from: ${projectInfo.detectedFrom}`);
+        const parsed = Number(options.apiLevel);
+        if (!Number.isInteger(parsed) || parsed < 17 || parsed > 22) {
+          console.error(
+            red(`Error: Invalid API level ${options.apiLevel}. Must be 17-22`)
+          );
+          process.exit(1);
         }
-
-        if (await verifyProject(projectRoot)) {
-          console.log(green('✓ Template integrity check passed'));
-        } else {
-          console.log(red('✗ Template integrity check failed'));
-        }
-      }
-    } catch (error) {
-      const e = error as Error & { stdout?: string; stderr?: string };
-      console.error(red('\nFailed to create project'));
-      if (e.stderr) {
-        console.error(red(e.stderr));
+        apiLevel = parsed;
+        apiLevelSource = 'user_input';
       } else {
-        console.error(red(e.message));
+        apiLevel = toolProvider.detectApiLevel();
+        apiLevelSource = 'auto_detected';
       }
+
+      console.log(`API level: ${apiLevel} (source: ${apiLevelSource})`);
+
+      const result: CreateProjectResult = createProject(
+        projectPath,
+        appName,
+        bundleName,
+        apiLevel
+      );
+
+      console.log('\n' + green('Project created successfully!'));
+      console.log(`Project root: ${result.projectRoot}`);
+      console.log(`App name: ${result.appName}`);
+      console.log(`Bundle name: ${result.bundleName}`);
+      console.log(`API level: ${result.apiLevel}`);
+      console.log(green('✓ Template integrity check passed'));
+    } catch (error) {
+      const e = error as Error;
+      console.error(red('\nFailed to create project'));
+      console.error(red(e.message));
       process.exit(1);
     }
   });

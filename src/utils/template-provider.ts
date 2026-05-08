@@ -1,0 +1,160 @@
+import fs from 'fs-extra';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const API_CONFIGS: Record<
+  number,
+  { sdkVersion: string; modelVersion: string }
+> = {
+  17: { sdkVersion: '5.0.5(17)', modelVersion: '5.0.5' },
+  18: { sdkVersion: '5.0.6(18)', modelVersion: '5.0.6' },
+  19: { sdkVersion: '5.0.7(19)', modelVersion: '5.0.7' },
+  20: { sdkVersion: '6.0.0(20)', modelVersion: '6.0.0' },
+  21: { sdkVersion: '6.0.1(21)', modelVersion: '6.0.1' },
+  22: { sdkVersion: '6.0.2(22)', modelVersion: '6.0.2' },
+};
+
+const REQUIRED_FILES = [
+  'build-profile.json5',
+  'AppScope/resources/base/media/layered_image.json',
+  'AppScope/resources/base/media/background.png',
+  'AppScope/resources/base/media/foreground.png',
+  'entry/src/main/resources/base/media/layered_image.json',
+  'entry/src/main/resources/base/media/background.png',
+  'entry/src/main/resources/base/media/foreground.png',
+];
+
+function getTemplateDir(): string {
+  const currentFileUrl = import.meta.url;
+  const currentFilePath = fileURLToPath(currentFileUrl);
+
+  if (currentFilePath.includes('dist')) {
+    const distDir = path.dirname(currentFilePath);
+    const projectRoot = path.dirname(distDir);
+    return path.join(projectRoot, 'templates', 'application');
+  }
+
+  const utilsDir = path.dirname(currentFilePath);
+  const srcDir = path.dirname(utilsDir);
+  const projectRoot = path.dirname(srcDir);
+  return path.join(projectRoot, 'templates', 'application');
+}
+
+function copyDirectoryContents(sourceDir: string, targetDir: string): void {
+  fs.mkdirSync(targetDir, { recursive: true });
+
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const targetPath = path.join(targetDir, entry.name);
+
+    if (entry.isDirectory()) {
+      copyDirectoryContents(sourcePath, targetPath);
+      continue;
+    }
+
+    if (fs.existsSync(targetPath)) {
+      continue;
+    }
+
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.copyFileSync(sourcePath, targetPath);
+  }
+}
+
+function replaceInFile(filePath: string, pairs: Array<[string, string]>): void {
+  const original = fs.readFileSync(filePath, 'utf-8');
+  let next = original;
+
+  for (const [from, to] of pairs) {
+    next = next.replaceAll(from, to);
+  }
+
+  if (next !== original) {
+    fs.writeFileSync(filePath, next, 'utf-8');
+  }
+}
+
+function updateApiLevel(targetRoot: string, apiLevel: number): void {
+  if (apiLevel === 22) {
+    return;
+  }
+
+  const config = API_CONFIGS[apiLevel];
+  if (!config) {
+    return;
+  }
+
+  replaceInFile(path.join(targetRoot, 'build-profile.json5'), [
+    ['6.0.2(22)', config.sdkVersion],
+  ]);
+
+  replaceInFile(path.join(targetRoot, 'hvigor', 'hvigor-config.json5'), [
+    ['6.0.2', config.modelVersion],
+  ]);
+}
+
+function verifyFiles(targetRoot: string): boolean {
+  const missingFiles = REQUIRED_FILES.filter(
+    (relativePath) => !fs.existsSync(path.join(targetRoot, relativePath))
+  );
+
+  return missingFiles.length === 0;
+}
+
+export interface CreateProjectResult {
+  projectRoot: string;
+  appName: string;
+  bundleName: string;
+  apiLevel: number;
+  verified: boolean;
+}
+
+export function createProject(
+  projectPath: string,
+  appName: string,
+  bundleName: string,
+  apiLevel: number
+): CreateProjectResult {
+  const templateDir = getTemplateDir();
+
+  if (!fs.existsSync(templateDir)) {
+    throw new Error(`Template directory not found: ${templateDir}`);
+  }
+
+  fs.mkdirSync(projectPath, { recursive: true });
+  const targetRoot = path.join(projectPath, appName);
+
+  copyDirectoryContents(templateDir, targetRoot);
+
+  replaceInFile(
+    path.join(
+      targetRoot,
+      'AppScope',
+      'resources',
+      'base',
+      'element',
+      'string.json'
+    ),
+    [['MyApplication', appName]]
+  );
+
+  replaceInFile(path.join(targetRoot, 'AppScope', 'app.json5'), [
+    ['com.example.myapplication', bundleName],
+  ]);
+
+  updateApiLevel(targetRoot, apiLevel);
+
+  const verified = verifyFiles(targetRoot);
+
+  if (!verified) {
+    throw new Error('Template integrity check failed');
+  }
+
+  return {
+    projectRoot: targetRoot,
+    appName,
+    bundleName,
+    apiLevel,
+    verified,
+  };
+}

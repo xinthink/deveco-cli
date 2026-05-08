@@ -68,8 +68,15 @@ export class ToolProvider {
 
   public static async new(): Promise<ToolProvider> {
     const devecoStudioPath = await ToolProvider.findDevEcoStudio();
-    const { nodePath, ohpmJsPath, hvigorJsPath, javaPath, sdkPath, hdcPath, emulatorPath } =
-      ToolProvider.resolveTools(devecoStudioPath);
+    const {
+      nodePath,
+      ohpmJsPath,
+      hvigorJsPath,
+      javaPath,
+      sdkPath,
+      hdcPath,
+      emulatorPath,
+    } = ToolProvider.resolveTools(devecoStudioPath);
     const emulatorLauncherPath = await ToolProvider.getEmulatorExe();
     return new ToolProvider(
       devecoStudioPath,
@@ -248,9 +255,20 @@ export class ToolProvider {
     ToolProvider.verifyTools(nodePath, ohpmJsPath, hvigorJsPath, javaPath);
 
     const hdcPath = ToolProvider.resolveHdcPath(sdkPath, platform);
-    const emulatorPath = ToolProvider.resolveEmulatorPath(devecoStudioPath, platform);
+    const emulatorPath = ToolProvider.resolveEmulatorPath(
+      devecoStudioPath,
+      platform
+    );
 
-    return { nodePath, ohpmJsPath, hvigorJsPath, javaPath, sdkPath, hdcPath, emulatorPath };
+    return {
+      nodePath,
+      ohpmJsPath,
+      hvigorJsPath,
+      javaPath,
+      sdkPath,
+      hdcPath,
+      emulatorPath,
+    };
   }
 
   private static resolveHdcPath(sdkPath: string, platform: string): string {
@@ -266,16 +284,32 @@ export class ToolProvider {
       }
     }
 
-    throw new Error(`hdc executable not found. Searched in:\n${hdcPaths.join('\n')}`);
+    throw new Error(
+      `hdc executable not found. Searched in:\n${hdcPaths.join('\n')}`
+    );
   }
 
-  private static resolveEmulatorPath(devecoStudioPath: string, platform: string): string {
+  private static resolveEmulatorPath(
+    devecoStudioPath: string,
+    platform: string
+  ): string {
     let emulatorPath: string;
 
     if (platform === 'win32') {
-      emulatorPath = path.join(devecoStudioPath, 'tools', 'emulator', 'Emulator.exe');
+      emulatorPath = path.join(
+        devecoStudioPath,
+        'tools',
+        'emulator',
+        'Emulator.exe'
+      );
     } else if (platform === 'darwin') {
-      emulatorPath = path.join(devecoStudioPath, 'Contents', 'tools', 'emulator', 'Emulator');
+      emulatorPath = path.join(
+        devecoStudioPath,
+        'Contents',
+        'tools',
+        'emulator',
+        'Emulator'
+      );
     } else {
       throw new Error('Linux is not fully supported yet');
     }
@@ -345,5 +379,71 @@ export class ToolProvider {
     }
 
     return null;
+  }
+
+  public detectApiLevel(): number {
+    try {
+      const sdkPkgPath = path.join(this.sdkPath, 'default', 'sdk-pkg.json');
+      if (fs.existsSync(sdkPkgPath)) {
+        const content = fs.readFileSync(sdkPkgPath, 'utf-8');
+        const sdkPkg = JSON.parse(content);
+        const apiVersion = sdkPkg?.data?.apiVersion;
+        if (typeof apiVersion === 'string' || typeof apiVersion === 'number') {
+          const level = Number(apiVersion);
+          if (Number.isInteger(level) && level >= 17 && level <= 22) {
+            return level;
+          }
+        }
+      }
+    } catch {
+      // Ignore errors
+    }
+
+    try {
+      const ohUniPaths = [
+        path.join(
+          this.sdkPath,
+          'default',
+          'openharmony',
+          'toolchains',
+          'oh-uni-package.json'
+        ),
+        path.join(
+          this.sdkPath,
+          'default',
+          'openharmony',
+          'native',
+          'oh-uni-package.json'
+        ),
+        path.join(
+          this.sdkPath,
+          'default',
+          'openharmony',
+          'previewer',
+          'oh-uni-package.json'
+        ),
+      ];
+
+      for (const ohUniPath of ohUniPaths) {
+        if (fs.existsSync(ohUniPath)) {
+          const content = fs.readFileSync(ohUniPath, 'utf-8');
+          const ohUni = JSON.parse(content);
+          const apiVersion = ohUni?.apiVersion;
+          if (
+            typeof apiVersion === 'string' ||
+            typeof apiVersion === 'number'
+          ) {
+            const level = Number(apiVersion);
+            if (Number.isInteger(level) && level >= 17 && level <= 22) {
+              return level;
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignore errors
+    }
+
+    return 22;
   }
 }
