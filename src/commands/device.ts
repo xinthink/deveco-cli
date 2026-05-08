@@ -59,17 +59,22 @@ class DeviceManager {
 
   public async listDevices(): Promise<DeviceInfo[]> {
     const { stdout } = await this.executeHdc(['list', 'targets']);
-    const lines = stdout.split('\n').filter((line) => line.trim().length > 0);
     const devices: DeviceInfo[] = [];
 
-    for (const line of lines) {
-      const parts = line.trim().split(/\s+/);
-      if (parts.length >= 1) {
-        devices.push({
-          serial: parts[0],
-          status: parts.length >= 2 ? parts[1] : 'device',
-        });
+    for (const line of stdout.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('[Empty]')) {
+        continue;
       }
+      const parts = trimmed.split(/\s+/);
+      const serial = parts[0];
+      if (!serial || serial.startsWith('[Empty]')) {
+        continue;
+      }
+      devices.push({
+        serial,
+        status: parts.length >= 2 ? parts[1] : 'device',
+      });
     }
 
     return devices;
@@ -191,8 +196,7 @@ async function listAction(deviceManager: DeviceManager) {
     const devices = await deviceManager.listDevices();
 
     if (devices.length === 0) {
-      console.log(yellow('  No connected devices found.'));
-      console.log(gray('  Please connect a device or start an emulator.'));
+      console.log('  [Empty]');
     } else {
       for (const device of devices) {
         const modelName = await deviceManager.getDeviceModel(device.serial);
