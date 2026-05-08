@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 Huawei Device Co., Ltd.
+ * SPDX-License-Identifier: MIT
+ */
 import path from 'path';
 import { Command } from 'commander';
 import { green, red, cyan } from 'colorette';
@@ -19,7 +23,7 @@ function deriveBundleName(appName: string): string {
 }
 
 const createCommand = new Command('create')
-  .description('Create a new HarmonyOS project')
+  .description('Initialize a new HarmonyOS application project')
   .option('--project-path <path>', 'Project directory path')
   .option('--app-name <name>', 'Application name')
   .option(
@@ -43,7 +47,7 @@ const createCommand = new Command('create')
       const appName = options.appName;
       const bundleName = options.bundleName || deriveBundleName(appName);
 
-      console.log(cyan('Creating HarmonyOS project...'));
+      console.log(cyan('Initializing HarmonyOS project...'));
       console.log(`Project path: ${projectPath}`);
       console.log(`App name: ${appName}`);
       console.log(`Bundle name: ${bundleName}`);

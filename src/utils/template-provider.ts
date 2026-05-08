@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 Huawei Device Co., Ltd.
+ * SPDX-License-Identifier: MIT
+ */
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';

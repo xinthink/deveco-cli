@@ -210,6 +210,48 @@ export class ToolProvider {
     );
   }
 
+  private static resolveWindowsTools(devecoStudioPath: string): {
+    nodePath: string;
+    ohpmJsPath: string;
+    hvigorJsPath: string;
+    javaPath: string;
+    sdkPath: string;
+  } {
+    const toolsDir = path.join(devecoStudioPath, 'tools');
+    return {
+      nodePath: path.join(toolsDir, 'node', 'node.exe'),
+      ohpmJsPath: path.join(toolsDir, 'ohpm', 'bin', 'pm-cli.js'),
+      hvigorJsPath: path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.js'),
+      javaPath: path.join(devecoStudioPath, 'jbr', 'bin', 'java.exe'),
+      sdkPath: path.join(devecoStudioPath, 'sdk'),
+    };
+  }
+
+  private static resolveMacTools(devecoStudioPath: string): {
+    nodePath: string;
+    ohpmJsPath: string;
+    hvigorJsPath: string;
+    javaPath: string;
+    sdkPath: string;
+  } {
+    const toolsDir = path.join(devecoStudioPath, 'Contents', 'tools');
+    return {
+      nodePath: path.join(toolsDir, 'node', 'bin', 'node'),
+      ohpmJsPath: path.join(toolsDir, 'ohpm', 'bin', 'pm-cli.js'),
+      hvigorJsPath: path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.js'),
+      javaPath: path.join(
+        devecoStudioPath,
+        'Contents',
+        'jbr',
+        'Contents',
+        'Home',
+        'bin',
+        'java'
+      ),
+      sdkPath: path.join(devecoStudioPath, 'Contents', 'sdk'),
+    };
+  }
+
   private static resolveTools(devecoStudioPath: string): {
     nodePath: string;
     ohpmJsPath: string;
@@ -220,52 +262,31 @@ export class ToolProvider {
     emulatorPath: string;
   } {
     const platform = os.platform();
-    let nodePath: string;
-    let ohpmJsPath: string;
-    let hvigorJsPath: string;
-    let javaPath: string;
-    let sdkPath: string;
 
-    if (platform === 'win32') {
-      const toolsDir = path.join(devecoStudioPath, 'tools');
-      nodePath = path.join(toolsDir, 'node', 'node.exe');
-      ohpmJsPath = path.join(toolsDir, 'ohpm', 'bin', 'pm-cli.js');
-      hvigorJsPath = path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.js');
-      javaPath = path.join(devecoStudioPath, 'jbr', 'bin', 'java.exe');
-      sdkPath = path.join(devecoStudioPath, 'sdk');
-    } else if (platform === 'darwin') {
-      const toolsDir = path.join(devecoStudioPath, 'Contents', 'tools');
-      nodePath = path.join(toolsDir, 'node', 'bin', 'node');
-      ohpmJsPath = path.join(toolsDir, 'ohpm', 'bin', 'pm-cli.js');
-      hvigorJsPath = path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.js');
-      javaPath = path.join(
-        devecoStudioPath,
-        'Contents',
-        'jbr',
-        'Contents',
-        'Home',
-        'bin',
-        'java'
-      );
-      sdkPath = path.join(devecoStudioPath, 'Contents', 'sdk');
-    } else {
-      throw new Error('Linux is not fully supported yet');
-    }
+    const tools =
+      platform === 'win32'
+        ? ToolProvider.resolveWindowsTools(devecoStudioPath)
+        : platform === 'darwin'
+          ? ToolProvider.resolveMacTools(devecoStudioPath)
+          : (() => {
+              throw new Error('Linux is not fully supported yet');
+            })();
 
-    ToolProvider.verifyTools(nodePath, ohpmJsPath, hvigorJsPath, javaPath);
+    ToolProvider.verifyTools(
+      tools.nodePath,
+      tools.ohpmJsPath,
+      tools.hvigorJsPath,
+      tools.javaPath
+    );
 
-    const hdcPath = ToolProvider.resolveHdcPath(sdkPath, platform);
+    const hdcPath = ToolProvider.resolveHdcPath(tools.sdkPath, platform);
     const emulatorPath = ToolProvider.resolveEmulatorPath(
       devecoStudioPath,
       platform
     );
 
     return {
-      nodePath,
-      ohpmJsPath,
-      hvigorJsPath,
-      javaPath,
-      sdkPath,
+      ...tools,
       hdcPath,
       emulatorPath,
     };
@@ -381,67 +402,80 @@ export class ToolProvider {
     return null;
   }
 
-  public detectApiLevel(): number {
-    try {
-      const sdkPkgPath = path.join(this.sdkPath, 'default', 'sdk-pkg.json');
-      if (fs.existsSync(sdkPkgPath)) {
-        const content = fs.readFileSync(sdkPkgPath, 'utf-8');
-        const sdkPkg = JSON.parse(content);
-        const apiVersion = sdkPkg?.data?.apiVersion;
-        if (typeof apiVersion === 'string' || typeof apiVersion === 'number') {
-          const level = Number(apiVersion);
-          if (Number.isInteger(level) && level >= 17 && level <= 22) {
-            return level;
-          }
-        }
-      }
-    } catch {
-      // Ignore errors
+  private static isValidApiLevel(level: number): boolean {
+    return Number.isInteger(level) && level >= 17 && level <= 22;
+  }
+
+  private static parseApiLevelFromFile(filePath: string): number | undefined {
+    if (!fs.existsSync(filePath)) {
+      return undefined;
     }
 
     try {
-      const ohUniPaths = [
-        path.join(
-          this.sdkPath,
-          'default',
-          'openharmony',
-          'toolchains',
-          'oh-uni-package.json'
-        ),
-        path.join(
-          this.sdkPath,
-          'default',
-          'openharmony',
-          'native',
-          'oh-uni-package.json'
-        ),
-        path.join(
-          this.sdkPath,
-          'default',
-          'openharmony',
-          'previewer',
-          'oh-uni-package.json'
-        ),
-      ];
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const data = JSON.parse(content);
+      const apiVersion = data?.apiVersion ?? data?.data?.apiVersion;
 
-      for (const ohUniPath of ohUniPaths) {
-        if (fs.existsSync(ohUniPath)) {
-          const content = fs.readFileSync(ohUniPath, 'utf-8');
-          const ohUni = JSON.parse(content);
-          const apiVersion = ohUni?.apiVersion;
-          if (
-            typeof apiVersion === 'string' ||
-            typeof apiVersion === 'number'
-          ) {
-            const level = Number(apiVersion);
-            if (Number.isInteger(level) && level >= 17 && level <= 22) {
-              return level;
-            }
-          }
-        }
+      if (typeof apiVersion !== 'string' && typeof apiVersion !== 'number') {
+        return undefined;
       }
+
+      const level = Number(apiVersion);
+      return ToolProvider.isValidApiLevel(level) ? level : undefined;
     } catch {
-      // Ignore errors
+      return undefined;
+    }
+  }
+
+  private static detectFromSdkPkg(sdkPath: string): number | undefined {
+    const sdkPkgPath = path.join(sdkPath, 'default', 'sdk-pkg.json');
+    return ToolProvider.parseApiLevelFromFile(sdkPkgPath);
+  }
+
+  private static detectFromOhUniPackage(sdkPath: string): number | undefined {
+    const ohUniPaths = [
+      path.join(
+        sdkPath,
+        'default',
+        'openharmony',
+        'toolchains',
+        'oh-uni-package.json'
+      ),
+      path.join(
+        sdkPath,
+        'default',
+        'openharmony',
+        'native',
+        'oh-uni-package.json'
+      ),
+      path.join(
+        sdkPath,
+        'default',
+        'openharmony',
+        'previewer',
+        'oh-uni-package.json'
+      ),
+    ];
+
+    for (const ohUniPath of ohUniPaths) {
+      const level = ToolProvider.parseApiLevelFromFile(ohUniPath);
+      if (level !== undefined) {
+        return level;
+      }
+    }
+
+    return undefined;
+  }
+
+  public detectApiLevel(): number {
+    const fromSdkPkg = ToolProvider.detectFromSdkPkg(this.sdkPath);
+    if (fromSdkPkg !== undefined) {
+      return fromSdkPkg;
+    }
+
+    const fromOhUni = ToolProvider.detectFromOhUniPackage(this.sdkPath);
+    if (fromOhUni !== undefined) {
+      return fromOhUni;
     }
 
     return 22;
