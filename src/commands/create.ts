@@ -78,7 +78,8 @@ const createCommand = new Command('create')
         projectPath,
         appName,
         bundleName,
-        apiLevel
+        apiLevel,
+        toolProvider.devecoStudioPath
       );
 
       console.log('\n' + green('Project created successfully!'));
