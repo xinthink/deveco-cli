@@ -278,20 +278,15 @@ export class Project {
     }
 
     const moduleType = this.getModuleType(moduleName);
-    const metadataDir =
-      moduleType === 'shared' ? 'hsp_metadata' : 'hap_metadata';
-    const metadataKey = moduleType === 'shared' ? 'hspName' : 'hapName';
+    const isShared = moduleType === 'shared';
+    const metadataKey = isShared ? 'hspName' : 'hapName';
 
-    const metadataPath = path.join(
-      this.rootDir,
-      moduleNode.srcPath,
-      'build',
-      product,
+    const metadataPath = this.buildOutputPath(moduleNode.srcPath, product, [
       'intermediates',
-      metadataDir,
+      isShared ? 'hsp_metadata' : 'hap_metadata',
       target,
-      'output_metadata.json'
-    );
+      'output_metadata.json',
+    ]);
 
     if (!fs.existsSync(metadataPath)) {
       throw new Error(
@@ -310,21 +305,25 @@ export class Project {
       );
     }
 
-    const packagePath = path.join(
-      this.rootDir,
-      moduleNode.srcPath,
-      'build',
-      product,
+    const packagePath = this.buildOutputPath(moduleNode.srcPath, product, [
       'outputs',
       target,
-      packageName
-    );
+      packageName,
+    ]);
 
     if (!fs.existsSync(packagePath)) {
       throw new Error(`Generated package file does not exist: ${packagePath}`);
     }
 
     return packagePath;
+  }
+
+  private buildOutputPath(
+    srcPath: string,
+    product: string,
+    segments: string[]
+  ): string {
+    return path.join(this.rootDir, srcPath, 'build', product, ...segments);
   }
 
   private parseOutputMetadata(

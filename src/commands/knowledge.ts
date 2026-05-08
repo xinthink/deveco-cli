@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { Command } from 'commander';
-import { green, red } from 'colorette';
+import { red } from 'colorette';
 import { Knowledge, normalizeBigSearchQuestion } from '../utils/knowledge';
 import { loginService } from '../auth/login-service';
 
@@ -12,10 +12,10 @@ interface KnowledgeCliOptions {
 }
 
 const knowledgeCommand = new Command('knowledge')
-  .description('Call big-search API (POST with content in JSON body)')
+  .description('Search HarmonyOS app development knowledge (ArkTS / ArkUI / API usage, etc.)')
   .requiredOption(
     '--keywords <words...>',
-    'Question: multiple words allowed without quotes (e.g. --keywords ArkTS Row 布局)',
+    'HarmonyOS knowledge query: multiple words allowed without quotes (e.g. --keywords ArkTS Row 布局)',
   )
   .action(async (opts: KnowledgeCliOptions) => {
     if (!(await loginService.isLoggedIn())) {

@@ -1,149 +1,76 @@
 # deveco-cli
 
-HarmonyOS application development command line tool.
+> HarmonyOS application development command line tool.
 
-## Features
+`deveco` is a unified CLI wrapper around the DevEco Studio toolchain — `ohpm`, `hvigor`, `hdc`, `emulator`, `hilog` — plus Huawei Developer login, HarmonyOS knowledge search, the HMOS skills installer, and a project-scaffolding template. Drive the full HarmonyOS workflow (create → build → install → run → log → query → install AI skills) from one binary, with no `PATH` / `DEVECO_SDK_HOME` / `JAVA_HOME` setup.
 
-### build
+## Quick Start
 
-Automates HarmonyOS project builds using `ohpm` and `hvigor`.
+**Prerequisites:** Node.js >= 18, DevEco Studio installed (Windows or macOS).
 
-#### Usage
+> Not published yet — until then, build from source (see [Development](#development)) and run `node ./dist/cli.js`. After release, self-update via `deveco update`.
 
-```text
-Usage: deveco build [options]
-
-Build HarmonyOS project
-
-Options:
-  --product <product>      Product to build
-  --modules <modules...>   Modules to build. Format: module or module@target
-  --buildMode <buildMode>  Build mode (e.g., debug, release)
-  -h, --help               display help for command
-```
-
-#### Example
+From any directory inside a HarmonyOS project:
 
 ```bash
-deveco build                                   # Auto-detects and builds the entry module
-deveco build --modules entry feature@default   # Build specific modules (with optional targets)
-deveco build --product default                 # Build specific product (mutually exclusive with --modules)
-deveco build --buildMode release               # Specify build mode (debug/release)
+deveco --help            # See all commands
+deveco build             # Build the entry module (auto-detected)
+deveco run               # Install + launch on the connected device / emulator
 ```
 
-### update
-
-Update the CLI tool to the latest version.
-
-#### Usage
-
-```text
-Usage: deveco update
-
-Update the CLI tool to the latest version
-
-Options:
-  -h, --help  display help for command
-```
-
-#### Example
+Or start a brand-new project from the bundled template:
 
 ```bash
-deveco update  # Updates the CLI tool globally via npm
+deveco create --project-path ./MyApp --app-name MyApp
+cd MyApp
+deveco build
 ```
 
-### emulator
-
-Emulator management commands (list, start, stop).
-
-#### Usage
-
-```text
-Usage: deveco emulator [options]
-
-Emulator management commands
-
-Options:
-  --list          List all emulator instances
-  --start         Start an emulator
-  --stop          Stop an emulator
-  --name <name>   Emulator instance name
-  -h, --help      display help for command
-```
-
-#### Example
+A typical end-to-end flow:
 
 ```bash
-deveco emulator --list                        # List all emulator instances
-deveco emulator --start --name MyEmulator     # Start an emulator by name
-deveco emulator --stop --name MyEmulator      # Stop an emulator by name
+deveco create --project-path ./MyApp --app-name MyApp
+cd MyApp
+deveco emulator --start --name HarmonyOS_Phone
+deveco build --build-mode debug
+deveco run
+deveco log --level E
 ```
 
-### device
+Run any command with `--help` for full options. Set `DEVECO_CLI_DEBUG=1` to print the raw underlying tool invocations.
 
-Device management commands (list, info, install, uninstall).
+## Commands
 
-#### Usage
+| Command | Purpose |
+| --- | --- |
+| `deveco create` | Scaffold a new HarmonyOS application project from the bundled template |
+| `deveco build` | Build / package a project or modules into `.hap` / `.hsp` / `.har` / `.app` |
+| `deveco run` | Install (with HSP deps) and launch on a device / emulator |
+| `deveco device` | List / inspect / install / uninstall on connected devices |
+| `deveco emulator` | List / start / stop local emulators |
+| `deveco log` | Fetch hilog or crash logs (with level / bundle / keyword filters) |
+| `deveco knowledge` | Search the HarmonyOS / ArkTS knowledge base (requires `deveco login`) |
+| `deveco skills` | List / find / add / remove HMOS skills for AI agents and projects |
+| `deveco login` / `logout` | Sign in / out of a Huawei Developer account |
+| `deveco update` | Update the CLI itself (`npm install -g deveco-cli@latest`) |
 
-```text
-Usage: deveco device [options]
+Run `deveco <cmd> --help` for full options, or see [`SKILL.md`](./SKILL.md) for the detailed reference (also consumed by AI agents).
 
-Device management commands
+Cross-platform: works on **Windows** and **macOS**; Linux is not yet supported (DevEco Studio's bundled toolchain isn't officially distributed for Linux).
 
-Options:
-  -t, --target <serial>           Target device serial number
-  --list                          List all connected devices
-  --info                          Show detailed device information
-  --install <packagePaths...>     Install application packages (.hap, .hsp, .app)
-                                  Supports multiple packages for dependency-first installation
-  --uninstall <bundleName>        Uninstall an application by bundle name
-  -b, --bundle <bundleName>       Bundle name for starting app after install
-  -a, --ability <abilityName>     Ability name for starting app after install
-  -h, --help                      display help for command
-```
-
-#### Example
+## Development
 
 ```bash
-deveco device --list                                                       # List all connected devices
-deveco device --info                                                       # Show info of the single device
-deveco device --info -t <serial>                                           # Show info of a specific device
-deveco device --install ./entry-default-signed.hap                         # Install app to the single device
-deveco device --install ./entry-default-signed.hap -t <serial>             # Install app to a specific device
-deveco device --install ./lib.hsp ./entry-default-signed.hap               # Multi-package install (dependencies first)
-deveco device --install ./entry.hap -b com.example.entry -a EntryAbility   # Install and auto-start app
-deveco device --uninstall com.example.entry                                # Uninstall app by bundle name
-deveco device --uninstall com.example.entry -t <serial>                    # Uninstall from a specific device
+npm install
+npm run dev                  # Watch mode
+npm start -- <command>       # tsx (no build step)
+npm run lint                 # add :fix to autofix
+npm run format
+npm run build                # tsup → dist/cli.js, then regenerates SKILL.md from SKILL_TEMP.md
 ```
 
-### log
+See [`AGENTS.md`](./AGENTS.md) for the architecture overview.
 
-Log management commands (list, info, install, uninstall).
+## License
 
-#### Usage
-
-```text
-Usage: deveco log [options]
-
-Obtain device application logs
-
-Options:
-  --crash               Only obtain the crash log
-  --target <device>     Target device ID or name
-  --level <level>       Log level filtering: D, I, W, E, F
-  --bundle-name <name>  Application package name filtering
-  --keyword <pattern>   Keyword filtering
-  -h, --help            display help for command
-```
-
-#### Example
-
-```bash
-deveco log                                  					# Displaying common logs
-deveco log --crash                          					# Displaying crash logs
-deveco log --target 127.0.0.1:5555          					# Filtering and displaying common logs of the device whose ID is 127.0.0.1:5555
-deveco log --target "deviceName"          					  # Filtering and displaying common logs of the device whose name is "deviceName"
-deveco log --level I                        					# Filtering and displaying logs whose log level is I 
-deveco log --bundle-name com.example.myapplication    # Filtering and displaying logs whose application package name is "com.example.myapplication" 
-deveco log --keyword err:1002               					# Filtering and displaying logs with the keyword is "err:1002"
-```
+[MIT](./LICENSE)
