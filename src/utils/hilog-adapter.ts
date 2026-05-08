@@ -19,11 +19,28 @@ export class HilogAdapter {
 
   /**
    * 获取选择的设备
+   * @param deviceArg 用户传入的 --device 参数（可以是设备 name 或 serial）
    */
-  async selectDevice(): Promise<string | undefined> {
+  async selectDevice(deviceArg?: string): Promise<string | undefined> {
     const connectedDevices = await this.getConnectedDevices();
     if (!connectedDevices) {
       return undefined;
+    }
+
+    if (deviceArg) {
+      const found = connectedDevices.find(
+        (d) => d.deviceId === deviceArg || d.name.includes(deviceArg),
+      );
+      if (found) {
+        console.log(blue(`Use the device: ${found.name} (${found.deviceId})`));
+        return found.deviceId;
+      }
+      const list = connectedDevices
+        .map((d) => `  - ${d.name} (${d.deviceId})`)
+        .join('\n');
+      throw new Error(
+        `Device '${deviceArg}' not found.\nAvailable devices:\n${list}`,
+      );
     }
 
     if (connectedDevices.length === 1) {
