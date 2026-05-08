@@ -13,7 +13,6 @@ import {
   getInstalledAgents,
 } from '../skills/api';
 import {
-  checkAgentExists,
   downloadSkill,
   installSkillToAgentWithBuffer,
   installSkillToProject,
@@ -21,69 +20,12 @@ import {
   removeSkillFromAgent,
   removeSkillFromProject,
 } from '../skills/installer';
-import { AGENT_SKILLS_CONFIG } from '../config/constants';
+import {
+  parseAgentList,
+  getAllExistingAgents,
+  summarizeOperationResults,
+} from '../skills/agents';
 import { AddOptions, RemoveOptions, SkillOperationResult } from '../types/skills';
-
-
-/**
- * 解析和验证 agent 列表
- * @param agentOption 逗号分隔的 agent 列表字符串
- * @returns 验证通过的 agent 名称列表
- * @throws 如果任何 agent 不存在
- */
-async function parseAgentList(
-  agentOption: string | undefined
-): Promise<string[]> {
-  if (!agentOption) {
-    return [];
-  }
-
-  const agents: string[] = [];
-  const agentList = agentOption.split(',').map((a) => a.trim());
-
-  for (const agentName of agentList) {
-    if (!(await checkAgentExists(agentName))) {
-      throw new Error(`Agent "${agentName}" 不存在`);
-    }
-    agents.push(agentName);
-  }
-
-  return agents;
-}
-
-/**
- * 获取所有实际存在的 agents
- * @returns 存在的 agent 名称列表
- */
-async function getAllExistingAgents(): Promise<string[]> {
-  const agents: string[] = [];
-
-  for (const agentName of Object.keys(AGENT_SKILLS_CONFIG)) {
-    if (await checkAgentExists(agentName)) {
-      agents.push(agentName);
-    }
-  }
-
-  return agents;
-}
-
-/**
- * 汇总并输出结果
- * @param results 结果列表
- */
-function summarizeOperationResults(results: SkillOperationResult[]): void {
-  const successCount = results.filter((r) => r.success && !r.skipped).length;
-  const skippedCount = results.filter((r) => r.skipped).length;
-  const failedCount = results.filter((r) => !r.success).length;
-
-  console.log(`  ${green('成功')}: ${successCount}`);
-  console.log(`  ${yellow('跳过')}: ${skippedCount}`);
-  console.log(`  ${red('失败')}: ${failedCount}`);
-
-  if (failedCount > 0) {
-    process.exitCode = 1;
-  }
-}
 
 /**
  * 获取要安装的技能名称列表

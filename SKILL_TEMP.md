@@ -133,6 +133,10 @@ Examples:
 
 Sign in / out of a Huawei Developer account (required by `deveco knowledge`).
 
+### `deveco init`
+
+One-time, user-side: installs the bundled `deveco-cli` skill into your AI agents (and optionally a project) so they learn how to drive `deveco`. Run `deveco init --help` for options.
+
 ### `deveco skills`
 
 Install / remove HMOS skills (agent-side knowledge packs) into AI agents (`claude`, `cursor`, `gemini`, `opencode`, …) and / or a project root.
