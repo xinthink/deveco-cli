@@ -68,8 +68,15 @@ export class ToolProvider {
 
   public static async new(): Promise<ToolProvider> {
     const devecoStudioPath = await ToolProvider.findDevEcoStudio();
-    const { nodePath, ohpmJsPath, hvigorJsPath, javaPath, sdkPath, hdcPath, emulatorPath } =
-      ToolProvider.resolveTools(devecoStudioPath);
+    const {
+      nodePath,
+      ohpmJsPath,
+      hvigorJsPath,
+      javaPath,
+      sdkPath,
+      hdcPath,
+      emulatorPath,
+    } = ToolProvider.resolveTools(devecoStudioPath);
     const emulatorLauncherPath = await ToolProvider.getEmulatorExe();
     return new ToolProvider(
       devecoStudioPath,
@@ -203,6 +210,48 @@ export class ToolProvider {
     );
   }
 
+  private static resolveWindowsTools(devecoStudioPath: string): {
+    nodePath: string;
+    ohpmJsPath: string;
+    hvigorJsPath: string;
+    javaPath: string;
+    sdkPath: string;
+  } {
+    const toolsDir = path.join(devecoStudioPath, 'tools');
+    return {
+      nodePath: path.join(toolsDir, 'node', 'node.exe'),
+      ohpmJsPath: path.join(toolsDir, 'ohpm', 'bin', 'pm-cli.js'),
+      hvigorJsPath: path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.js'),
+      javaPath: path.join(devecoStudioPath, 'jbr', 'bin', 'java.exe'),
+      sdkPath: path.join(devecoStudioPath, 'sdk'),
+    };
+  }
+
+  private static resolveMacTools(devecoStudioPath: string): {
+    nodePath: string;
+    ohpmJsPath: string;
+    hvigorJsPath: string;
+    javaPath: string;
+    sdkPath: string;
+  } {
+    const toolsDir = path.join(devecoStudioPath, 'Contents', 'tools');
+    return {
+      nodePath: path.join(toolsDir, 'node', 'bin', 'node'),
+      ohpmJsPath: path.join(toolsDir, 'ohpm', 'bin', 'pm-cli.js'),
+      hvigorJsPath: path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.js'),
+      javaPath: path.join(
+        devecoStudioPath,
+        'Contents',
+        'jbr',
+        'Contents',
+        'Home',
+        'bin',
+        'java'
+      ),
+      sdkPath: path.join(devecoStudioPath, 'Contents', 'sdk'),
+    };
+  }
+
   private static resolveTools(devecoStudioPath: string): {
     nodePath: string;
     ohpmJsPath: string;
@@ -213,44 +262,34 @@ export class ToolProvider {
     emulatorPath: string;
   } {
     const platform = os.platform();
-    let nodePath: string;
-    let ohpmJsPath: string;
-    let hvigorJsPath: string;
-    let javaPath: string;
-    let sdkPath: string;
 
-    if (platform === 'win32') {
-      const toolsDir = path.join(devecoStudioPath, 'tools');
-      nodePath = path.join(toolsDir, 'node', 'node.exe');
-      ohpmJsPath = path.join(toolsDir, 'ohpm', 'bin', 'pm-cli.js');
-      hvigorJsPath = path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.js');
-      javaPath = path.join(devecoStudioPath, 'jbr', 'bin', 'java.exe');
-      sdkPath = path.join(devecoStudioPath, 'sdk');
-    } else if (platform === 'darwin') {
-      const toolsDir = path.join(devecoStudioPath, 'Contents', 'tools');
-      nodePath = path.join(toolsDir, 'node', 'bin', 'node');
-      ohpmJsPath = path.join(toolsDir, 'ohpm', 'bin', 'pm-cli.js');
-      hvigorJsPath = path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.js');
-      javaPath = path.join(
-        devecoStudioPath,
-        'Contents',
-        'jbr',
-        'Contents',
-        'Home',
-        'bin',
-        'java'
-      );
-      sdkPath = path.join(devecoStudioPath, 'Contents', 'sdk');
-    } else {
-      throw new Error('Linux is not fully supported yet');
-    }
+    const tools =
+      platform === 'win32'
+        ? ToolProvider.resolveWindowsTools(devecoStudioPath)
+        : platform === 'darwin'
+          ? ToolProvider.resolveMacTools(devecoStudioPath)
+          : (() => {
+              throw new Error('Linux is not fully supported yet');
+            })();
 
-    ToolProvider.verifyTools(nodePath, ohpmJsPath, hvigorJsPath, javaPath);
+    ToolProvider.verifyTools(
+      tools.nodePath,
+      tools.ohpmJsPath,
+      tools.hvigorJsPath,
+      tools.javaPath
+    );
 
-    const hdcPath = ToolProvider.resolveHdcPath(sdkPath, platform);
-    const emulatorPath = ToolProvider.resolveEmulatorPath(devecoStudioPath, platform);
+    const hdcPath = ToolProvider.resolveHdcPath(tools.sdkPath, platform);
+    const emulatorPath = ToolProvider.resolveEmulatorPath(
+      devecoStudioPath,
+      platform
+    );
 
-    return { nodePath, ohpmJsPath, hvigorJsPath, javaPath, sdkPath, hdcPath, emulatorPath };
+    return {
+      ...tools,
+      hdcPath,
+      emulatorPath,
+    };
   }
 
   private static resolveHdcPath(sdkPath: string, platform: string): string {
@@ -266,16 +305,32 @@ export class ToolProvider {
       }
     }
 
-    throw new Error(`hdc executable not found. Searched in:\n${hdcPaths.join('\n')}`);
+    throw new Error(
+      `hdc executable not found. Searched in:\n${hdcPaths.join('\n')}`
+    );
   }
 
-  private static resolveEmulatorPath(devecoStudioPath: string, platform: string): string {
+  private static resolveEmulatorPath(
+    devecoStudioPath: string,
+    platform: string
+  ): string {
     let emulatorPath: string;
 
     if (platform === 'win32') {
-      emulatorPath = path.join(devecoStudioPath, 'tools', 'emulator', 'Emulator.exe');
+      emulatorPath = path.join(
+        devecoStudioPath,
+        'tools',
+        'emulator',
+        'Emulator.exe'
+      );
     } else if (platform === 'darwin') {
-      emulatorPath = path.join(devecoStudioPath, 'Contents', 'tools', 'emulator', 'Emulator');
+      emulatorPath = path.join(
+        devecoStudioPath,
+        'Contents',
+        'tools',
+        'emulator',
+        'Emulator'
+      );
     } else {
       throw new Error('Linux is not fully supported yet');
     }
@@ -345,5 +400,84 @@ export class ToolProvider {
     }
 
     return null;
+  }
+
+  private static isValidApiLevel(level: number): boolean {
+    return Number.isInteger(level) && level >= 17 && level <= 23;
+  }
+
+  private static parseApiLevelFromFile(filePath: string): number | undefined {
+    if (!fs.existsSync(filePath)) {
+      return undefined;
+    }
+
+    try {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const data = JSON.parse(content);
+      const apiVersion = data?.apiVersion ?? data?.data?.apiVersion;
+
+      if (typeof apiVersion !== 'string' && typeof apiVersion !== 'number') {
+        return undefined;
+      }
+
+      const level = Number(apiVersion);
+      return ToolProvider.isValidApiLevel(level) ? level : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private static detectFromSdkPkg(sdkPath: string): number | undefined {
+    const sdkPkgPath = path.join(sdkPath, 'default', 'sdk-pkg.json');
+    return ToolProvider.parseApiLevelFromFile(sdkPkgPath);
+  }
+
+  private static detectFromOhUniPackage(sdkPath: string): number | undefined {
+    const ohUniPaths = [
+      path.join(
+        sdkPath,
+        'default',
+        'openharmony',
+        'toolchains',
+        'oh-uni-package.json'
+      ),
+      path.join(
+        sdkPath,
+        'default',
+        'openharmony',
+        'native',
+        'oh-uni-package.json'
+      ),
+      path.join(
+        sdkPath,
+        'default',
+        'openharmony',
+        'previewer',
+        'oh-uni-package.json'
+      ),
+    ];
+
+    for (const ohUniPath of ohUniPaths) {
+      const level = ToolProvider.parseApiLevelFromFile(ohUniPath);
+      if (level !== undefined) {
+        return level;
+      }
+    }
+
+    return undefined;
+  }
+
+  public detectApiLevel(): number {
+    const fromSdkPkg = ToolProvider.detectFromSdkPkg(this.sdkPath);
+    if (fromSdkPkg !== undefined) {
+      return fromSdkPkg;
+    }
+
+    const fromOhUni = ToolProvider.detectFromOhUniPackage(this.sdkPath);
+    if (fromOhUni !== undefined) {
+      return fromOhUni;
+    }
+
+    return 22;
   }
 }

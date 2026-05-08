@@ -9,6 +9,8 @@
   },
   "files": [
     "dist",
+    "scripts",
+    "templates",
     "THIRD-PARTY-LICENSES",
     "SKILL.md"
   ],
