@@ -42,6 +42,8 @@ export const ApiEndpoints = {
   LOGIN_SUCCESS_PATH: 'console/DevEcoIDE/loginSuccess',
 
   LOGIN_FAILED_PATH: 'console/DevEcoIDE/loginFailed',
+
+  LOGOUT_PATH: 'authrouter/auth/api/logout',
 } as const;
 
 export const CryptoConstants = {
@@ -65,6 +67,7 @@ export const DEFAULT_LOGIN_CONFIG = {
   jwtTokenCheckUrl: ApiEndpoints.JWT_TOKEN_CHECK_PATH,
   successRedirectUrl: ApiEndpoints.LOGIN_SUCCESS_PATH,
   failedRedirectUrl: ApiEndpoints.LOGIN_FAILED_PATH,
+  logoutUrl: ApiEndpoints.LOGOUT_PATH,
   appId: AppConfig.APP_ID,
   defaultPort: NetworkConstants.DEFAULT_AUTH_PORT,
   timeout: TimeConstants.LOGIN_TIMEOUT_MS,

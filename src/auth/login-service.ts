@@ -11,6 +11,7 @@ import { DEFAULT_LOGIN_CONFIG } from '../config/constants';
 import { openBrowser } from '../utils/browser';
 import { tokenChecker } from './token-checker';
 import { userInfoFetcher } from './user-info-fetcher';
+import { httpClient } from '../utils/http-client';
 
 /**
  * 登录服务类
@@ -129,6 +130,15 @@ export class LoginService {
    * 清除本地存储的 Token
    */
   public async logout(): Promise<void> {
+    const jwtToken = await tokenStorage.loadJwtToken();
+    if (jwtToken == null) {
+      return;
+    }
+    const regionalizedBaseUrl = this.getRegionalizedBaseUrl();
+    const logoutUrl = `${regionalizedBaseUrl}/${this.config.logoutUrl}?jwtToken=${jwtToken}`;
+    await httpClient.post(logoutUrl, {
+      timeout: 5000,
+    });
     await tokenStorage.clearToken();
   }
 
