@@ -222,3 +222,9 @@ export interface RemoveOptions {
   readonly agent?: string;
   readonly project?: string;
 }
+
+export interface InitOptions {
+  readonly agent?: string;
+  readonly project?: string;
+  readonly force?: boolean;
+}

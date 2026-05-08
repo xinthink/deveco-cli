@@ -16,6 +16,7 @@ import skillsCommand from './commands/skills.js';
 import knowledgeCommand from './commands/knowledge.js';
 import logCommand from './commands/log.js';
 import createCommand from './commands/create.js';
+import initCommand from './commands/init.js';
 
 program
   .name('deveco')
@@ -33,6 +34,7 @@ program.addCommand(knowledgeCommand);
 program.addCommand(skillsCommand);
 program.addCommand(logCommand);
 program.addCommand(createCommand);
+program.addCommand(initCommand);
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(err);
