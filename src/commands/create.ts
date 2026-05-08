@@ -23,7 +23,7 @@ function deriveBundleName(appName: string): string {
 }
 
 const createCommand = new Command('create')
-  .description('Initialize a new HarmonyOS application project')
+  .description('Initialize a new application project')
   .option('--project-path <path>', 'Project directory path')
   .option('--app-name <name>', 'Application name')
   .option(
@@ -47,7 +47,7 @@ const createCommand = new Command('create')
       const appName = options.appName;
       const bundleName = options.bundleName || deriveBundleName(appName);
 
-      console.log(cyan('Initializing HarmonyOS project...'));
+      console.log(cyan('Initializing project...'));
       console.log(`Project path: ${projectPath}`);
       console.log(`App name: ${appName}`);
       console.log(`Bundle name: ${bundleName}`);
@@ -59,9 +59,9 @@ const createCommand = new Command('create')
 
       if (options.apiLevel) {
         const parsed = Number(options.apiLevel);
-        if (!Number.isInteger(parsed) || parsed < 17 || parsed > 22) {
+        if (!Number.isInteger(parsed) || parsed < 17 || parsed > 23) {
           console.error(
-            red(`Error: Invalid API level ${options.apiLevel}. Must be 17-22`)
+            red(`Error: Invalid API level ${options.apiLevel}. Must be 17-23`)
           );
           process.exit(1);
         }

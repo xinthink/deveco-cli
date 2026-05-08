@@ -403,7 +403,7 @@ export class ToolProvider {
   }
 
   private static isValidApiLevel(level: number): boolean {
-    return Number.isInteger(level) && level >= 17 && level <= 22;
+    return Number.isInteger(level) && level >= 17 && level <= 23;
   }
 
   private static parseApiLevelFromFile(filePath: string): number | undefined {

@@ -16,16 +16,13 @@ const API_CONFIGS: Record<
   20: { sdkVersion: '6.0.0(20)', modelVersion: '6.0.0' },
   21: { sdkVersion: '6.0.1(21)', modelVersion: '6.0.1' },
   22: { sdkVersion: '6.0.2(22)', modelVersion: '6.0.2' },
+  23: { sdkVersion: '6.1.0(23)', modelVersion: '6.1.0' },
 };
 
 const REQUIRED_FILES = [
   'build-profile.json5',
   'AppScope/resources/base/media/layered_image.json',
-  'AppScope/resources/base/media/background.png',
-  'AppScope/resources/base/media/foreground.png',
   'entry/src/main/resources/base/media/layered_image.json',
-  'entry/src/main/resources/base/media/background.png',
-  'entry/src/main/resources/base/media/foreground.png',
 ];
 
 function getTemplateDir(): string {
@@ -95,6 +92,10 @@ function updateApiLevel(targetRoot: string, apiLevel: number): void {
   replaceInFile(path.join(targetRoot, 'hvigor', 'hvigor-config.json5'), [
     ['6.0.2', config.modelVersion],
   ]);
+
+  replaceInFile(path.join(targetRoot, 'oh-package.json5'), [
+    ['6.0.2', config.modelVersion],
+  ]);
 }
 
 function verifyFiles(targetRoot: string): boolean {
@@ -103,6 +104,35 @@ function verifyFiles(targetRoot: string): boolean {
   );
 
   return missingFiles.length === 0;
+}
+
+function generateMinimalPng(): Buffer {
+  return Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+    0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00,
+    0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xff, 0xff, 0xff,
+    0x00, 0x05, 0xfe, 0x02, 0xfe, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+    0x44, 0xae, 0x42, 0x60, 0x82,
+  ]);
+}
+
+function createPlaceholderImages(targetRoot: string): void {
+  const pngBuffer = generateMinimalPng();
+
+  const imagePaths = [
+    'AppScope/resources/base/media/background.png',
+    'AppScope/resources/base/media/foreground.png',
+    'entry/src/main/resources/base/media/background.png',
+    'entry/src/main/resources/base/media/foreground.png',
+    'entry/src/main/resources/base/media/startIcon.png',
+  ];
+
+  for (const imagePath of imagePaths) {
+    const fullPath = path.join(targetRoot, imagePath);
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, pngBuffer);
+  }
 }
 
 export interface CreateProjectResult {
@@ -129,6 +159,8 @@ export function createProject(
   const targetRoot = path.join(projectPath, appName);
 
   copyDirectoryContents(templateDir, targetRoot);
+
+  createPlaceholderImages(targetRoot);
 
   replaceInFile(
     path.join(
