@@ -13,6 +13,7 @@ interface LogOptions {
   level?: string;
   bundleName?: string;
   keyword?: string;
+  follow?: boolean;
 }
 
 const logCommand = new Command('log')
@@ -22,6 +23,7 @@ const logCommand = new Command('log')
   .option('--level <level>', 'Log level filter: D, I, W, E, F')
   .option('--bundle-name <bundle-name>', 'Filter by application bundle name')
   .option('--keyword <keyword>', 'Keyword filter')
+  .option('--follow', 'Follow the log stream in real-time.')
   .action(async (options: LogOptions) => {
     await handleLogCommand(options);
   });
@@ -43,12 +45,15 @@ async function handleLogCommand(options: LogOptions) {
     const logs = options.crash
       ? await service.getCrashLog(deviceId, options.bundleName)
       : await service.getHilog(deviceId, {
-          level: options.level,
-          bundleName: options.bundleName,
-          keyword: options.keyword,
-        });
+        level: options.level,
+        bundleName: options.bundleName,
+        keyword: options.keyword,
+        isFollow: options.follow ? true : false,
+      });
 
-    console.log(logs);
+    if (logs) {
+      console.log(logs);
+    }
   } catch (error) {
     console.error(red(`error: ${(error as Error).message}`));
     process.exit(1);
