@@ -25,33 +25,17 @@ export const SkillsApiConstants = {
  * 定义各 agent 的 skills 目录路径和显示名称
  */
 export const AGENT_SKILLS_CONFIG = {
-  claude: {
-    path: '.claude/skills',
-    displayName: 'claude-code',
-  },
   'trae-cn': {
     path: '.trae-cn/skills',
     displayName: 'trae-cn',
-  },
-  trae: {
-    path: '.trae/skills',
-    displayName: 'trae',
   },
   opencode: {
     path: '.config/opencode/skills',
     displayName: 'opencode',
   },
-  gemini: {
-    path: '.gemini/skills',
-    displayName: 'gemini',
-  },
   cursor: {
     path: '.cursor/skills',
     displayName: 'cursor',
-  },
-  codex: {
-    path: '.codex/skills',
-    displayName: 'codex',
   },
   codebuddy: {
     path: '.codebuddy/skills',

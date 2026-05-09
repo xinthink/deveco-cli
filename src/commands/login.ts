@@ -7,7 +7,7 @@ import { green, red, cyan } from 'colorette';
 import { loginService } from '../auth/login-service';
 
 const loginCommand = new Command('login')
-  .description('Sign in with Huawei Developer account')
+  .description('Login to a Huawei developer account')
   .action(async () => {
     console.log(cyan('Starting login process...'));
 

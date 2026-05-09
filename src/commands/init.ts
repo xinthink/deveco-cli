@@ -25,7 +25,7 @@ const DEVECO_CLI_SKILL_NAME = 'deveco-cli';
  */
 async function handleInitCommand(options: InitOptions): Promise<void> {
   if (options.project && !fs.existsSync(options.project)) {
-    throw new Error(`目录 "${options.project}" 不存在`);
+    throw new Error(`Directory "${options.project}" not found`);
   }
 
   const sourceFile = resolveBundledSkillMdPath();
@@ -59,8 +59,6 @@ async function handleInitCommand(options: InitOptions): Promise<void> {
     results.push(result);
   }
 
-  console.log();
-  console.log(cyan('安装完成:'));
   summarizeOperationResults(results);
 }
 

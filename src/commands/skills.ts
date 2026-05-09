@@ -25,7 +25,11 @@ import {
   getAllExistingAgents,
   summarizeOperationResults,
 } from '../skills/agents';
-import { AddOptions, RemoveOptions, SkillOperationResult } from '../types/skills';
+import {
+  AddOptions,
+  RemoveOptions,
+  SkillOperationResult,
+} from '../types/skills';
 
 /**
  * 获取要安装的技能名称列表
@@ -42,7 +46,7 @@ async function getSkillNames(options: AddOptions): Promise<string[]> {
     const allSkills = await searchSkills(options.skill!, tagId);
     const skill = allSkills.find((s) => s.enName === options.skill);
     if (!skill) {
-      throw new Error(`技能 "${options.skill}" 不存在`);
+      throw new Error(`Skill "${options.skill}" not found`);
     }
     return [skill.enName];
   }
@@ -90,17 +94,17 @@ async function installSingleSkill(
 async function handleAddCommand(options: AddOptions): Promise<void> {
   // 1. 参数验证：--all 和 --skill 不能同时指定
   if (options.all && options.skill) {
-    throw new Error('--all 和 --skill 不能同时指定');
+    throw new Error('--all and --skill cannot be specified together');
   }
 
   // 2. 参数验证：必须提供 --all 或 --skill
   if (!options.all && !options.skill) {
-    throw new Error('必须指定 --all 或 --skill');
+    throw new Error('Must specify --all or --skill');
   }
 
   // 3. 目录存在性检查
   if (options.project && !fs.existsSync(options.project)) {
-    throw new Error(`目录 "${options.project}" 不存在`);
+    throw new Error(`Directory "${options.project}" not found`);
   }
 
   // 4. 获取技能名称列表
@@ -123,8 +127,8 @@ async function handleAddCommand(options: AddOptions): Promise<void> {
     try {
       zipBuffer = await downloadSkill(skillName);
     } catch (error: unknown) {
-      const errorMsg = error instanceof Error ? error.message : '未知错误';
-      console.log(red(`${skillName}: 下载失败 - ${errorMsg}`));
+      const errorMsg = error instanceof Error ? error.message : 'unknown error';
+      console.log(red(`${skillName}: Download failed - ${errorMsg}`));
       continue;
     }
 
@@ -139,8 +143,6 @@ async function handleAddCommand(options: AddOptions): Promise<void> {
   }
 
   // 7. 汇总输出
-  console.log();
-  console.log(cyan('安装完成:'));
   summarizeOperationResults(results);
 }
 
@@ -153,7 +155,7 @@ async function handleRemoveCommand(
 ): Promise<void> {
   // 1. 目录存在性检查
   if (options.project && !fs.existsSync(options.project)) {
-    throw new Error(`项目目录 "${options.project}" 不存在`);
+    throw new Error(`Project directory "${options.project}" not found`);
   }
 
   // 2. 获取 agent 列表
@@ -180,15 +182,11 @@ async function handleRemoveCommand(
   }
 
   // 4. 汇总输出
-  console.log();
-  console.log(cyan('移除完成:'));
   summarizeOperationResults(results);
 }
 
 // 创建主命令
-const skillsCommand = new Command('skills').description(
-  'Manage HMOS skills.'
-);
+const skillsCommand = new Command('skills').description('Manage HMOS skills.');
 
 // 添加 list 子命令
 skillsCommand
@@ -270,7 +268,7 @@ skillsCommand
   .option('--all', 'Install all available skills')
   .option(
     '--agent <agents>',
-    "Target agents (comma-separated, e.g., 'claude,opencode,gemini'). If omitted, installs to all available agents."
+    "Target agents (comma-separated, e.g., 'codebuddy,opencode'). If omitted, installs to all available agents."
   )
   .option('--skill <skill-name>', 'Specific skill to install.')
   .option(
@@ -295,18 +293,19 @@ skillsCommand
 
 // 添加 remove 子命令
 skillsCommand
-  .command('remove <skill-name>')
+  .command('remove')
   .description(
     'Remove an installed skill from AI agents. Deletes the skill directory from specified agents. By default removes from all available agents.'
   )
+  .requiredOption('--skill <skill-name>', 'Skill name to remove.')
   .option(
     '--agent <agents>',
-    "Target agents (comma-separated, e.g., 'claude,opencode'). If omitted, removes from all available agents."
+    "Target agents (comma-separated, e.g., 'codebuddy,opencode'). If omitted, removes from all available agents."
   )
   .option('--project <path>', 'Path to a project root from which to remove.')
-  .action(async (skillName: string, options: RemoveOptions) => {
+  .action(async (options: RemoveOptions) => {
     try {
-      await handleRemoveCommand(skillName, options);
+      await handleRemoveCommand(options.skill!, options);
     } catch (error: unknown) {
       console.log(red('Skills remove failed'));
       if (error instanceof Error && error.message) {

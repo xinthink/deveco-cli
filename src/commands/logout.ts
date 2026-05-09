@@ -7,7 +7,7 @@ import { green, red } from 'colorette';
 import { loginService } from '../auth/login-service';
 
 const logoutCommand = new Command('logout')
-  .description('Sign out of Huawei Developer account')
+  .description('Log out of Huawei developer account')
   .action(async () => {
     try {
       await loginService.logout();

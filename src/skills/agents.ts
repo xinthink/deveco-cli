@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { green, red, yellow } from 'colorette';
+import { green, red, yellow, cyan } from 'colorette';
 import { AGENT_SKILLS_CONFIG } from '../config/constants';
 import { SkillOperationResult } from '../types/skills';
 import { checkAgentExists } from './installer';
@@ -26,7 +26,7 @@ export async function parseAgentList(
 
   for (const agentName of agentList) {
     if (!(await checkAgentExists(agentName))) {
-      throw new Error(`Agent "${agentName}" 不存在`);
+      throw new Error(`Agent ${agentName} not found`);
     }
     agents.push(agentName);
   }
@@ -61,9 +61,11 @@ export function summarizeOperationResults(
   const skippedCount = results.filter((r) => r.skipped).length;
   const failedCount = results.filter((r) => !r.success).length;
 
-  console.log(`  ${green('成功')}: ${successCount}`);
-  console.log(`  ${yellow('跳过')}: ${skippedCount}`);
-  console.log(`  ${red('失败')}: ${failedCount}`);
+  console.log();
+  console.log(cyan('Finished:'));
+  console.log(`  ${green('Success')}: ${successCount}`);
+  console.log(`  ${yellow('Skipped')}: ${skippedCount}`);
+  console.log(`  ${red('Failed')}: ${failedCount}`);
 
   if (failedCount > 0) {
     process.exitCode = 1;
