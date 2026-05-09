@@ -13,7 +13,7 @@
 End-to-end on the command line:
 
 ```bash
-deveco create --project-path ./MyApp --app-name MyApp   # scaffold
+deveco create --app-name MyApp   # scaffold (default path: pwd/MyApp)
 cd MyApp
 deveco build                                            # package .hap
 deveco run                                              # install + launch
