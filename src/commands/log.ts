@@ -17,11 +17,11 @@ interface LogOptions {
 
 const logCommand = new Command('log')
   .description('Obtain device application logs')
-  .option('-d, --device <device>', 'Target device (name or serial)')
+  .option('--device <device>', 'Target device (name or serial)')
   .option('--crash', 'Only obtain the crash log')
   .option('--level <level>', 'Log level filter: D, I, W, E, F')
   .option('--bundle-name <bundle-name>', 'Filter by application bundle name')
-  .option('--keyword <pattern>', 'Keyword filter')
+  .option('--keyword <keyword>', 'Keyword filter')
   .action(async (options: LogOptions) => {
     await handleLogCommand(options);
   });
