@@ -240,15 +240,14 @@ export function createProject(
   }
 
   fs.mkdirSync(projectPath, { recursive: true });
-  const targetRoot = path.join(projectPath, appName);
 
-  copyDirectoryContents(templateDir, targetRoot);
+  copyDirectoryContents(templateDir, projectPath);
 
-  createPlaceholderImages(targetRoot, devecoStudioPath);
+  createPlaceholderImages(projectPath, devecoStudioPath);
 
   replaceInFile(
     path.join(
-      targetRoot,
+      projectPath,
       'AppScope',
       'resources',
       'base',
@@ -258,20 +257,20 @@ export function createProject(
     [['MyApplication', appName]]
   );
 
-  replaceInFile(path.join(targetRoot, 'AppScope', 'app.json5'), [
+  replaceInFile(path.join(projectPath, 'AppScope', 'app.json5'), [
     ['com.example.myapplication', bundleName],
   ]);
 
-  updateApiLevel(targetRoot, apiLevel);
+  updateApiLevel(projectPath, apiLevel);
 
-  const verified = verifyFiles(targetRoot);
+  const verified = verifyFiles(projectPath);
 
   if (!verified) {
     throw new Error('Template integrity check failed');
   }
 
   return {
-    projectRoot: targetRoot,
+    projectRoot: projectPath,
     appName,
     bundleName,
     apiLevel,
