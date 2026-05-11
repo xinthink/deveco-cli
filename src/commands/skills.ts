@@ -186,15 +186,15 @@ async function handleRemoveCommand(
 }
 
 // 创建主命令
-const skillsCommand = new Command('skills').description('Manage HMOS skills.');
+const skillsCommand = new Command('skills').description('Manage HMOS skills');
 
 // 添加 list 子命令
 skillsCommand
   .command('list')
-  .description('List all available HMOS skills.')
+  .description('List all available HMOS skills')
   .option(
     '-l, --long',
-    'Show detailed information with description and installation status'
+    'Show detailed information including description and installation status'
   )
   .action(async (options: { long?: boolean }) => {
     try {
@@ -214,17 +214,13 @@ skillsCommand
           if (installedAgents.length > 0) {
             console.log(green(`Installed for: ${installedAgents.join(', ')}`));
           }
-
           console.log();
         } else {
           console.log(skill.enName);
         }
       }
     } catch (error: unknown) {
-      console.log(red('Skills list failed'));
-      if (error instanceof Error && error.message) {
-        console.error(red(error.message));
-      }
+      console.error(red((error as Error).message));
       process.exit(1);
     }
   });
@@ -232,7 +228,7 @@ skillsCommand
 // 添加 find 子命令
 skillsCommand
   .command('find <keyword>')
-  .description('Search skills by keyword.')
+  .description('Search skills by keyword')
   .action(async (keyword: string) => {
     try {
       const tagId = await fetchHmosTagId();
@@ -253,10 +249,7 @@ skillsCommand
         console.log();
       }
     } catch (error: unknown) {
-      console.log(red('Skills find failed'));
-      if (error instanceof Error && error.message) {
-        console.error(red(error.message));
-      }
+      console.error(red((error as Error).message));
       process.exit(1);
     }
   });
@@ -264,29 +257,25 @@ skillsCommand
 // 添加 add 子命令
 skillsCommand
   .command('add')
-  .description('Install skills to AI agents.')
+  .description('Install skills to AI agents')
   .option('--all', 'Install all available skills')
   .option(
     '--agent <agents>',
-    "Target agents (comma-separated, e.g., 'codebuddy,opencode'). If omitted, installs to all available agents."
+    'Target agents, comma-separated (e.g. codebuddy,opencode); installs to all available agents if omitted'
   )
-  .option('--skill <skill-name>', 'Specific skill to install.')
+  .option('--skill <skill-name>', 'Name of the skill to install')
+  .option('-f, --force', 'Overwrite an existing skill installation')
   .option(
-    '-f, --force',
-    'Force reinstall: overwrite existing skill installation if already present.'
+    '--project <path>',
+    'Project root directory to install the skill into'
   )
-  .option('--project <path>', 'Path to a project root in which to install.')
   .action(async (options: AddOptions) => {
     try {
       await handleAddCommand(options);
     } catch (error: unknown) {
-      console.log(red('Skills add failed'));
-      if (error instanceof Error && error.message) {
-        console.error(red(error.message));
-      }
+      console.error(red((error as Error).message));
       process.exit(1);
     } finally {
-      // 确保无论成功还是失败，都清理下载缓存
       clearDownloadCache();
     }
   });
@@ -294,23 +283,18 @@ skillsCommand
 // 添加 remove 子命令
 skillsCommand
   .command('remove')
-  .description(
-    'Remove an installed skill from AI agents. Deletes the skill directory from specified agents. By default removes from all available agents.'
-  )
-  .requiredOption('--skill <skill-name>', 'Skill name to remove.')
+  .description('Remove an installed skill from AI agents')
+  .requiredOption('--skill <skill-name>', 'Name of the skill to remove')
   .option(
     '--agent <agents>',
-    "Target agents (comma-separated, e.g., 'codebuddy,opencode'). If omitted, removes from all available agents."
+    'Target agents, comma-separated (e.g. codebuddy,opencode); removes from all available agents if omitted'
   )
-  .option('--project <path>', 'Path to a project root from which to remove.')
+  .option('--project <path>', 'Project root directory to remove the skill from')
   .action(async (options: RemoveOptions) => {
     try {
       await handleRemoveCommand(options.skill!, options);
     } catch (error: unknown) {
-      console.log(red('Skills remove failed'));
-      if (error instanceof Error && error.message) {
-        console.error(red(error.message));
-      }
+      console.error(red((error as Error).message));
       process.exit(1);
     }
   });

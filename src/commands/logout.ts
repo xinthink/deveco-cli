@@ -7,14 +7,14 @@ import { green, red } from 'colorette';
 import { loginService } from '../auth/login-service';
 
 const logoutCommand = new Command('logout')
-  .description('Log out of Huawei developer account')
+  .description('Log out of your Huawei Developer account')
   .action(async () => {
     try {
       await loginService.logout();
-      console.log(green('✓ Logout successful')); 
+      console.log(green('✓ Logout successful'));
     } catch (error) {
       const e = error as Error;
-      console.log(red('✗ Logout failed'));
+      console.error(red('✗ Logout failed'));
       if (e.message) {
         console.error(red(e.message));
       }

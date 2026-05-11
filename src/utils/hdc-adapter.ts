@@ -21,8 +21,6 @@ export class HdcAdapter {
 
   private async runHdc(args: string[], throwOnError = true): Promise<string> {
     const cmd = this.toolProvider.hdcPath;
-    const fullCommand = `hdc ${args.join(' ')}`;
-    console.log(`> ${fullCommand}`);
     debugLog(`Executing: ${cmd} ${args.join(' ')}`);
 
     try {
@@ -60,25 +58,46 @@ export class HdcAdapter {
   private async getDeviceName(target: string): Promise<string> {
     try {
       // Try emulator name
-      let stdout = await this.runHdc(['-t', target, 'shell', 'param', 'get', 'ohos.qemu.hvd.name'], false);
+      let stdout = await this.runHdc(
+        ['-t', target, 'shell', 'param', 'get', 'ohos.qemu.hvd.name'],
+        false
+      );
       stdout = stdout.trim();
-      if (stdout && !stdout.includes('fail!') && !stdout.includes('not found')) {
+      if (
+        stdout &&
+        !stdout.includes('fail!') &&
+        !stdout.includes('not found')
+      ) {
         return stdout;
       }
 
       // Try physical device name
-      stdout = await this.runHdc(['-t', target, 'shell', 'param', 'get', 'const.product.name'], false);
+      stdout = await this.runHdc(
+        ['-t', target, 'shell', 'param', 'get', 'const.product.name'],
+        false
+      );
       stdout = stdout.trim();
-      if (stdout && !stdout.includes('fail!') && !stdout.includes('not found')) {
+      if (
+        stdout &&
+        !stdout.includes('fail!') &&
+        !stdout.includes('not found')
+      ) {
         if (stdout !== 'emulator') {
           return stdout;
         }
       }
 
       // Fallback to model
-      stdout = await this.runHdc(['-t', target, 'shell', 'param', 'get', 'const.product.model'], false);
+      stdout = await this.runHdc(
+        ['-t', target, 'shell', 'param', 'get', 'const.product.model'],
+        false
+      );
       stdout = stdout.trim();
-      if (stdout && !stdout.includes('fail!') && !stdout.includes('not found')) {
+      if (
+        stdout &&
+        !stdout.includes('fail!') &&
+        !stdout.includes('not found')
+      ) {
         return stdout;
       }
     } catch {
@@ -102,20 +121,49 @@ export class HdcAdapter {
 
       // 2. Push all packages to the remote directory
       for (const localPath of apkPaths) {
-        await this.runHdc(['-t', target, 'file', 'send', localPath, remoteDir + '/']);
+        await this.runHdc([
+          '-t',
+          target,
+          'file',
+          'send',
+          localPath,
+          remoteDir + '/',
+        ]);
       }
 
       // 3. Install from the temporary directory
       // Using 'bm install -p' for directory installation
-      await this.runHdc(['-t', target, 'shell', 'bm', 'install', '-p', remoteDir]);
+      await this.runHdc([
+        '-t',
+        target,
+        'shell',
+        'bm',
+        'install',
+        '-p',
+        remoteDir,
+      ]);
     } finally {
       // 4. Remove the temporary directory
       await this.runHdc(['-t', target, 'shell', 'rm', '-rf', remoteDir], false);
     }
   }
 
-  public async launchApp(target: string, bundleName: string, mainAbility: string): Promise<void> {
-    const args = ['-t', target, 'shell', 'aa', 'start', '-a', mainAbility, '-b', bundleName];
+  public async launchApp(
+    target: string,
+    bundleName: string,
+    mainAbility: string
+  ): Promise<void> {
+    const args = [
+      '-t',
+      target,
+      'shell',
+      'aa',
+      'start',
+      '-a',
+      mainAbility,
+      '-b',
+      bundleName,
+    ];
     await this.runHdc(args);
   }
 }

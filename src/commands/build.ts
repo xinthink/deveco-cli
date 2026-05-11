@@ -122,6 +122,22 @@ function processModuleTasks(
   return moduleTasks;
 }
 
+type ToolRunError = Error & { stdout?: string; stderr?: string };
+
+function logAdapterFailureAndThrow(stepLabel: string, error: unknown): never {
+  const e = error as ToolRunError;
+  const failMsg = `${stepLabel} failed`;
+  console.error(red(failMsg));
+  const errText = e.stdout || e.message;
+  if (errText) {
+    console.error(errText);
+  }
+  if (e.stderr) {
+    console.error(e.stderr);
+  }
+  throw new Error(failMsg, { cause: error });
+}
+
 async function executeBuildSteps(
   ohpmAdapter: OhpmAdapter,
   hvigorAdapter: HvigorAdapter,
@@ -131,31 +147,20 @@ async function executeBuildSteps(
     | { type: 'product' }
     | { type: 'modules'; modulesToBuild: string[]; moduleTasks: Set<string> }
 ) {
-  // Step 1: ohpm install --all
   console.log('\n[1/3] Running ohpm install...');
   try {
     await ohpmAdapter.installAll();
   } catch (error) {
-    const e = error as Error & { stdout?: string; stderr?: string };
-    console.log(red('ohpm install failed'));
-    console.error(e.stdout || e.message);
-    console.error(e.stderr);
-    throw new Error('ohpm install failed', { cause: error });
+    logAdapterFailureAndThrow('ohpm install', error);
   }
 
-  // Step 2: hvigor --sync
   console.log('\n[2/3] Running hvigor sync...');
   try {
     await hvigorAdapter.sync(productName, buildMode);
   } catch (error) {
-    const e = error as Error & { stdout?: string; stderr?: string };
-    console.log(red('hvigor sync failed'));
-    console.error(e.stdout || e.message);
-    console.error(e.stderr);
-    throw new Error('hvigor sync failed', { cause: error });
+    logAdapterFailureAndThrow('hvigor sync', error);
   }
 
-  // Step 3: hvigor build
   console.log('\n[3/3] Running hvigor build...');
   try {
     if (buildTarget.type === 'product') {
@@ -169,24 +174,23 @@ async function executeBuildSteps(
       );
     }
   } catch (error) {
-    const e = error as Error & { stdout?: string; stderr?: string };
-    console.log(red('hvigor build failed'));
-    console.error(e.stdout || e.message);
-    console.error(e.stderr);
-    throw new Error('hvigor build failed', { cause: error });
+    logAdapterFailureAndThrow('hvigor build', error);
   }
 }
 
 const buildCommand = new Command('build')
-  .description('Build HarmonyOS project')
-  .option('--product <product>', 'Product name (default: default)')
+  .description('Build the HarmonyOS project')
+  .option(
+    '--product <product>',
+    'Product name defined in build-profile.json5 (default: default)'
+  )
   .option(
     '--modules <modules...>',
     'Modules to build (format: module or module@target)'
   )
   .option(
     '--build-mode <mode>',
-    'Build mode (buildModeSet in build-profile.json5; e.g. debug, release)'
+    'Build mode (buildModeSet in build-profile.json5; e.g. debug, release; default: debug)'
   )
   .action(async (options: BuildOptions) => {
     try {

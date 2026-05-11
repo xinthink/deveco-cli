@@ -6,7 +6,7 @@ import { Command, InvalidArgumentError } from 'commander';
 import { ToolProvider } from '../utils/tool-provider.js';
 import { HilogAdapter } from '../utils/hilog-adapter.js';
 import { CommonUtils } from '../utils/common-utils.js';
-import { blue, red } from 'colorette';
+import { cyan, red } from 'colorette';
 
 interface LogOptions {
   device?: string;
@@ -49,19 +49,19 @@ async function handleLogCommand(options: LogOptions) {
       process.exit(1);
     }
 
-    console.log(blue(`deviceId: ${deviceId}`));
-    console.log(blue(`type: ${options.crash ? 'Crash logs' : 'Common logs'}`));
-    console.log(blue('Obtaining logs ...'));
+    console.log(cyan(`deviceId: ${deviceId}`));
+    console.log(cyan(`type: ${options.crash ? 'Crash logs' : 'Common logs'}`));
+    console.log(cyan('Obtaining logs ...'));
 
     let logs = options.crash
       ? await service.getCrashLog(deviceId, options.bundleName)
       : await service.getHilog(deviceId, {
-        level: options.level,
-        bundleName: options.bundleName,
-        keyword: options.keyword,
-        isFollow: options.follow ? true : false,
-        tail: options.tail,
-      });
+          level: options.level,
+          bundleName: options.bundleName,
+          keyword: options.keyword,
+          isFollow: options.follow ? true : false,
+          tail: options.tail,
+        });
 
     if (options.crash && options.tail && logs) {
       logs = CommonUtils.getLastLines(logs, options.tail);
@@ -71,7 +71,7 @@ async function handleLogCommand(options: LogOptions) {
       console.log(logs);
     }
   } catch (error) {
-    console.error(red(`error: ${(error as Error).message}`));
+    console.error(red((error as Error).message));
     process.exit(1);
   }
 }

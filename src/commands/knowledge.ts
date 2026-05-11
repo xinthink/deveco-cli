@@ -4,36 +4,36 @@
  */
 import { Command } from 'commander';
 import { red } from 'colorette';
-import { Knowledge, normalizeBigSearchQuestion } from '../utils/knowledge';
-import { loginService } from '../auth/login-service';
+import { Knowledge, normalizeBigSearchQuestion } from '../utils/knowledge.js';
+import { loginService } from '../auth/login-service.js';
 
 interface KnowledgeCliOptions {
   keywords: string | string[];
 }
 
 const knowledgeCommand = new Command('knowledge')
-  .description('Search HarmonyOS app development knowledge (ArkTS / ArkUI / API usage, etc.)')
+  .description(
+    'Search the HarmonyOS knowledge (ArkTS / ArkUI / API usage, etc.)'
+  )
   .requiredOption(
     '--keywords <words...>',
-    'HarmonyOS knowledge query: multiple words allowed without quotes (e.g. --keywords ArkTS Row 布局)',
+    'Search terms, e.g. --keywords ArkTS Row layout'
   )
   .action(async (opts: KnowledgeCliOptions) => {
     if (!(await loginService.isLoggedIn())) {
       console.error(red('Please login first'));
-      process.exitCode = 1;
-      return;
+      process.exit(1);
     }
     try {
       const content = normalizeBigSearchQuestion(opts.keywords);
       if (!content) {
-        console.error(red('content is empty after normalization'));
-        process.exitCode = 1;
-        return;
+        console.error(red('Keywords are empty after normalization'));
+        process.exit(1);
       }
-      const result = await Knowledge.getInstance().getBigSearchResponse(content);
+      const result =
+        await Knowledge.getInstance().getBigSearchResponse(content);
       if (!result.ok) {
-        process.exitCode = 1;
-        return;
+        process.exit(1);
       }
       const { ranked: topList } = result;
       const contentStrings = topList.map((item) => item.content);
@@ -41,9 +41,8 @@ const knowledgeCommand = new Command('knowledge')
       // 拆成 'a\n' + 'b' 的怪格式（util.inspect 默认行为）。
       console.log(JSON.stringify(contentStrings, null, 2));
     } catch (err) {
-      const e = err as Error;
-      console.error(red(e.message || String(err)));
-      process.exitCode = 1;
+      console.error(red((err as Error).message || String(err)));
+      process.exit(1);
     }
   });
 
