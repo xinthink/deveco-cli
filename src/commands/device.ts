@@ -28,7 +28,9 @@ class DeviceManager {
     return new DeviceManager(toolProvider.hdcPath);
   }
 
-  private async executeHdc(args: string[]): Promise<{ stdout: string; stderr: string }> {
+  private async executeHdc(
+    args: string[]
+  ): Promise<{ stdout: string; stderr: string }> {
     const result = await execa(this.hdcPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -43,8 +45,13 @@ class DeviceManager {
       .filter((line) => line.length > 0);
 
     const failurePatterns = [
-      'failed to ', 'error:', 'install failed', 'uninstall failed',
-      'msg:error', 'failed to uninstall', '[fail]',
+      'failed to ',
+      'error:',
+      'install failed',
+      'uninstall failed',
+      'msg:error',
+      'failed to uninstall',
+      '[fail]',
     ];
 
     for (const line of lines) {
@@ -83,14 +90,36 @@ class DeviceManager {
   public async getDeviceModel(serial: string): Promise<string> {
     try {
       const [brand, model, name] = await Promise.all([
-        this.executeHdc(['-t', serial, 'shell', 'param', 'get', 'const.product.brand']),
-        this.executeHdc(['-t', serial, 'shell', 'param', 'get', 'const.product.model']),
-        this.executeHdc(['-t', serial, 'shell', 'param', 'get', 'const.product.name']),
+        this.executeHdc([
+          '-t',
+          serial,
+          'shell',
+          'param',
+          'get',
+          'const.product.brand',
+        ]),
+        this.executeHdc([
+          '-t',
+          serial,
+          'shell',
+          'param',
+          'get',
+          'const.product.model',
+        ]),
+        this.executeHdc([
+          '-t',
+          serial,
+          'shell',
+          'param',
+          'get',
+          'const.product.name',
+        ]),
       ]);
       const brandStr = brand.stdout.trim();
       const modelStr = model.stdout.trim();
       const nameStr = name.stdout.trim();
-      const displayName = (modelStr && modelStr !== 'emulator') ? modelStr : (nameStr || modelStr);
+      const displayName =
+        modelStr && modelStr !== 'emulator' ? modelStr : nameStr || modelStr;
       if (brandStr && displayName) {
         return `${brandStr} ${displayName}`;
       }
@@ -100,7 +129,10 @@ class DeviceManager {
     }
   }
 
-  public async getDeviceInfo(devices: DeviceInfo[], deviceSerial?: string): Promise<DeviceInfo | null> {
+  public async getDeviceInfo(
+    devices: DeviceInfo[],
+    deviceSerial?: string
+  ): Promise<DeviceInfo | null> {
     if (devices.length === 0) {
       return null;
     }
@@ -116,15 +148,38 @@ class DeviceManager {
     const detail: DeviceInfo = { serial, status: 'device' };
     try {
       const [deviceType, apiVersion, releaseType] = await Promise.all([
-        this.executeHdc(['-t', serial, 'shell', 'param', 'get', 'const.product.devicetype']),
-        this.executeHdc(['-t', serial, 'shell', 'param', 'get', 'const.ohos.apiversion']),
-        this.executeHdc(['-t', serial, 'shell', 'param', 'get', 'const.ohos.releasetype']),
+        this.executeHdc([
+          '-t',
+          serial,
+          'shell',
+          'param',
+          'get',
+          'const.product.devicetype',
+        ]),
+        this.executeHdc([
+          '-t',
+          serial,
+          'shell',
+          'param',
+          'get',
+          'const.ohos.apiversion',
+        ]),
+        this.executeHdc([
+          '-t',
+          serial,
+          'shell',
+          'param',
+          'get',
+          'const.ohos.releasetype',
+        ]),
       ]);
       detail.deviceType = deviceType.stdout.trim();
       const apiVer = apiVersion.stdout.trim();
       const relType = releaseType.stdout.trim();
       if (apiVer) {
-        detail.osVersion = relType ? `API ${apiVer} (${relType})` : `API ${apiVer}`;
+        detail.osVersion = relType
+          ? `API ${apiVer} (${relType})`
+          : `API ${apiVer}`;
       }
     } catch {
       // Ignore errors, partial info is acceptable
@@ -132,7 +187,10 @@ class DeviceManager {
     return detail;
   }
 
-  public async installApp(packagePaths: string[], deviceSerial?: string): Promise<void> {
+  public async installApp(
+    packagePaths: string[],
+    deviceSerial?: string
+  ): Promise<void> {
     if (packagePaths.length === 0) {
       throw new Error('No packages to install');
     }
@@ -152,7 +210,9 @@ class DeviceManager {
       if (isLast && resolvedPaths.length > 1) {
         console.log(cyan(`Installing main package: ${resolvedPath}`));
       } else if (resolvedPaths.length > 1) {
-        console.log(cyan(`Installing dependency package (${i + 1}): ${resolvedPath}`));
+        console.log(
+          cyan(`Installing dependency package (${i + 1}): ${resolvedPath}`)
+        );
       } else {
         console.log(cyan(`Installing package: ${resolvedPath}`));
       }
@@ -168,9 +228,23 @@ class DeviceManager {
     }
   }
 
-  public async startApp(bundleName: string, ability: string, deviceSerial?: string): Promise<void> {
+  public async startApp(
+    bundleName: string,
+    ability: string,
+    deviceSerial?: string
+  ): Promise<void> {
     const args = deviceSerial
-      ? ['-t', deviceSerial, 'shell', 'aa', 'start', '-a', ability, '-b', bundleName]
+      ? [
+          '-t',
+          deviceSerial,
+          'shell',
+          'aa',
+          'start',
+          '-a',
+          ability,
+          '-b',
+          bundleName,
+        ]
       : ['shell', 'aa', 'start', '-a', ability, '-b', bundleName];
     const { stdout, stderr } = await this.executeHdc(args);
     const failure = this.extractHdcFailure(`${stdout}\n${stderr}`);
@@ -179,7 +253,10 @@ class DeviceManager {
     }
   }
 
-  public async uninstallApp(bundleName: string, deviceSerial?: string): Promise<void> {
+  public async uninstallApp(
+    bundleName: string,
+    deviceSerial?: string
+  ): Promise<void> {
     const args = deviceSerial
       ? ['-t', deviceSerial, 'uninstall', bundleName]
       : ['uninstall', bundleName];
@@ -210,12 +287,17 @@ async function listAction(deviceManager: DeviceManager) {
   }
 }
 
-async function checkMultiDevice(deviceManager: DeviceManager, commandHint: string): Promise<void> {
+async function checkMultiDevice(
+  deviceManager: DeviceManager,
+  commandHint: string
+): Promise<void> {
   const devices = await deviceManager.listDevices();
   if (devices.length < 2) {
     return;
   }
-  console.error(red('Multiple devices connected. Please specify a device with:'));
+  console.error(
+    red('Multiple devices connected. Please specify a device with:')
+  );
   for (const device of devices) {
     const modelName = await deviceManager.getDeviceModel(device.serial);
     console.error(gray(`  ${commandHint} -t ${device.serial}  # ${modelName}`));
@@ -238,7 +320,9 @@ async function infoAction(deviceManager: DeviceManager, deviceSerial?: string) {
 
     const detail = await deviceManager.getDeviceDetail(info.serial);
     console.log(`  Serial:      ${info.serial}`);
-    console.log(`  Status:      ${info.status === 'device' ? 'connected' : info.status}`);
+    console.log(
+      `  Status:      ${info.status === 'device' ? 'connected' : info.status}`
+    );
     if (detail.deviceType) {
       console.log(`  Device Type: ${detail.deviceType}`);
     }
@@ -247,13 +331,18 @@ async function infoAction(deviceManager: DeviceManager, deviceSerial?: string) {
     }
     console.log('');
   } catch (error) {
-    console.error(red(`Failed to get device info: ${(error as Error).message}`));
+    console.error(
+      red(`Failed to get device info: ${(error as Error).message}`)
+    );
     process.exit(1);
   }
 }
 
 async function startAppAfterInstall(
-  deviceManager: DeviceManager, bundleName: string, ability: string, deviceSerial?: string
+  deviceManager: DeviceManager,
+  bundleName: string,
+  ability: string,
+  deviceSerial?: string
 ) {
   await new Promise((resolve) => setTimeout(resolve, 2000));
   console.log(cyan(`Starting app: ${bundleName}/${ability}`));
@@ -270,14 +359,22 @@ async function installAction(
 ) {
   try {
     if (!deviceSerial) {
-      await checkMultiDevice(deviceManager, `deveco device --install ${packagePaths.join(' ')}`);
+      await checkMultiDevice(
+        deviceManager,
+        `deveco device --install ${packagePaths.join(' ')}`
+      );
     }
 
     await deviceManager.installApp(packagePaths, deviceSerial);
     console.log(green('App installed successfully!'));
 
     if (bundleName && ability) {
-      await startAppAfterInstall(deviceManager, bundleName, ability, deviceSerial);
+      await startAppAfterInstall(
+        deviceManager,
+        bundleName,
+        ability,
+        deviceSerial
+      );
     }
   } catch (error) {
     console.error(red(`Failed to install app: ${(error as Error).message}`));
@@ -285,10 +382,17 @@ async function installAction(
   }
 }
 
-async function uninstallAction(deviceManager: DeviceManager, bundleName: string, deviceSerial?: string) {
+async function uninstallAction(
+  deviceManager: DeviceManager,
+  bundleName: string,
+  deviceSerial?: string
+) {
   try {
     if (!deviceSerial) {
-      await checkMultiDevice(deviceManager, `deveco device --uninstall ${bundleName}`);
+      await checkMultiDevice(
+        deviceManager,
+        `deveco device --uninstall ${bundleName}`
+      );
     }
 
     console.log(cyan(`Uninstalling app: ${bundleName}`));
@@ -311,20 +415,31 @@ interface DeviceOptions {
 }
 
 const deviceCommand = new Command('device')
-  .description('Device management commands')
+  .description('Manage connected devices')
   .option('-t, --target <serial>', 'Target device serial number')
   .option('--list', 'List all connected devices')
   .option('--info', 'Show detailed device information')
-  .option('--install <packagePaths...>', 'Install application packages (.hap, .hsp, .app). Supports multiple packages for dependency-first installation')
+  .option(
+    '--install <packagePaths...>',
+    'Install one or more packages (.hap / .hsp / .app)'
+  )
   .option('--uninstall <bundleName>', 'Uninstall an application by bundle name')
-  .option('-b, --bundle <bundleName>', 'Bundle name for starting app after install')
-  .option('-a, --ability <abilityName>', 'Ability name for starting app after install')
+  .option(
+    '-b, --bundle <bundleName>',
+    'Bundle name for launching the app after install'
+  )
+  .option(
+    '-a, --ability <abilityName>',
+    'Ability name for launching the app after install'
+  )
   .action(async (options: DeviceOptions) => {
     let deviceManager: DeviceManager;
     try {
       deviceManager = await DeviceManager.new();
     } catch (error) {
-      console.error(red(`Failed to initialize device manager: ${(error as Error).message}`));
+      console.error(
+        red(`Failed to initialize device manager: ${(error as Error).message}`)
+      );
       process.exit(1);
       return;
     }
@@ -334,7 +449,13 @@ const deviceCommand = new Command('device')
     } else if (options.info) {
       await infoAction(deviceManager, options.target);
     } else if (options.install) {
-      await installAction(deviceManager, options.install, options.target, options.bundle, options.ability);
+      await installAction(
+        deviceManager,
+        options.install,
+        options.target,
+        options.bundle,
+        options.ability
+      );
     } else if (options.uninstall) {
       await uninstallAction(deviceManager, options.uninstall, options.target);
     } else {

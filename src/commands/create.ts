@@ -226,24 +226,21 @@ async function tryGetToolProvider(): Promise<ToolProvider | undefined> {
     return await ToolProvider.new();
   } catch (error) {
     const e = error as Error;
-    console.log(yellow(`DevEco Studio not found: ${e.message}`));
+    console.error(yellow(`DevEco Studio not found: ${e.message}`));
     console.log(yellow('Using placeholder images instead.'));
     return undefined;
   }
 }
 
 const createCommand = new Command('create')
-  .description('Initialize a new application project')
-  .option(
-    '--project-path <path>',
-    'Project directory path (default: ./<app-name>)'
-  )
+  .description('Scaffold a new HarmonyOS application project')
+  .option('--project-path <path>', 'Project directory path (default: ./<app-name>)')
   .option('--app-name <name>', 'Application name')
   .option(
     '--bundle-name <bundle>',
-    'Bundle name (auto-derived if not specified)'
+    'Bundle name (auto-derived as com.example.<app-name> if omitted)'
   )
-  .option('--api-level <level>', 'API level (auto-detected if not specified)')
+  .option('--api-level <level>', 'API level 17-23 (auto-detected if omitted)')
   .action(async (options: CreateOptions) => {
     try {
       if (!options.appName) {
@@ -269,8 +266,8 @@ const createCommand = new Command('create')
       console.log(`Bundle name: ${bundleName}`);
 
       const toolProvider = await tryGetToolProvider();
-      const { apiLevel, source } = resolveApiLevel(options, toolProvider);
-      console.log(`API level: ${apiLevel} (source: ${source})`);
+      const { apiLevel } = resolveApiLevel(options, toolProvider);
+      console.log(`API level: ${apiLevel}`);
 
       const devecoStudioPath = toolProvider?.devecoStudioPath;
 

@@ -77,7 +77,7 @@ export class ToolProvider {
       hdcPath,
       emulatorPath,
     } = ToolProvider.resolveTools(devecoStudioPath);
-    const emulatorLauncherPath = await ToolProvider.getEmulatorExe();
+    const emulatorLauncherPath = ToolProvider.getEmulatorExe(devecoStudioPath);
     return new ToolProvider(
       devecoStudioPath,
       nodePath,
@@ -363,43 +363,29 @@ export class ToolProvider {
   }
 
   /**
-   * 获取模拟器可执行文件路径
-   * @returns 模拟器可执行文件路径，如果不存在或不支持的平台则返回 null
+   * Resolve the emulator launcher executable path from an already-located
+   * DevEco Studio installation. Returns undefined if the platform is not
+   * supported or the file does not exist.
    */
-  private static async getEmulatorExe(): Promise<string | null> {
+  private static getEmulatorExe(devecoStudioPath: string): string | undefined {
     const platform = os.platform();
-    // Linux 平台不支持
-    if (platform === 'linux') {
-      return null;
-    }
-    const devecoStudioPath = await ToolProvider.findDevEcoStudio();
-    let path: string;
+    let exePath: string;
 
-    // Windows 平台
     if (platform === 'win32') {
-      path = join(devecoStudioPath, 'tools', 'emulator', 'Emulator.exe');
-    }
-    // macOS 平台
-    else if (platform === 'darwin') {
-      path = join(
+      exePath = join(devecoStudioPath, 'tools', 'emulator', 'Emulator.exe');
+    } else if (platform === 'darwin') {
+      exePath = join(
         devecoStudioPath,
-        'contents',
+        'Contents',
         'tools',
         'emulator',
         'Emulator'
       );
-    }
-    // 其他平台
-    else {
-      return null;
+    } else {
+      return undefined;
     }
 
-    // 检查路径是否存在
-    if (existsSync(path)) {
-      return path;
-    }
-
-    return null;
+    return existsSync(exePath) ? exePath : undefined;
   }
 
   private static isValidApiLevel(level: number): boolean {

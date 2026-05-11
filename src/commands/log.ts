@@ -5,7 +5,7 @@
 import { Command } from 'commander';
 import { ToolProvider } from '../utils/tool-provider.js';
 import { HilogAdapter } from '../utils/hilog-adapter.js';
-import { blue, red } from 'colorette';
+import { cyan, red } from 'colorette';
 
 interface LogOptions {
   device?: string;
@@ -13,6 +13,7 @@ interface LogOptions {
   level?: string;
   bundleName?: string;
   keyword?: string;
+  follow?: boolean;
 }
 
 const logCommand = new Command('log')
@@ -22,6 +23,7 @@ const logCommand = new Command('log')
   .option('--level <level>', 'Log level filter: D, I, W, E, F')
   .option('--bundle-name <bundle-name>', 'Filter by application bundle name')
   .option('--keyword <keyword>', 'Keyword filter')
+  .option('--follow', 'Follow the log stream in real-time.')
   .action(async (options: LogOptions) => {
     await handleLogCommand(options);
   });
@@ -36,21 +38,26 @@ async function handleLogCommand(options: LogOptions) {
       process.exit(1);
     }
 
-    console.log(blue(`deviceId: ${deviceId}`));
-    console.log(blue(`type: ${options.crash ? 'Crash logs' : 'Common logs'}`));
-    console.log(blue('Obtaining logs ...'));
+    console.log(cyan(`deviceId: ${deviceId}`));
+    console.log(
+      cyan(`type: ${options.crash ? 'Crash logs' : 'Common logs'}`)
+    );
+    console.log(cyan('Obtaining logs ...'));
 
     const logs = options.crash
       ? await service.getCrashLog(deviceId, options.bundleName)
       : await service.getHilog(deviceId, {
-          level: options.level,
-          bundleName: options.bundleName,
-          keyword: options.keyword,
-        });
+        level: options.level,
+        bundleName: options.bundleName,
+        keyword: options.keyword,
+        isFollow: options.follow ? true : false,
+      });
 
-    console.log(logs);
+    if (logs) {
+      console.log(logs);
+    }
   } catch (error) {
-    console.error(red(`error: ${(error as Error).message}`));
+    console.error(red((error as Error).message));
     process.exit(1);
   }
 }

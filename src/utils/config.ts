@@ -11,6 +11,7 @@ export interface HilogOptions {
   bundleName?: string;
   keyword?: string;
   logSize?: string;
+  isFollow?: boolean;
 }
 
 export interface DeviceInfo {

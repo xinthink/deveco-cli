@@ -41,7 +41,7 @@ export interface LoginConfig {
   jwtTokenCheckUrl: string;
   successRedirectUrl: string;
   failedRedirectUrl: string;
-  logoutUrl:string;
+  logoutUrl: string;
   appId: string;
   defaultPort: number;
   timeout: number;

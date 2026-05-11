@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { Command } from 'commander';
-import { cyan } from 'colorette';
+import { cyan, green, red } from 'colorette';
 import { Project } from '../utils/project.js';
 import { ToolProvider } from '../utils/tool-provider.js';
 import { HdcAdapter } from '../utils/hdc-adapter.js';
@@ -21,11 +21,15 @@ async function selectDevice(
 ): Promise<string> {
   const devices = await hdcAdapter.listTargets();
   if (devices.length === 0) {
-    throw new Error('No active devices found. Please start an emulator or connect a physical device.');
+    throw new Error(
+      'No active devices found. Please start an emulator or connect a physical device.'
+    );
   }
 
   if (deviceArg) {
-    const found = devices.find((d) => d.id === deviceArg || d.name.includes(deviceArg));
+    const found = devices.find(
+      (d) => d.id === deviceArg || d.name.includes(deviceArg)
+    );
     if (found) {
       return found.id;
     }
@@ -80,22 +84,35 @@ function resolveArtifacts(
   project.resolveHspDependencies(moduleName, hspModules);
 
   for (const hsp of hspModules) {
-    const p = project.findArtifactPath(hsp, targetName, isEmulator, productName);
+    const p = project.findArtifactPath(
+      hsp,
+      targetName,
+      isEmulator,
+      productName
+    );
     artifactsToInstall.push(p);
   }
 
-  const mainHapPath = project.findArtifactPath(moduleName, targetName, isEmulator, productName);
+  const mainHapPath = project.findArtifactPath(
+    moduleName,
+    targetName,
+    isEmulator,
+    productName
+  );
   artifactsToInstall.push(mainHapPath);
 
   return artifactsToInstall;
 }
 
 const runCommand = new Command('run')
-  .description('Run project on a device')
-  .option('--module <module>', 'Module (format: module or module@target)')
-  .option('--device <device>', 'Target device (name or serial)')
+  .description('Build and run the project on a connected device')
+  .option(
+    '--module <module>',
+    'Module to run (format: module or module@target)'
+  )
+  .option('--device <device>', 'Target device name or serial')
   .option('--product <product>', 'Product name (default: default)')
-  .option('--ability <ability>', 'Ability to launch')
+  .option('--ability <ability>', 'Ability name to launch')
   .action(async (options: RunOptions) => {
     try {
       const currentDir = process.cwd();
@@ -104,8 +121,10 @@ const runCommand = new Command('run')
 
       const moduleArg = identifyModule(project, options.module);
       const splitIndex = moduleArg.indexOf('@');
-      const moduleName = splitIndex !== -1 ? moduleArg.substring(0, splitIndex) : moduleArg;
-      const targetName = splitIndex !== -1 ? moduleArg.substring(splitIndex + 1) : 'default';
+      const moduleName =
+        splitIndex !== -1 ? moduleArg.substring(0, splitIndex) : moduleArg;
+      const targetName =
+        splitIndex !== -1 ? moduleArg.substring(splitIndex + 1) : 'default';
 
       const type = project.getModuleType(moduleName);
       if (type !== 'entry' && type !== 'feature' && type !== 'shared') {
@@ -116,21 +135,33 @@ const runCommand = new Command('run')
 
       const hdcAdapter = new HdcAdapter(toolProvider);
       const targetDeviceId = await selectDevice(hdcAdapter, options.device);
-      const isEmulator = targetDeviceId.includes('127.0.0.1') || targetDeviceId.includes('localhost');
+      const isEmulator =
+        targetDeviceId.includes('127.0.0.1') ||
+        targetDeviceId.includes('localhost');
       const productName = options.product || 'default';
 
-      const artifactsToInstall = resolveArtifacts(project, moduleName, targetName, isEmulator, productName);
+      const artifactsToInstall = resolveArtifacts(
+        project,
+        moduleName,
+        targetName,
+        isEmulator,
+        productName
+      );
       const bundleName = project.getBundleName();
 
-      console.log(`\nInstalling artifacts to device ${targetDeviceId}...`);
+      console.log(
+        cyan(`\nInstalling artifacts to device ${targetDeviceId}...`)
+      );
       await hdcAdapter.installApp(targetDeviceId, artifactsToInstall);
 
       const mainAbility = project.getMainAbility(moduleName, options.ability);
-      console.log(`Launching ${bundleName}/${mainAbility}...`);
+      console.log(cyan(`Launching ${bundleName}/${mainAbility}...`));
       await hdcAdapter.launchApp(targetDeviceId, bundleName, mainAbility);
-      console.log(cyan(`\nApplication '${bundleName}' launched successfully.`));
+      console.log(
+        green(`\nApplication '${bundleName}' launched successfully.`)
+      );
     } catch (error) {
-      console.error('\x1b[31m' + (error as Error).message + '\x1b[0m');
+      console.error(red((error as Error).message));
       process.exit(1);
     }
   });

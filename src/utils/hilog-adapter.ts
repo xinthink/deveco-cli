@@ -6,7 +6,8 @@ import { runCommand } from './cmd.js';
 import { DeviceInfo, HilogOptions } from './config.js';
 import { ToolProvider } from './tool-provider.js';
 import { EmulatorService } from '../service/emulator-service.js';
-import { blue, red, yellow } from 'colorette';
+import { cyan, red, yellow } from 'colorette';
+import { spawn } from 'child_process';
 
 export class HilogAdapter {
   private toolProvider: ToolProvider;
@@ -29,23 +30,23 @@ export class HilogAdapter {
 
     if (deviceArg) {
       const found = connectedDevices.find(
-        (d) => d.deviceId === deviceArg || d.name.includes(deviceArg),
+        (d) => d.deviceId === deviceArg || d.name.includes(deviceArg)
       );
       if (found) {
-        console.log(blue(`Use the device: ${found.name} (${found.deviceId})`));
+        console.log(cyan(`Using device: ${found.name} (${found.deviceId})`));
         return found.deviceId;
       }
       const list = connectedDevices
         .map((d) => `  - ${d.name} (${d.deviceId})`)
         .join('\n');
       throw new Error(
-        `Device '${deviceArg}' not found.\nAvailable devices:\n${list}`,
+        `Device '${deviceArg}' not found.\nAvailable devices:\n${list}`
       );
     }
 
     if (connectedDevices.length === 1) {
       const device = connectedDevices[0];
-      console.log(blue(`Use the device: ${device.name} (${device.deviceId})`));
+      console.log(cyan(`Using device: ${device.name} (${device.deviceId})`));
       return device.deviceId;
     }
 
@@ -61,16 +62,20 @@ export class HilogAdapter {
       const connectedDevices = devices.filter((d: DeviceInfo) => d.isConnected);
 
       if (connectedDevices.length === 0) {
-        console.error(red('Error:No runnung device found.'));
-        console.log('Please ensure:');
-        console.log('  1. The physical device is connected via USB and debugging mode is enabled');
-        console.log('  2. Or an emulator is running');
+        console.error(red('No running device found.'));
+        console.error('Please ensure:');
+        console.error(
+          '  1. The physical device is connected via USB and debugging mode is enabled'
+        );
+        console.error('  2. Or an emulator is running');
         return null;
       }
 
       return connectedDevices;
     } catch (error) {
-      console.error(red(`Failed to retrieve the device list: ${(error as Error).message}`));
+      console.error(
+        red(`Failed to retrieve the device list: ${(error as Error).message}`)
+      );
       return null;
     }
   }
@@ -78,7 +83,9 @@ export class HilogAdapter {
   /**
    * 提示用户选择设备
    */
-  private async promptDeviceSelection(devices: DeviceInfo[]): Promise<string | undefined> {
+  private async promptDeviceSelection(
+    devices: DeviceInfo[]
+  ): Promise<string | undefined> {
     console.log(yellow('Multiple devices detected:'));
     devices.forEach((device: DeviceInfo, index: number) => {
       console.log(`  ${index + 1}. ${device.name} (${device.deviceId})`);
@@ -118,7 +125,6 @@ export class HilogAdapter {
     return null;
   }
 
-
   /**
    * 获取可使用的设备信息列表
    * @returns 设备信息列表
@@ -142,7 +148,13 @@ export class HilogAdapter {
     console.log(`Trying to get PID for bundle: ${bundleName}`);
 
     // 执行命令: hdc -t <device_id> shell pidof <bundle_name>
-    const result = await runCommand(hdcPath, ['-t', deviceId, 'shell', 'pidof', bundleName]);
+    const result = await runCommand(hdcPath, [
+      '-t',
+      deviceId,
+      'shell',
+      'pidof',
+      bundleName,
+    ]);
 
     // 检查命令是否成功执行
     if (result.exitCode === 0 && result.stdout.trim()) {
@@ -155,29 +167,35 @@ export class HilogAdapter {
       return firstPid;
     }
 
-    console.log(`No PID found for bundle: ${bundleName}`);
+    console.error(`No PID found for bundle: ${bundleName}`);
     return null;
   }
 
-
   /**
- * 调整 hilog 日志缓冲区大小
- * @param hdcPath - hdc 工具路径
- * @param deviceId - 设备 ID
- * @param size - 缓冲区大小（如 "4M", "16M" 等）
- */
+   * 调整 hilog 日志缓冲区大小
+   * @param hdcPath - hdc 工具路径
+   * @param deviceId - 设备 ID
+   * @param size - 缓冲区大小（如 "4M", "16M" 等）
+   */
   async resizeHilogBuffer(
     hdcPath: string,
     deviceId: string,
     size: string
   ): Promise<void> {
     console.log(`Setting hilog buffer size to: ${size}`);
-    // 执行命令: hdc -t <device_id> shell hilog -G <size>
-    const result = await runCommand(hdcPath, ['-t', deviceId, 'shell', 'hilog', '-G', size]);
+    const result = await runCommand(hdcPath, [
+      '-t',
+      deviceId,
+      'shell',
+      'hilog',
+      '-G',
+      size,
+    ]);
 
-    // 检查命令是否成功执行
     if (result.exitCode !== 0) {
-      console.log(`Failed to resize hilog buffer: ${result.stderr || result.stdout}`);
+      console.error(
+        `Failed to resize hilog buffer: ${result.stderr || result.stdout}`
+      );
     }
   }
 
@@ -197,9 +215,13 @@ export class HilogAdapter {
   ): [string, string[]] {
     // 基础命令参数
     // 使用 -x 参数确保 hilog 读取完当前缓冲区后退出，否则命令会挂起等待新日志
-    const args: string[] = ['-t', deviceId, 'shell', 'hilog', '-x'];
+    let args: string[];
+    if (options.isFollow) {
+      args = ['-t', deviceId, 'shell', 'hilog'];
+    } else {
+      args = ['-t', deviceId, 'shell', 'hilog', '-x'];
+    }
 
-    // 添加标签过滤
     if (options.tag) {
       args.push('-T', options.tag);
     }
@@ -229,12 +251,36 @@ export class HilogAdapter {
   }
 
   /**
- * 获取设备的普通日志
- * @param deviceId - 设备 ID
- * @param bundleName - 应用包名（可选）
- * @returns 普通日志内容
- * @throws 如果获取失败则抛出错误
- */
+   * 实时跟随日志输出（不缓存 stdout/stderr，避免 maxBuffer 溢出）
+   */
+  private async followHilog(command: string, args: string[]): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(command, args, {
+        stdio: 'inherit',
+      });
+
+      child.on('error', (error) => {
+        reject(error);
+      });
+
+      child.on('close', (code) => {
+        if (code === 0 || code === null) {
+          resolve();
+          return;
+        }
+
+        reject(new Error(`Failed to follow hilog: process exited with code ${code}`));
+      });
+    });
+  }
+
+  /**
+   * 获取设备的普通日志
+   * @param deviceId - 设备 ID
+   * @param bundleName - 应用包名（可选）
+   * @returns 普通日志内容
+   * @throws 如果获取失败则抛出错误
+   */
   async getHilog(deviceId: string, options: HilogOptions): Promise<string> {
     const hdcPath = this.toolProvider.hdcPath;
     // 1. 如果提供了 bundle_name，获取进程 ID
@@ -248,8 +294,18 @@ export class HilogAdapter {
     }
 
     // 3. 构建命令
-    const [command, args] = this.buildHilogCommand(hdcPath, deviceId, options, pid || '');
+    const [command, args] = this.buildHilogCommand(
+      hdcPath,
+      deviceId,
+      options,
+      pid || ''
+    );
     console.log(`Ready to execute hilog command: ${command} ${args.join(' ')}`);
+
+    if (options.isFollow) {
+      await this.followHilog(command, args);
+      return '';
+    }
 
     const result = await runCommand(command, args);
     if (result.exitCode !== 0 && result.stderr) {
@@ -266,10 +322,7 @@ export class HilogAdapter {
    * @returns 崩溃日志内容
    * @throws 如果获取失败则抛出错误
    */
-  async getCrashLog(
-    deviceId: string,
-    bundleName?: string
-  ): Promise<string> {
+  async getCrashLog(deviceId: string, bundleName?: string): Promise<string> {
     console.log(`Fetching crash logs from device: ${deviceId}`);
     const hdcPath = this.toolProvider.hdcPath;
 
@@ -294,27 +347,40 @@ export class HilogAdapter {
     const latestFilename = sortedFilenames[0];
 
     // 4. 获取最新日志内容
-    const content = await this.fetchCrashLogContent(hdcPath, deviceId, latestFilename);
+    const content = await this.fetchCrashLogContent(
+      hdcPath,
+      deviceId,
+      latestFilename
+    );
 
     return `--- Latest Crash Log File: ${latestFilename} ---${content}`;
   }
 
-
   /**
- * 列出设备上的崩溃日志文件
- * @param hdcPath - hdc 工具路径
- * @param deviceId - 设备 ID
- * @param bundleName - 应用包名（可选，用于过滤）
- * @returns 崩溃日志文件名数组
- * @throws 如果获取失败则抛出错误
- */
+   * 列出设备上的崩溃日志文件
+   * @param hdcPath - hdc 工具路径
+   * @param deviceId - 设备 ID
+   * @param bundleName - 应用包名（可选，用于过滤）
+   * @returns 崩溃日志文件名数组
+   * @throws 如果获取失败则抛出错误
+   */
   async listCrashLogs(
     hdcPath: string,
     deviceId: string,
     bundleName?: string
   ): Promise<string[]> {
     // 构建命令参数
-    const listArgs = ['-t', deviceId, 'shell', 'hidumper', '-s', '1201', '-a', '-p', 'Faultlogger'];
+    const listArgs = [
+      '-t',
+      deviceId,
+      'shell',
+      'hidumper',
+      '-s',
+      '1201',
+      '-a',
+      '-p',
+      'Faultlogger',
+    ];
 
     console.log(`Executing command: ${hdcPath} ${listArgs.join(' ')}`);
 
@@ -323,7 +389,9 @@ export class HilogAdapter {
 
     // 检查命令是否成功
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to list crash logs: ${result.stderr || result.stdout}`);
+      throw new Error(
+        `Failed to list crash logs: ${result.stderr || result.stdout}`
+      );
     }
 
     console.log(`Crash logs list output:\n${result.stdout}`);
@@ -331,27 +399,27 @@ export class HilogAdapter {
     // 解析输出，提取文件名
     const filenames: string[] = result.stdout
       .split('\n')
-      .map(line => line.trim())
-      .filter(line => {
+      .map((line) => line.trim())
+      .filter((line) => {
         // 如果提供了 bundleName，只保留包含该名称的行（忽略大小写）
         if (!bundleName) {
           return true;
         }
         return line.toLowerCase().includes(bundleName.toLowerCase());
       })
-      .filter(line => line.length > 0); // 过滤空行
+      .filter((line) => line.length > 0);
 
     return filenames;
   }
 
   /**
- * 获取崩溃日志文件的内容
- * @param hdcPath - hdc 工具路径
- * @param deviceId - 设备 ID
- * @param filename - 日志文件名
- * @returns 崩溃日志内容
- * @throws 如果获取失败则抛出错误
- */
+   * 获取崩溃日志文件的内容
+   * @param hdcPath - hdc 工具路径
+   * @param deviceId - 设备 ID
+   * @param filename - 日志文件名
+   * @returns 崩溃日志内容
+   * @throws 如果获取失败则抛出错误
+   */
   async fetchCrashLogContent(
     hdcPath: string,
     deviceId: string,
@@ -369,17 +437,15 @@ export class HilogAdapter {
       '-s',
       '1201',
       '-a',
-      `-p Faultlogger -f ${filename}`
+      `-p Faultlogger -f ${filename}`,
     ];
 
     console.log(`Executing command: ${hdcPath} ${fetchArgs.join(' ')}`);
 
-    // 执行命令
     const result = await runCommand(hdcPath, fetchArgs);
 
-    // 检查命令是否成功（原代码没有显式检查，直接返回输出）
     if (result.exitCode !== 0 && result.stderr) {
-      console.warn(`Warning: Failed to fetch crash log content: ${result.stderr}`);
+      console.error(`Warning: Failed to fetch crash log content: ${result.stderr}`);
     }
 
     // 返回合并的输出（stdout + stderr）

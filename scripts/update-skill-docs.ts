@@ -30,7 +30,7 @@ async function updateSkillDocs() {
   const matches = [...skillMdContent.matchAll(regex)];
 
   if (matches.length === 0) {
-    console.log('No EXEC_START placeholders found in SKILL_TEMP.md.');
+    console.error('No EXEC_START placeholders found in SKILL_TEMP.md.');
   } else {
     for (const match of matches) {
       const fullMatch = match[0];
