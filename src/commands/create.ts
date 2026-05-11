@@ -234,7 +234,10 @@ async function tryGetToolProvider(): Promise<ToolProvider | undefined> {
 
 const createCommand = new Command('create')
   .description('Scaffold a new HarmonyOS application project')
-  .option('--project-path <path>', 'Project directory path (default: ./<app-name>)')
+  .option(
+    '--project-path <path>',
+    'Project directory path (default: ./<app-name>)'
+  )
   .option('--app-name <name>', 'Application name')
   .option(
     '--bundle-name <bundle>',
