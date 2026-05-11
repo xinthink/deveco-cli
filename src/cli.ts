@@ -4,6 +4,10 @@
  * SPDX-License-Identifier: MIT
  */
 
+process.env.GLOBAL_AGENT_ENVIRONMENT_VARIABLE_NAMESPACE = '';
+import { bootstrap } from 'global-agent';
+bootstrap();
+
 import { program } from 'commander';
 import buildCommand from './commands/build.js';
 import runCommand from './commands/run.js';
