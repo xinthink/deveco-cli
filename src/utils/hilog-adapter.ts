@@ -4,6 +4,7 @@
  */
 import { runCommand } from './cmd.js';
 import { DeviceInfo, HilogOptions } from './config.js';
+import { CommonUtils } from './common-utils.js';
 import { ToolProvider } from './tool-provider.js';
 import { EmulatorService } from '../service/emulator-service.js';
 import { blue, red, yellow } from 'colorette';
@@ -277,21 +278,45 @@ export class HilogAdapter {
       await this.resizeHilogBuffer(hdcPath, deviceId, options.logSize);
     }
 
-    // 3. 构建命令
-    const [command, args] = this.buildHilogCommand(hdcPath, deviceId, options, pid || '');
-    console.log(`Ready to execute hilog command: ${command} ${args.join(' ')}`);
-
     if (options.isFollow) {
+      if (options.tail) {
+        const snapshotOptions = { ...options, isFollow: false };
+        const [snapshotCommand, snapshotArgs] = this.buildHilogCommand(
+          hdcPath,
+          deviceId,
+          snapshotOptions,
+          pid || '',
+        );
+        const snapshotResult = await runCommand(snapshotCommand, snapshotArgs);
+        if (snapshotResult.exitCode !== 0 && snapshotResult.stderr) {
+          throw new Error(`Failed to get hilog: ${snapshotResult.stderr}`);
+        }
+        const snapshotLogs = CommonUtils.getLastLines(
+          snapshotResult.stdout || snapshotResult.stderr,
+          options.tail,
+        );
+        if (snapshotLogs.trim()) {
+          console.log(snapshotLogs);
+        }
+      }
+
+      // 3. 构建跟随命令
+      const [command, args] = this.buildHilogCommand(hdcPath, deviceId, options, pid || '');
+      console.log(`Ready to execute hilog command: ${command} ${args.join(' ')}`);
       await this.followHilog(command, args);
       return '';
     }
+
+    // 3. 构建命令
+    const [command, args] = this.buildHilogCommand(hdcPath, deviceId, options, pid || '');
+    console.log(`Ready to execute hilog command: ${command} ${args.join(' ')}`);
 
     const result = await runCommand(command, args);
     if (result.exitCode !== 0 && result.stderr) {
       throw new Error(`Failed to get hilog: ${result.stderr}`);
     }
 
-    return result.stdout || result.stderr;
+    return CommonUtils.getLastLines(result.stdout || result.stderr, options.tail);
   }
 
   /**
