@@ -73,30 +73,35 @@ Examples:
 
 Manage local emulator instances created in DevEco Studio.
 
-- `--list` shows each emulator with `[serial]` (running) or `[stopped]`.
-- `--start` / `--stop` require `--name <name>`; starting is non-blocking.
+- `list` shows each emulator with `[serial]` (running) or `[stopped]`.
+- `start <names...>` starts one or more instances in parallel (non-blocking spawn per instance). Names with spaces must be quoted so each name is one shell argument, e.g. `"Mate 70 Pro"`. You can mix quoted and unquoted names on one line.
+- After launch, **success** is printed only when `hdc` is available and `hdc list targets` shows the instance (matched via `ohos.qemu.hvd.name`). If `hdc` is missing, success is printed after spawn. If `hdc` never sees the instance within the wait window, a warning is printed instead.
+- Starting several emulators: if any name fails, the process exits non-zero; others may still have started.
+- `stop <name>` stops one instance; quote multi-word names the same way as `start`.
 
 Examples:
-- `deveco emulator --list`
-- `deveco emulator --start --name HarmonyOS_Phone`
-- `deveco emulator --stop --name HarmonyOS_Phone`
+- `deveco emulator list`
+- `deveco emulator start HarmonyOS_Phone`
+- `deveco emulator start "Mate 70 Pro" HarmonyOS_Phone`  # quoted + unquoted
+- `deveco emulator start "Mate 70 Pro" "Mate 60"`  # multiple
+- `deveco emulator stop "Mate 70 Pro"`
 
 ### `deveco device`
 
 List / inspect / install / uninstall on connected devices and emulators.
 
-- `--list` / `--info` for device discovery.
+- `list` / `info` for device discovery.
 - `-t, --target <serial>` selects a device on multi-device hosts (otherwise the command prints all serials and exits).
-- `--install <paths...>` accepts multiple package paths — pass dependency `.hsp` first, then the main `.hap` / `.app`.
-- `-b <bundle> -a <ability>` after `--install` launches the app on success.
-- `--uninstall <bundleName>` removes the app.
+- `install <paths...>` accepts multiple package paths — pass dependency `.hsp` first, then the main `.hap` / `.app`.
+- `-b <bundle> -a <ability>` after `install` launches the app on success.
+- `uninstall <bundleName>` removes the app.
 
 Examples:
-- `deveco device --list`
-- `deveco device --info`
-- `deveco device --install ./feature.hsp ./entry.hap`
-- `deveco device --install ./entry.hap -b com.example.app -a EntryAbility`
-- `deveco device --uninstall com.example.app -t 127.0.0.1:5555`
+- `deveco device list`
+- `deveco device info`
+- `deveco device install ./feature.hsp ./entry.hap`
+- `deveco device install ./entry.hap -b com.example.app -a EntryAbility`
+- `deveco device uninstall com.example.app -t 127.0.0.1:5555`
 
 ### `deveco run`
 
@@ -167,8 +172,8 @@ Update the CLI to the latest version.
 
 ```bash
 deveco build
-deveco emulator --list                        # pick or note a name
-deveco emulator --start --name HarmonyOS_Phone
+deveco emulator list                          # pick or note a name
+deveco emulator start HarmonyOS_Phone         # or: start "Mate 70 Pro" OtherAVD
 deveco run
 ```
 
@@ -182,7 +187,7 @@ deveco log --crash --bundle-name com.example.app
 ### Multi-device or multi-emulator host
 
 ```bash
-deveco device --list                          # find the target serial
+deveco device list                            # find the target serial
 deveco run --device 127.0.0.1:5555
 deveco log -d 127.0.0.1:5555 --level E
 ```
@@ -199,7 +204,7 @@ deveco build --product oversea --build-mode release
 - **"Product / Build mode `<x>` not found"** — the value must exist in `build-profile.json5`.
 - **"Multiple entry modules" / "No entry module"** — pass `--modules` (build) or `--module` (run).
 - **"No active devices"** — connect a device or start an emulator.
-- **"Multiple devices connected"** — disambiguate with `-t <serial>` (`device`) or `--device <name|serial>` (`run` / `log`).
+- **"Multiple devices connected"** — disambiguate with `-t <serial>` (`deveco device …`) or `--device <name|serial>` (`run` / `log`).
 - **"Module is of type `<x>`, which is not runnable"** — pick an `entry` / `feature` / `shared` module.
 - **`create` says "Invalid API level"** — `--api-level` must be an integer in `17`–`23`, or omit it to auto-detect.
 - **`knowledge` says "Please login first"** — run `deveco login`.

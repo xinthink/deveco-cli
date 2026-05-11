@@ -38,6 +38,14 @@ program.addCommand(logCommand);
 program.addCommand(createCommand);
 program.addCommand(initCommand);
 
+// Allow `deveco <command> help` as an alias for `deveco <command> --help`.
+// Commander only supports this automatically for commands that have sub-commands,
+// so we normalise it here for leaf commands (build, run, log, etc.) as well.
+const rawArgs = process.argv.slice(2);
+if (rawArgs.length >= 2 && rawArgs[rawArgs.length - 1] === 'help') {
+  process.argv = [...process.argv.slice(0, -1), '--help'];
+}
+
 program.parseAsync(process.argv).catch((err) => {
   console.error(err);
   process.exit(1);

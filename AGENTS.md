@@ -38,13 +38,20 @@ src/
 │   └── knowledge.ts  skills.ts
 ├── auth/                     # Huawei Developer OAuth + token lifecycle
 ├── skills/                   # HMOS skills marketplace client (api + installer)
-├── service/                  # Domain helpers (e.g. emulator-service)
+├── service/                  # Domain helpers
+│   ├── emulator-service.ts          # Used by `device` flow (devices + emulators discovery)
+│   ├── emulator-types.ts            # `EmulatorInfo` + `normalizeListNameKey`
+│   ├── emulator-list-parse.ts       # Parses `emulator -list -details` (JSON / text)
+│   ├── emulator-start-strategies.ts # Builds `-start` / `-hvd` argv candidates + retries
+│   └── emulator-manager.ts          # listEmulators / startEmulator / stopEmulator
 ├── utils/
 │   ├── project.ts            # Project discovery + JSON5 build-profile parsing
 │   ├── tool-provider.ts      # Locate DevEco Studio + resolve toolchain paths
 │   ├── template-provider.ts  # Copy templates/application + render API-level fields
 │   ├── ohpm-adapter.ts   hvigor-adapter.ts
-│   ├── hdc-adapter.ts    hilog-adapter.ts
+│   ├── hdc-adapter.ts    hilog-adapter.ts    hdc-param.ts
+│   ├── emulator-spawn.ts          # Detached Emulator.exe spawn + Windows shell quoting
+│   ├── emulator-hdc-targets.ts    # `hdc list targets` filter for emulator serials
 │   ├── knowledge.ts          # Knowledge query normalization + ranking
 │   ├── http-client.ts  jwt.ts  browser.ts  cmd.ts  config.ts  region.ts
 │   └── logger.ts             # debugLog (gated by DEVECO_CLI_DEBUG)
@@ -64,7 +71,9 @@ SKILL_TEMP.md                 # Edit this; SKILL.md is regenerated from it on bu
 - **`commands/build.ts`** — Pipeline `ohpm install --all → hvigor --sync → hvigor assemble*`. Auto-detects the entry module, resolves transitive HSP deps, and propagates `@target` suffixes. With `--product <name>` only, builds the whole-product `.app`; otherwise builds per-module `.hap` / `.hsp` / `.har`.
 - **`commands/run.ts`** — Auto-selects the runnable module (`entry`/`feature`/`shared`) and the device (name substring or exact serial), installs HSP deps then the main `.hap` via `hdc install -r`, and `aa start`s the ability (defaults to `mainElement` from `module.json5`).
 - **`commands/device.ts`** — `--list` / `--info` / `--install` (multi-package, dep-first) / `--uninstall`, all via `hdc`. Multi-device hosts must pass `-t <serial>`.
-- **`commands/emulator.ts`** + **`service/emulator-service.ts`** — `--list` parses `emulator -list -details` and merges with `hdc list targets` to attach a `[serial]` to running instances. `--start` is non-blocking (detached spawn) and tries multiple `-start` / `-hvd` + path/image variants in order.
+- **`commands/emulator.ts`** — Thin CLI layer for `list` / `start <names...>` / `stop <name>`. `list` merges `EmulatorManager.listEmulators()` with `hdc list targets` (via `utils/emulator-hdc-targets.ts`) to attach a `[serial]` to running instances. `start` accepts multiple names (quote those with spaces) and runs them in parallel via `Promise.allSettled`; success is reported only once `hdc list targets` shows the instance (matched via `ohos.qemu.hvd.name`).
+- **`service/emulator-manager.ts`** — `EmulatorManager` orchestrates `listEmulators` / `startEmulator` / `stopEmulator`. Delegates list parsing to `service/emulator-list-parse.ts` and start strategy selection to `service/emulator-start-strategies.ts`; uses `utils/emulator-spawn.ts` for the actual detached spawn (incl. Windows shell quoting fallback).
+- **`service/emulator-service.ts`** — Used by the `device` discovery flow to enumerate connected devices and installed emulators. This is separate from `commands/emulator.ts`, which implements the `deveco emulator` subcommand.
 - **`commands/log.ts`** — Thin shell over `HilogAdapter`: `--crash` switches to crash dump; otherwise common hilog with `--level` / `--bundle-name` / `--keyword` filters.
 - **`commands/knowledge.ts`** — Login-gated. Normalizes `--keywords` (multi-word, no quotes) and prints the ranked answers as a JSON array.
 - **`commands/skills.ts`** + **`skills/`** — `list` / `find` / `add` / `remove`. Downloads skill `.zip`s and extracts them into per-agent paths defined in `config/constants.ts → AGENT_SKILLS_CONFIG` (e.g. `~/.claude/skills/`, `~/.cursor/skills-cursor/`) and / or `<project>/.deveco/skills/`. With neither `--agent` nor `--project`, operates on every detected agent. The shared agent helpers (`parseAgentList` / `getAllExistingAgents` / `summarizeOperationResults`) live in `skills/agents.ts` so `init` can reuse them.

@@ -2,259 +2,24 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { spawn } from 'node:child_process';
 import { Command } from 'commander';
-import { execa } from 'execa';
-import { ToolProvider } from '../utils/tool-provider.js';
-import * as path from 'path';
+import { tryGetHdcShellParam } from '../utils/hdc-param.js';
 import { green, cyan, red, yellow, gray } from 'colorette';
+import type { EmulatorInfo } from '../service/emulator-types.js';
+import { normalizeListNameKey } from '../service/emulator-types.js';
+import { EmulatorManager } from '../service/emulator-manager.js';
+import {
+  resolveHdcPath,
+  fetchEmulatorSerials,
+} from '../utils/emulator-hdc-targets.js';
 
-interface EmulatorInfo {
-  name: string;
-  isRunning?: boolean;
-  instancePath?: string;
-  path?: string;
-  imageRoot?: string;
-}
-
-class EmulatorManager {
-  private emulatorPath: string;
-  private sdkPath: string;
-
-  private constructor(emulatorPath: string, sdkPath: string) {
-    this.emulatorPath = emulatorPath;
-    this.sdkPath = sdkPath;
-  }
-
-  public static async new(): Promise<EmulatorManager> {
-    const toolProvider = await ToolProvider.new();
-    return new EmulatorManager(toolProvider.emulatorPath, toolProvider.sdkPath);
-  }
-
-  private async executeEmulator(
-    args: string[]
-  ): Promise<{ stdout: string; stderr: string }> {
-    return execa(this.emulatorPath, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, DEVECO_SDK_HOME: this.sdkPath },
-    });
-  }
-
-  /**
-   * Start the emulator without waiting for the GUI process to exit.
-   * Resolves when the OS has accepted the spawn; rejects on immediate spawn failure.
-   */
-  private executeEmulatorDetached(args: string[]): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const child = spawn(this.emulatorPath, args, {
-        detached: true,
-        stdio: 'ignore',
-        env: { ...process.env, DEVECO_SDK_HOME: this.sdkPath },
-        windowsHide: true,
-      });
-
-      child.once('error', reject);
-      child.once('spawn', () => {
-        child.removeAllListeners('error');
-        child.unref();
-        resolve();
-      });
-    });
-  }
-
-  public async listEmulators(): Promise<EmulatorInfo[]> {
-    const { stdout } = await this.executeEmulator(['-list', '-details']);
-    return this.parseListOutput(stdout);
-  }
-
-  private parseListOutput(output: string): EmulatorInfo[] {
-    try {
-      const jsonOutput = JSON.parse(output);
-      if (Array.isArray(jsonOutput)) {
-        return jsonOutput
-          .map((item: Record<string, unknown>) => ({
-            name: (item.name || item.Name || '') as string,
-            isRunning: item.isRunning === true || item.isRunning === 'true',
-            instancePath: (item.instancePath ||
-              item.instance_path ||
-              item.InstancePath ||
-              '') as string,
-            path: (item.path || item.Path || '') as string,
-            imageRoot: (item.imageRoot ||
-              item.image_root ||
-              item.ImageRoot ||
-              '') as string,
-          }))
-          .filter((emu: EmulatorInfo) => emu.name);
-      }
-    } catch {
-      // Fallback to text parsing
-    }
-
-    const emulators: EmulatorInfo[] = [];
-    const fieldRegex =
-      /^(name|isrunning|instancepath|path|imageroot)\s*:\s*(.+)/gim;
-
-    let current: EmulatorInfo | null = null;
-    let match;
-
-    while ((match = fieldRegex.exec(output)) !== null) {
-      const [, key, value] = match;
-      if (key.toLowerCase() === 'name') {
-        if (current) {
-          emulators.push(current);
-        }
-        current = { name: value.trim() };
-      } else if (current) {
-        current[key.toLowerCase() as keyof EmulatorInfo] =
-          key === 'isrunning'
-            ? value.trim().toLowerCase() === 'true'
-            : value.trim();
-      }
-    }
-
-    if (current) {
-      emulators.push(current);
-    }
-    return emulators;
-  }
-
-  public async startEmulator(
-    name: string
-  ): Promise<'started' | 'already-running'> {
-    const emulators = await this.listEmulators();
-    const targetEmulator = emulators.find((e) => e.name === name);
-
-    if (!targetEmulator) {
-      throw new Error(`Emulator "${name}" not found.`);
-    }
-
-    if (targetEmulator.isRunning === true) {
-      return 'already-running';
-    }
-
-    console.log(cyan(`Starting emulator "${name}"...`));
-
-    const candidates = this.buildStartCandidates(name, targetEmulator);
-    let lastError: Error | undefined;
-
-    for (const args of candidates) {
-      try {
-        await this.executeEmulatorDetached(args);
-        return 'started';
-      } catch (err) {
-        lastError = err as Error;
-        continue;
-      }
-    }
-
-    throw new Error(
-      `Unable to start emulator "${name}". All methods failed.\nLast error: ${lastError?.message || 'unknown'}`
-    );
-  }
-
-  /**
-   * Build start argument candidates in priority order.
-   * Path sources: parentPath → instancePath → path
-   * Image sources: imageRoot → none
-   * Modes: -start (-instancePath) + -hvd (-path)
-   */
-  private buildStartCandidates(
-    name: string,
-    emulator: EmulatorInfo
-  ): string[][] {
-    const parentPath = emulator.instancePath
-      ? path.dirname(emulator.instancePath)
-      : undefined;
-
-    const candidates: string[][] = [];
-
-    // 1. Simplest attempt (no path/image args)
-    candidates.push(['-start', name]);
-
-    // 2. Path + image combinations
-    const pathSources: Array<{
-      value: string;
-      startFlag: string;
-      hvdFlag: string;
-    }> = [];
-    if (parentPath) {
-      pathSources.push({
-        value: parentPath,
-        startFlag: '-instancePath',
-        hvdFlag: '-path',
-      });
-    }
-    if (emulator.instancePath) {
-      pathSources.push({
-        value: emulator.instancePath,
-        startFlag: '-instancePath',
-        hvdFlag: '-path',
-      });
-    }
-    if (emulator.path) {
-      pathSources.push({
-        value: emulator.path,
-        startFlag: '-instancePath',
-        hvdFlag: '-path',
-      });
-    }
-
-    const imageSources: string[][] = [];
-    if (emulator.imageRoot) {
-      imageSources.push(['-imageRoot', emulator.imageRoot]);
-    }
-    imageSources.push([]); // no image arg
-
-    for (const { value: pathVal, startFlag, hvdFlag } of pathSources) {
-      for (const imageArgs of imageSources) {
-        candidates.push(['-start', name, startFlag, pathVal, ...imageArgs]);
-        candidates.push(['-hvd', name, hvdFlag, pathVal, ...imageArgs]);
-      }
-    }
-
-    // 3. Final fallback
-    candidates.push(['-hvd', name]);
-
-    return candidates;
-  }
-
-  public async stopEmulator(name: string): Promise<void> {
-    await this.executeEmulator(['-stop', name]);
-  }
-}
-
-interface EmulatorOptions {
-  start?: boolean;
-  stop?: boolean;
-  list?: boolean;
-  name?: string;
-}
-
-function printEmulatorDetail(emu: EmulatorInfo, serial?: string) {
-  const statusText = emu.isRunning ? (serial ?? 'running') : 'stopped';
+function printEmulatorDetail(
+  emu: EmulatorInfo,
+  serial: string | undefined,
+  effectiveRunning: boolean
+) {
+  const statusText = effectiveRunning ? (serial ?? 'running') : 'stopped';
   console.log(`  ${emu.name} [${statusText}]`);
-}
-
-async function resolveHdcPath(): Promise<string | null> {
-  try {
-    const toolProvider = await ToolProvider.new();
-    return toolProvider.hdcPath;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchEmulatorSerials(hdcPath: string): Promise<string[]> {
-  try {
-    const { stdout } = await execa(hdcPath, ['list', 'targets']);
-    return stdout
-      .split('\n')
-      .map((line) => line.trim().split(/\s+/)[0])
-      .filter((serial) => serial.startsWith('127.0.0.1:'));
-  } catch {
-    return [];
-  }
 }
 
 async function queryParamMatch(
@@ -263,20 +28,12 @@ async function queryParamMatch(
   paramKey: string,
   unmatchedNames: string[]
 ): Promise<string | null> {
-  try {
-    const { stdout } = await execa(hdcPath, [
-      '-t',
-      serial,
-      'shell',
-      'param',
-      'get',
-      paramKey,
-    ]);
-    const matchIdx = unmatchedNames.indexOf(stdout.trim());
-    return matchIdx !== -1 ? unmatchedNames[matchIdx] : null;
-  } catch {
+  const value = await tryGetHdcShellParam(hdcPath, serial, paramKey);
+  if (!value) {
     return null;
   }
+  const matchIdx = unmatchedNames.indexOf(value);
+  return matchIdx !== -1 ? unmatchedNames[matchIdx] : null;
 }
 
 async function matchSerialToName(
@@ -309,47 +66,54 @@ async function matchSerialToName(
   return false;
 }
 
-async function getEmulatorSerials(
+/** One pass over local emulator serials: HVD map + product-name map for list UI. */
+async function buildEmulatorHdcSerialMaps(
+  hdcPath: string,
   runningEmulatorNames: string[]
-): Promise<Map<string, string>> {
-  const serialMap = new Map<string, string>();
-  if (runningEmulatorNames.length === 0) {
-    return serialMap;
+): Promise<{
+  productSerialMap: Map<string, string>;
+  hvdSerialMap: Map<string, string>;
+}> {
+  const hvdSerialMap = new Map<string, string>();
+  const productSerialMap = new Map<string, string>();
+  const serials = await fetchEmulatorSerials(hdcPath);
+  if (serials.length === 0) {
+    return { productSerialMap, hvdSerialMap };
   }
 
-  const hdcPath = await resolveHdcPath();
-  if (!hdcPath) {
-    return serialMap;
-  }
-
-  const emulatorSerials = await fetchEmulatorSerials(hdcPath);
-  if (emulatorSerials.length === 0) {
-    return serialMap;
-  }
-
-  const unmatchedSerials = [...emulatorSerials];
+  const unmatchedSerials = [...serials];
   const unmatchedNames = [...runningEmulatorNames];
 
-  for (const serial of emulatorSerials) {
-    await matchSerialToName(
+  for (const serial of serials) {
+    const hvd = await tryGetHdcShellParam(
       hdcPath,
       serial,
-      unmatchedNames,
-      serialMap,
-      unmatchedSerials
+      'ohos.qemu.hvd.name'
     );
+    if (hvd) {
+      hvdSerialMap.set(hvd, serial);
+    }
+
+    if (runningEmulatorNames.length > 0) {
+      await matchSerialToName(
+        hdcPath,
+        serial,
+        unmatchedNames,
+        productSerialMap,
+        unmatchedSerials
+      );
+    }
   }
 
-  // Fallback: assign remaining serials to remaining running emulators in order
   for (
     let i = 0;
     i < unmatchedNames.length && i < unmatchedSerials.length;
     i++
   ) {
-    serialMap.set(unmatchedNames[i], unmatchedSerials[i]);
+    productSerialMap.set(unmatchedNames[i], unmatchedSerials[i]);
   }
 
-  return serialMap;
+  return { productSerialMap, hvdSerialMap };
 }
 
 async function listAction(emulatorManager: EmulatorManager) {
@@ -366,11 +130,22 @@ async function listAction(emulatorManager: EmulatorManager) {
     const runningNames = emulators
       .filter((e) => e.isRunning)
       .map((e) => e.name);
-    const serialMap = await getEmulatorSerials(runningNames);
+
+    let productSerialMap = new Map<string, string>();
+    let hvdSerialMap = new Map<string, string>();
+    const hdcPath = await resolveHdcPath();
+    if (hdcPath) {
+      const maps = await buildEmulatorHdcSerialMaps(hdcPath, runningNames);
+      productSerialMap = maps.productSerialMap;
+      hvdSerialMap = maps.hvdSerialMap;
+    }
 
     for (const emu of emulators) {
-      const serial = emu.isRunning ? serialMap.get(emu.name) : undefined;
-      printEmulatorDetail(emu, serial);
+      const serial =
+        productSerialMap.get(emu.name) ?? hvdSerialMap.get(emu.name);
+      const effectiveRunning =
+        emu.isRunning === true || hvdSerialMap.has(emu.name);
+      printEmulatorDetail(emu, serial, effectiveRunning);
     }
     console.log('');
   } catch (error) {
@@ -391,17 +166,88 @@ function handleError(action: string, name: string, error: unknown): never {
   process.exit(1);
 }
 
-async function startAction(emulatorManager: EmulatorManager, name: string) {
-  try {
-    const outcome = await emulatorManager.startEmulator(name);
-    if (outcome === 'already-running') {
-      console.log(yellow(`Emulator "${name}" is already running.`));
-    } else {
-      console.log(green(`Emulator "${name}" started successfully.`));
+const EMULATOR_CONFIRM_POLL_INTERVAL_MS = 2000;
+const EMULATOR_CONFIRM_TIMEOUT_MS = 60000;
+
+/**
+ * Poll `hdc list targets` until the named emulator appears (via ohos.qemu.hvd.name),
+ * or until the timeout is reached.  Returns true when confirmed, false on timeout.
+ */
+async function waitForEmulatorByHdcName(
+  hdcPath: string,
+  name: string,
+  timeoutMs = EMULATOR_CONFIRM_TIMEOUT_MS,
+  intervalMs = EMULATOR_CONFIRM_POLL_INTERVAL_MS
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const serials = await fetchEmulatorSerials(hdcPath);
+    for (const serial of serials) {
+      const hvd = await tryGetHdcShellParam(hdcPath, serial, 'ohos.qemu.hvd.name');
+      if (hvd && normalizeListNameKey(hvd) === normalizeListNameKey(name)) {
+        return true;
+      }
     }
-    console.log('');
-  } catch (error) {
-    handleError('start', name, error);
+    await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return false;
+}
+
+async function startOneEmulator(
+  emulatorManager: EmulatorManager,
+  hdcPath: string | null,
+  name: string
+): Promise<void> {
+  const outcome = await emulatorManager.startEmulator(name);
+  if (outcome === 'already-running') {
+    console.log(yellow(`Emulator "${name}" is already running.`));
+    return;
+  }
+
+  console.log(cyan(`Starting emulator "${name}"...`));
+
+  if (hdcPath) {
+    const confirmed = await waitForEmulatorByHdcName(hdcPath, name);
+    if (confirmed) {
+      console.log(green(`Emulator "${name}" started successfully.`));
+    } else {
+      console.log(
+        yellow(
+          `Emulator "${name}" was launched but did not appear in hdc list targets within the timeout.`
+        )
+      );
+    }
+  } else {
+    console.log(green(`Emulator "${name}" started successfully.`));
+  }
+}
+
+async function startAction(emulatorManager: EmulatorManager, names: string[]) {
+  const hdcPath = await resolveHdcPath();
+
+  const results = await Promise.allSettled(
+    names.map((name) => startOneEmulator(emulatorManager, hdcPath, name))
+  );
+
+  let anyFailed = false;
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status === 'rejected') {
+      anyFailed = true;
+      const e = result.reason as Error & { stdout?: string; stderr?: string };
+      console.error(red(`Failed to start emulator "${names[i]}": ${e.message}`));
+      if (e.stdout) {
+        console.error(gray(e.stdout));
+      }
+      if (e.stderr) {
+        console.error(gray(e.stderr));
+      }
+    }
+  }
+
+  console.log('');
+  if (anyFailed) {
+    process.exit(1);
   }
 }
 
@@ -415,44 +261,44 @@ async function stopAction(emulatorManager: EmulatorManager, name: string) {
   }
 }
 
-const emulatorCommand = new Command('emulator')
-  .description('Manage emulator instances')
-  .option('--list', 'List all emulator instances')
-  .option('--start', 'Start an emulator instance')
-  .option('--stop', 'Stop an emulator instance')
-  .option(
-    '--name <name>',
-    'Emulator instance name (required with --start and --stop)'
-  )
-  .action(async (options: EmulatorOptions) => {
-    let emulatorManager: EmulatorManager;
-    try {
-      emulatorManager = await EmulatorManager.new();
-    } catch (error) {
-      console.error(
-        red(`Failed to initialize emulator: ${(error as Error).message}`)
-      );
-      process.exit(1);
-      return;
-    }
+async function initEmulatorManager(): Promise<EmulatorManager> {
+  try {
+    return await EmulatorManager.new();
+  } catch (error) {
+    console.error(
+      red(`Failed to initialize emulator: ${(error as Error).message}`)
+    );
+    process.exit(1);
+    return undefined as never;
+  }
+}
 
-    if (options.list) {
-      await listAction(emulatorManager);
-    } else if (options.start) {
-      if (!options.name) {
-        console.error(red('Error: --name is required when using --start'));
-        process.exit(1);
-      }
-      await startAction(emulatorManager, options.name);
-    } else if (options.stop) {
-      if (!options.name) {
-        console.error(red('Error: --name is required when using --stop'));
-        process.exit(1);
-      }
-      await stopAction(emulatorManager, options.name);
-    } else {
-      emulatorCommand.outputHelp();
-    }
+const emulatorCommand = new Command('emulator').description(
+  'Manage emulator instances'
+);
+
+emulatorCommand
+  .command('list')
+  .description('List all emulator instances')
+  .action(async () => {
+    const emulatorManager = await initEmulatorManager();
+    await listAction(emulatorManager);
+  });
+
+emulatorCommand
+  .command('start <names...>')
+  .description('Start one or more emulator instances')
+  .action(async (names: string[]) => {
+    const emulatorManager = await initEmulatorManager();
+    await startAction(emulatorManager, names);
+  });
+
+emulatorCommand
+  .command('stop <name>')
+  .description('Stop an emulator instance')
+  .action(async (name: string) => {
+    const emulatorManager = await initEmulatorManager();
+    await stopAction(emulatorManager, name);
   });
 
 export default emulatorCommand;

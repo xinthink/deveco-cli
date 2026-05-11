@@ -8,6 +8,7 @@ import { join } from 'path';
 import { existsSync, statSync } from 'fs';
 import { DeviceInfo } from '../utils/config.js';
 import { runCommand } from '../utils/cmd.js';
+import { tryGetHdcShellParam } from '../utils/hdc-param.js';
 
 export class EmulatorService {
   private toolProvider: ToolProvider;
@@ -151,31 +152,11 @@ export class EmulatorService {
    * @returns 模拟器名称
    */
   async getEmulatorName(hdcPath: string, id: string): Promise<string> {
-    // 执行命令：hdc -t <id> shell param get ohos.qemu.hvd.name
-    const result = await runCommand(hdcPath, [
-      '-t',
-      id,
-      'shell',
-      'param',
-      'get',
-      'ohos.qemu.hvd.name',
-    ]);
-
-    if (result.exitCode !== 0) {
-      throw new Error(`Failed to get emulator name: ${result.stderr}`);
+    const v = await tryGetHdcShellParam(hdcPath, id, 'ohos.qemu.hvd.name');
+    if (v === undefined) {
+      throw new Error('Failed to get emulator name');
     }
-
-    const stdout = result.stdout.trim();
-
-    // 输出格式可能是 "key = value" 或直接是值
-    // 如果包含等号，提取等号后面的部分
-    const equalSignIndex = stdout.indexOf('=');
-    if (equalSignIndex !== -1) {
-      return stdout.substring(equalSignIndex + 1).trim();
-    }
-
-    // 否则直接返回输出内容
-    return stdout;
+    return v;
   }
 
   /**
@@ -186,31 +167,11 @@ export class EmulatorService {
    * @returns 设备名称
    */
   async getRealDeviceName(hdcPath: string, id: string): Promise<string> {
-    // 执行命令：hdc -t <id> shell param get const.product.name
-    const result = await runCommand(hdcPath, [
-      '-t',
-      id,
-      'shell',
-      'param',
-      'get',
-      'const.product.name',
-    ]);
-
-    if (result.exitCode !== 0) {
-      throw new Error(`Failed to get device name: ${result.stderr}`);
+    const v = await tryGetHdcShellParam(hdcPath, id, 'const.product.name');
+    if (v === undefined) {
+      throw new Error('Failed to get device name');
     }
-
-    const stdout = result.stdout.trim();
-
-    // 输出格式可能是 "key = value" 或直接是值
-    // 如果包含等号，提取等号后面的部分
-    const equalSignIndex = stdout.indexOf('=');
-    if (equalSignIndex !== -1) {
-      return stdout.substring(equalSignIndex + 1).trim();
-    }
-
-    // 否则直接返回输出内容
-    return stdout;
+    return v;
   }
 
   /**
