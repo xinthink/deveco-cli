@@ -5,6 +5,7 @@
 import path from 'path';
 import fs from 'fs';
 import process from 'process';
+import os from 'os';
 import { Command } from 'commander';
 import { green, red, cyan, yellow } from 'colorette';
 import { ToolProvider } from '../utils/tool-provider.js';
@@ -20,13 +21,161 @@ interface CreateOptions {
   apiLevel?: string;
 }
 
+function validateAppName(name: string): void {
+  if (name.length < 1 || name.length > 200) {
+    throw new Error(
+      `App name length must be 1-200 characters. Current: ${name.length}`
+    );
+  }
+
+  if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name)) {
+    throw new Error(
+      'App name must start with a letter (a-z, A-Z) and contain only letters, digits, and underscores'
+    );
+  }
+}
+
+function validateBundleName(bundleName: string): void {
+  if (bundleName.length < 7 || bundleName.length > 128) {
+    throw new Error(
+      `Bundle name length must be 7-128 characters. Current: ${bundleName.length}`
+    );
+  }
+
+  if (bundleName.includes('..')) {
+    throw new Error(
+      'Bundle name cannot contain consecutive dots (e.g., "com..example")'
+    );
+  }
+
+  const segments = bundleName.split('.');
+  if (segments.length < 3) {
+    throw new Error(
+      'Bundle name must contain at least 3 segments separated by dots'
+    );
+  }
+
+  const segmentRegex = /^[a-zA-Z0-9_]+$/;
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+
+    if (!segmentRegex.test(segment)) {
+      throw new Error(
+        `Segment "${segment}" contains invalid characters. Only letters, digits, and underscores allowed`
+      );
+    }
+
+    if (i === 0) {
+      if (!/^[a-zA-Z]/.test(segment)) {
+        throw new Error(
+          `First segment "${segment}" must start with a letter (a-z, A-Z)`
+        );
+      }
+    } else {
+      if (!/^[a-zA-Z0-9]/.test(segment)) {
+        throw new Error(
+          `Segment "${segment}" must start with a letter or digit`
+        );
+      }
+    }
+
+    if (!/[a-zA-Z0-9]$/.test(segment)) {
+      throw new Error(`Segment "${segment}" must end with a letter or digit`);
+    }
+  }
+}
+
+function normalizeProjectPath(projectPath: string): string {
+  const platform = os.platform();
+  if (platform === 'win32') {
+    let normalized = projectPath.replace(/\\/g, '/');
+    normalized = normalized.replace(/\/+/g, '/');
+    return normalized;
+  }
+  return projectPath.replace(/\/+/g, '/');
+}
+
+function validateProjectPath(projectPath: string): void {
+  const normalizedPath = normalizeProjectPath(projectPath);
+
+  const chineseRegex = /[\u4e00-\u9fff]/;
+  if (chineseRegex.test(normalizedPath)) {
+    throw new Error('Project path cannot contain Chinese characters');
+  }
+
+  if (normalizedPath.endsWith('.')) {
+    throw new Error('Project path cannot end with a dot (.)');
+  }
+  const platform = os.platform();
+  const validPathRegex =
+    platform === 'win32' ? /^[a-zA-Z0-9._\-:\\/]+$/ : /^[a-zA-Z0-9._\-:/]+$/;
+
+  if (!validPathRegex.test(normalizedPath)) {
+    const separator =
+      platform === 'win32' ? 'slashes (/) or backslashes (\\)' : 'slashes (/)';
+    throw new Error(
+      `Project path can only contain letters, digits, dots, underscores, hyphens, colons, and ${separator}`
+    );
+  }
+}
+
+function findExistingParent(dirPath: string): string | null {
+  let currentPath = dirPath;
+  const root = path.parse(dirPath).root;
+
+  while (currentPath !== root) {
+    if (fs.existsSync(currentPath)) {
+      return currentPath;
+    }
+    currentPath = path.dirname(currentPath);
+  }
+
+  if (fs.existsSync(root)) {
+    return root;
+  }
+
+  return null;
+}
+
+function checkWritePermission(dirPath: string): void {
+  const existingParent = findExistingParent(dirPath);
+
+  if (!existingParent) {
+    throw new Error(
+      `No existing parent directory found for '${dirPath}'. Cannot create project directory.`
+    );
+  }
+
+  try {
+    fs.accessSync(existingParent, fs.constants.W_OK);
+  } catch {
+    throw new Error(
+      `No write permission for directory '${existingParent}'. Cannot create project here.`
+    );
+  }
+
+  const testFile = path.join(
+    existingParent,
+    `.deveco_write_test_${Date.now()}`
+  );
+  try {
+    fs.writeFileSync(testFile, 'test');
+    fs.unlinkSync(testFile);
+  } catch {
+    throw new Error(
+      `No write permission for directory '${existingParent}'. Cannot create project here.`
+    );
+  }
+}
+
 function deriveBundleName(appName: string): string {
   return `com.example.${appName.toLowerCase()}`;
 }
 
 function resolveProjectPath(appName: string, specifiedPath?: string): string {
   if (specifiedPath) {
-    const resolvedPath = path.resolve(specifiedPath);
+    const normalizedPath = normalizeProjectPath(specifiedPath);
+    const resolvedPath = path.resolve(normalizedPath);
     if (fs.existsSync(resolvedPath)) {
       const contents = fs.readdirSync(resolvedPath);
       if (contents.length > 0) {
@@ -34,6 +183,8 @@ function resolveProjectPath(appName: string, specifiedPath?: string): string {
           `Directory '${resolvedPath}' is not empty. Cannot create project in non-empty directory.`
         );
       }
+    } else {
+      checkWritePermission(resolvedPath);
     }
     return resolvedPath;
   }
@@ -41,31 +192,14 @@ function resolveProjectPath(appName: string, specifiedPath?: string): string {
   const pwd = process.cwd();
   const basePath = path.join(pwd, appName);
 
-  if (!fs.existsSync(basePath)) {
-    return basePath;
-  }
-
-  let counter = 1;
-  let candidatePath = path.join(pwd, `${appName}_${counter}`);
-
-  while (fs.existsSync(candidatePath) && counter < 100) {
-    counter++;
-    candidatePath = path.join(pwd, `${appName}_${counter}`);
-  }
-
-  if (counter >= 100) {
+  if (fs.existsSync(basePath)) {
     throw new Error(
-      `Too many directories with name '${appName}' exist. Manual cleanup required.`
+      `Directory '${basePath}' already exists. Cannot create project here.`
     );
   }
 
-  console.log(
-    yellow(
-      `Directory '${appName}' already exists. Using '${appName}_${counter}'`
-    )
-  );
-
-  return candidatePath;
+  checkWritePermission(basePath);
+  return basePath;
 }
 
 function resolveApiLevel(
@@ -102,7 +236,7 @@ const createCommand = new Command('create')
   .description('Initialize a new application project')
   .option(
     '--project-path <path>',
-    'Project directory path (default: pwd/<app-name>)'
+    'Project directory path (default: ./<app-name>)'
   )
   .option('--app-name <name>', 'Application name')
   .option(
@@ -118,7 +252,15 @@ const createCommand = new Command('create')
       }
 
       const appName = options.appName;
+      validateAppName(appName);
+
       const bundleName = options.bundleName || deriveBundleName(appName);
+      validateBundleName(bundleName);
+
+      if (options.projectPath) {
+        validateProjectPath(options.projectPath);
+      }
+
       const projectPath = resolveProjectPath(appName, options.projectPath);
 
       console.log(cyan('Initializing project...'));
