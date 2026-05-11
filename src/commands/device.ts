@@ -308,7 +308,7 @@ async function checkMultiDevice(
 async function infoAction(deviceManager: DeviceManager, deviceSerial?: string) {
   try {
     if (!deviceSerial) {
-      await checkMultiDevice(deviceManager, 'deveco device --info');
+      await checkMultiDevice(deviceManager, 'deveco device info');
     }
 
     const devices = await deviceManager.listDevices();
@@ -361,7 +361,7 @@ async function installAction(
     if (!deviceSerial) {
       await checkMultiDevice(
         deviceManager,
-        `deveco device --install ${packagePaths.join(' ')}`
+        `deveco device install ${packagePaths.join(' ')}`
       );
     }
 
@@ -391,7 +391,7 @@ async function uninstallAction(
     if (!deviceSerial) {
       await checkMultiDevice(
         deviceManager,
-        `deveco device --uninstall ${bundleName}`
+        `deveco device uninstall ${bundleName}`
       );
     }
 
@@ -404,63 +404,74 @@ async function uninstallAction(
   }
 }
 
-interface DeviceOptions {
-  target?: string;
-  list?: boolean;
-  info?: boolean;
-  install?: string[];
-  uninstall?: string;
-  bundle?: string;
-  ability?: string;
+async function initDeviceManager(): Promise<DeviceManager> {
+  try {
+    return await DeviceManager.new();
+  } catch (error) {
+    console.error(
+      red(`Failed to initialize device manager: ${(error as Error).message}`)
+    );
+    process.exit(1);
+    return undefined as never;
+  }
 }
 
-const deviceCommand = new Command('device')
-  .description('Manage connected devices')
+const deviceCommand = new Command('device').description(
+  'Manage connected devices'
+);
+
+deviceCommand
+  .command('list')
+  .description('List all connected devices')
+  .action(async () => {
+    const deviceManager = await initDeviceManager();
+    await listAction(deviceManager);
+  });
+
+deviceCommand
+  .command('info')
+  .description('Show detailed device information')
   .option('-t, --target <serial>', 'Target device serial number')
-  .option('--list', 'List all connected devices')
-  .option('--info', 'Show detailed device information')
+  .action(async (options: { target?: string }) => {
+    const deviceManager = await initDeviceManager();
+    await infoAction(deviceManager, options.target);
+  });
+
+deviceCommand
+  .command('install <packagePaths...>')
+  .description('Install one or more packages (.hap / .hsp)')
+  .option('-t, --target <serial>', 'Target device serial number')
   .option(
-    '--install <packagePaths...>',
-    'Install one or more packages (.hap / .hsp / .app)'
-  )
-  .option('--uninstall <bundleName>', 'Uninstall an application by bundle name')
-  .option(
-    '-b, --bundle <bundleName>',
+    '-b, --bundle-name <name>',
     'Bundle name for launching the app after install'
   )
   .option(
     '-a, --ability <abilityName>',
     'Ability name for launching the app after install'
   )
-  .action(async (options: DeviceOptions) => {
-    let deviceManager: DeviceManager;
-    try {
-      deviceManager = await DeviceManager.new();
-    } catch (error) {
-      console.error(
-        red(`Failed to initialize device manager: ${(error as Error).message}`)
-      );
-      process.exit(1);
-      return;
-    }
-
-    if (options.list) {
-      await listAction(deviceManager);
-    } else if (options.info) {
-      await infoAction(deviceManager, options.target);
-    } else if (options.install) {
+  .action(
+    async (
+      packagePaths: string[],
+      options: { target?: string; bundleName?: string; ability?: string }
+    ) => {
+      const deviceManager = await initDeviceManager();
       await installAction(
         deviceManager,
-        options.install,
+        packagePaths,
         options.target,
-        options.bundle,
+        options.bundleName,
         options.ability
       );
-    } else if (options.uninstall) {
-      await uninstallAction(deviceManager, options.uninstall, options.target);
-    } else {
-      deviceCommand.outputHelp();
     }
+  );
+
+deviceCommand
+  .command('uninstall <bundleName>')
+  .description('Uninstall an application by bundle name')
+  .option('-t, --target <serial>', 'Target device serial number')
+  .action(async (bundleName: string, options: { target?: string }) => {
+    const deviceManager = await initDeviceManager();
+    await uninstallAction(deviceManager, bundleName, options.target);
   });
 
 export default deviceCommand;
