@@ -7,7 +7,7 @@ import { green, red, cyan } from 'colorette';
 import { loginService } from '../auth/login-service';
 
 const loginCommand = new Command('login')
-  .description('Login to a Huawei developer account')
+  .description('Log in to your Huawei Developer account')
   .action(async () => {
     console.log(cyan('Starting login process...'));
 
@@ -19,7 +19,7 @@ const loginCommand = new Command('login')
       );
     } catch (error) {
       const e = error as Error;
-      console.log(red('✗ Login failed'));
+      console.error(red('✗ Login failed'));
       if (e.message) {
         console.error(red(`  Error: ${e.message}`));
       }

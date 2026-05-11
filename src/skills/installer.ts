@@ -167,9 +167,11 @@ async function performSkillInstall(
 /**
  * 统一的错误处理
  */
-function handleOperationError(error: unknown, defaultErrMsg: string = ''): SkillOperationResult {
-  const errorMessage =
-    error instanceof Error ? error.message : defaultErrMsg;
+function handleOperationError(
+  error: unknown,
+  defaultErrMsg: string = ''
+): SkillOperationResult {
+  const errorMessage = error instanceof Error ? error.message : defaultErrMsg;
   return { success: false, error: errorMessage };
 }
 
@@ -396,8 +398,7 @@ export async function removeSkillFromProject(
   projectPath: string
 ): Promise<SkillOperationResult> {
   try {
-    // 构建 skills 目录路径
-    const skillsDir = path.join(projectPath, 'skills');
+    const skillsDir = getProjectSkillsDir(projectPath);
     const skillDir = path.join(skillsDir, skillName);
 
     // 如果 skill 目录不存在，返回 skipped

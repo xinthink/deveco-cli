@@ -5,7 +5,7 @@
 
 import { Command } from 'commander';
 import fs from 'fs';
-import { red, cyan } from 'colorette';
+import { red } from 'colorette';
 import {
   installLocalSkillToAgent,
   installLocalSkillToProject,
@@ -63,26 +63,21 @@ async function handleInitCommand(options: InitOptions): Promise<void> {
 }
 
 const initCommand = new Command('init')
-  .description(
-    'Install the bundled deveco-cli skill to AI agents (and/or a project), so agents can learn how to invoke deveco.'
-  )
+  .description('Install the deveco-cli skill into AI agents')
   .option(
     '--agent <agents>',
-    "Target agents (comma-separated, e.g., 'claude,opencode,gemini'). If omitted, installs to all available agents."
+    'Target agents, comma-separated (e.g. claude,opencode,gemini); installs to all available agents if omitted'
   )
-  .option('--project <path>', 'Path to a project root in which to install.')
   .option(
-    '-f, --force',
-    'Force reinstall: overwrite the existing skill installation if already present.'
+    '--project <path>',
+    'Project root directory to install the skill into'
   )
+  .option('-f, --force', 'Overwrite an existing skill installation')
   .action(async (options: InitOptions) => {
     try {
       await handleInitCommand(options);
     } catch (error: unknown) {
-      console.log(red('Init failed'));
-      if (error instanceof Error && error.message) {
-        console.error(red(error.message));
-      }
+      console.error(red((error as Error).message));
       process.exit(1);
     }
   });

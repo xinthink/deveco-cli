@@ -27,7 +27,6 @@ export const AppConfig = {
   API_VERSION: '1.0.0',
 } as const;
 
-
 export const ApiEndpoints = {
   LOGIN_URL: 'https://devecostudio.huawei.com',
 

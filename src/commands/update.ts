@@ -11,7 +11,7 @@ function getPackageName(): string {
 }
 
 const updateCommand = new Command('update')
-  .description('Update the CLI tool to the latest version')
+  .description('Update deveco-cli to the latest version')
   .action(async () => {
     const packageName = getPackageName();
     console.log(cyan(`Updating ${packageName} to the latest version...`));
@@ -25,7 +25,7 @@ const updateCommand = new Command('update')
       console.log('\n' + green(`${packageName} updated successfully!`));
     } catch (error) {
       const e = error as Error;
-      console.log('\n' + red(`Failed to update ${packageName}`));
+      console.error(red(`Failed to update ${packageName}`));
       if (e.message) {
         console.error(red(e.message));
       }
