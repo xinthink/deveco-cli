@@ -96,6 +96,19 @@ function normalizeProjectPath(projectPath: string): string {
 }
 
 function validateProjectPath(projectPath: string): void {
+  const platform = os.platform();
+
+  const rawValidRegex =
+    platform === 'win32' ? /^[a-zA-Z0-9._\-:\\/]+$/ : /^[a-zA-Z0-9._\-/]+$/;
+
+  if (!rawValidRegex.test(projectPath)) {
+    const allowedChars =
+      platform === 'win32'
+        ? 'letters, digits, dots, underscores, hyphens, colons, slashes (/) or backslashes (\\)'
+        : 'letters, digits, dots, underscores, hyphens or slashes (/)';
+    throw new Error(`Project path can only contain ${allowedChars}`);
+  }
+
   const normalizedPath = normalizeProjectPath(projectPath);
 
   const chineseRegex = /[\u4e00-\u9fff]/;
@@ -105,17 +118,6 @@ function validateProjectPath(projectPath: string): void {
 
   if (normalizedPath.endsWith('.')) {
     throw new Error('Project path cannot end with a dot (.)');
-  }
-  const platform = os.platform();
-  const validPathRegex =
-    platform === 'win32' ? /^[a-zA-Z0-9._\-:\\/]+$/ : /^[a-zA-Z0-9._\-:/]+$/;
-
-  if (!validPathRegex.test(normalizedPath)) {
-    const separator =
-      platform === 'win32' ? 'slashes (/) or backslashes (\\)' : 'slashes (/)';
-    throw new Error(
-      `Project path can only contain letters, digits, dots, underscores, hyphens, colons, and ${separator}`
-    );
   }
 }
 
@@ -287,7 +289,7 @@ const createCommand = new Command('create')
       console.log(`App name: ${result.appName}`);
       console.log(`Bundle name: ${result.bundleName}`);
       console.log(`API level: ${result.apiLevel}`);
-      console.log(green('✓ Template integrity check passed'));
+      console.log(green('Template integrity check passed'));
     } catch (error) {
       const e = error as Error;
       console.error(red('\nFailed to create project'));
