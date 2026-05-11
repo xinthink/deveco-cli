@@ -29,30 +29,13 @@ description: >-
 Initialize a new HarmonyOS application project from the bundled template.
 
 - `--app-name <name>` (**required**) — 1–200 chars, starts with letter, contains only letters/digits/underscores.
-- `--project-path <path>` — defaults to `pwd/<app-name>`; auto-renamed to `<app-name>2`, `<app-name>3`... if exists. Path handling:
-  - **No Chinese characters**.
-  - **Cannot end with a dot (`.`)**.
-  - **Path normalization**: Multiple consecutive slashes are automatically reduced to single slash.
-    - `C:\work\\\\test` → `C:/work/test`
-    - `C:/work////test` → `C:/work/test`
-  - **Deep paths**: Missing parent directories are auto-created (like `mkdir -p`).
-  - **Platform separators**: Windows supports `/` and `\`; macOS supports `/`.
-  - **Write permission**: First existing parent directory must be writable.
-
-  **Note on Windows**: When using backslashes in terminal, wrap path in single quotes to prevent shell interpretation:
-  - `'C:\work\project'` — ✅ correct
-  - `C:\work\project` — ❌ shell may interpret `\` as escape character
-  - `C:/work/project` — ✅ also works (forward slashes)
-
-- `--bundle-name <bundle>` — defaults to `com.example.<appname-lowercase>`; 7–128 chars, ≥3 dot-separated segments, first segment starts with letter, others with letter/digit, no consecutive dots.
-- `--api-level <level>` — integer in `17`–`23`; auto-detected from SDK or defaults to `23` if DevEco Studio not found.
-
-The generated project ships with a working `entry` module and is immediately buildable via `deveco build`.
+- `--project-path <path>` — defaults to `./<app-name>`; error if directory exists. Path normalization: consecutive slashes → single slash; deep paths auto-created; parent must be writable.
+- `--bundle-name <bundle>` — defaults to `com.example.<appname-lowercase>`; 7–128 chars, ≥3 segments, no consecutive dots.
+- `--api-level <level>` — integer in `17`–`23`; auto-detected or defaults to `23`.
 
 Examples:
 - `deveco create --app-name MyApp`
-- `deveco create --app-name MyApp --bundle-name com.acme.myapp --api-level 23`
-- `deveco create --app-name MyApp --project-path ./CustomDir`
+- `deveco create --app-name MyApp --project-path ./CustomDir --api-level 23`
 
 ### `deveco knowledge`
 

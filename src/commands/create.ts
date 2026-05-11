@@ -192,28 +192,14 @@ function resolveProjectPath(appName: string, specifiedPath?: string): string {
   const pwd = process.cwd();
   const basePath = path.join(pwd, appName);
 
-  if (!fs.existsSync(basePath)) {
-    checkWritePermission(basePath);
-    return basePath;
+  if (fs.existsSync(basePath)) {
+    throw new Error(
+      `Directory '${basePath}' already exists. Cannot create project here.`
+    );
   }
 
-  let counter = 2;
-  let candidatePath = path.join(pwd, `${appName}${counter}`);
-
-  while (fs.existsSync(candidatePath)) {
-    counter++;
-    candidatePath = path.join(pwd, `${appName}${counter}`);
-  }
-
-  checkWritePermission(candidatePath);
-
-  console.log(
-    yellow(
-      `Directory '${appName}' already exists. Using '${appName}${counter}' as project path`
-    )
-  );
-
-  return candidatePath;
+  checkWritePermission(basePath);
+  return basePath;
 }
 
 function resolveApiLevel(
@@ -250,7 +236,7 @@ const createCommand = new Command('create')
   .description('Initialize a new application project')
   .option(
     '--project-path <path>',
-    'Project directory path (default: pwd/<app-name>)'
+    'Project directory path (default: ./<app-name>)'
   )
   .option('--app-name <name>', 'Application name')
   .option(
