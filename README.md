@@ -60,7 +60,7 @@ If the agent doesn't pick up the skill automatically, prompt it explicitly: *"Us
 | `deveco run` | Install (with HSP deps) and launch on a device / emulator |
 | `deveco device` | List / inspect / install / uninstall on connected devices |
 | `deveco emulator` | List / start / stop local emulators |
-| `deveco log` | Fetch hilog or crash logs (with level / bundle / keyword / follow filters) |
+| `deveco log` | Fetch hilog or crash logs (with level / bundle / keyword / tail / follow filters) |
 | `deveco knowledge` | Search the HarmonyOS / ArkTS knowledge base (requires `deveco login`) |
 | `deveco init` | Install the bundled `deveco-cli` skill into your AI agents (`claude`, `cursor`, …) so they learn how to drive `deveco` |
 | `deveco skills` | List / find / add / remove HMOS skills for AI agents and projects |

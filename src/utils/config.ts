@@ -12,6 +12,7 @@ export interface HilogOptions {
   keyword?: string;
   logSize?: string;
   isFollow?: boolean;
+  tail?: number;
 }
 
 export interface DeviceInfo {

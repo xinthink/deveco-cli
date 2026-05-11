@@ -119,12 +119,14 @@ Fetch hilog or crash logs.
 
 - `--device <name|serial>` accepts name or serial; required on multi-device hosts.
 - `--crash` switches to crash log dump; `--level D|I|W|E|F` filters by level; `--bundle-name` and `--keyword` further narrow output.
+- `--tail <num>` keeps only the latest `num` lines and can be combined with other filters.
 - `--follow` streams hilog in real time (non-`--crash` mode) until interrupted (`Ctrl+C`).
 
 Examples:
 - `deveco log --level E`
 - `deveco log --crash --bundle-name com.example.app`
 - `deveco log -d 127.0.0.1:5555 --level W --keyword Init`
+- `deveco log --tail 200 --level E`
 - `deveco log --follow`
 
 ## 2. Setup

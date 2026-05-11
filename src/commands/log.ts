@@ -2,9 +2,10 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { Command } from 'commander';
+import { Command, InvalidArgumentError } from 'commander';
 import { ToolProvider } from '../utils/tool-provider.js';
 import { HilogAdapter } from '../utils/hilog-adapter.js';
+import { CommonUtils } from '../utils/common-utils.js';
 import { cyan, red } from 'colorette';
 
 interface LogOptions {
@@ -14,6 +15,15 @@ interface LogOptions {
   bundleName?: string;
   keyword?: string;
   follow?: boolean;
+  tail?: number;
+}
+
+function parsePositiveInt(value: string): number {
+  try {
+    return CommonUtils.parsePositiveInteger(value, 'tail');
+  } catch {
+    throw new InvalidArgumentError('tail must be a positive integer');
+  }
 }
 
 const logCommand = new Command('log')
@@ -23,6 +33,7 @@ const logCommand = new Command('log')
   .option('--level <level>', 'Log level filter: D, I, W, E, F')
   .option('--bundle-name <bundle-name>', 'Filter by application bundle name')
   .option('--keyword <keyword>', 'Keyword filter')
+  .option('--tail <num>', 'Show only the latest N log lines', parsePositiveInt)
   .option('--follow', 'Follow the log stream in real-time.')
   .action(async (options: LogOptions) => {
     await handleLogCommand(options);
@@ -39,19 +50,22 @@ async function handleLogCommand(options: LogOptions) {
     }
 
     console.log(cyan(`deviceId: ${deviceId}`));
-    console.log(
-      cyan(`type: ${options.crash ? 'Crash logs' : 'Common logs'}`)
-    );
+    console.log(cyan(`type: ${options.crash ? 'Crash logs' : 'Common logs'}`));
     console.log(cyan('Obtaining logs ...'));
 
-    const logs = options.crash
+    let logs = options.crash
       ? await service.getCrashLog(deviceId, options.bundleName)
       : await service.getHilog(deviceId, {
-        level: options.level,
-        bundleName: options.bundleName,
-        keyword: options.keyword,
-        isFollow: options.follow ? true : false,
-      });
+          level: options.level,
+          bundleName: options.bundleName,
+          keyword: options.keyword,
+          isFollow: options.follow ? true : false,
+          tail: options.tail,
+        });
+
+    if (options.crash && options.tail && logs) {
+      logs = CommonUtils.getLastLines(logs, options.tail);
+    }
 
     if (logs) {
       console.log(logs);
