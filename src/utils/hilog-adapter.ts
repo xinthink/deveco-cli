@@ -7,6 +7,7 @@ import { DeviceInfo, HilogOptions } from './config.js';
 import { ToolProvider } from './tool-provider.js';
 import { EmulatorService } from '../service/emulator-service.js';
 import { blue, red, yellow } from 'colorette';
+import { spawn } from 'child_process';
 
 export class HilogAdapter {
   private toolProvider: ToolProvider;
@@ -197,7 +198,12 @@ export class HilogAdapter {
   ): [string, string[]] {
     // 基础命令参数
     // 使用 -x 参数确保 hilog 读取完当前缓冲区后退出，否则命令会挂起等待新日志
-    const args: string[] = ['-t', deviceId, 'shell', 'hilog', '-x'];
+    let args: string[];
+    if (options.isFollow) {
+      args = ['-t', deviceId, 'shell', 'hilog'];
+    } else {
+      args = ['-t', deviceId, 'shell', 'hilog', '-x'];
+    }
 
     // 添加标签过滤
     if (options.tag) {
@@ -229,6 +235,30 @@ export class HilogAdapter {
   }
 
   /**
+   * 实时跟随日志输出（不缓存 stdout/stderr，避免 maxBuffer 溢出）
+   */
+  private async followHilog(command: string, args: string[]): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(command, args, {
+        stdio: 'inherit',
+      });
+
+      child.on('error', (error) => {
+        reject(error);
+      });
+
+      child.on('close', (code) => {
+        if (code === 0 || code === null) {
+          resolve();
+          return;
+        }
+
+        reject(new Error(`Failed to follow hilog: process exited with code ${code}`));
+      });
+    });
+  }
+
+  /**
  * 获取设备的普通日志
  * @param deviceId - 设备 ID
  * @param bundleName - 应用包名（可选）
@@ -250,6 +280,11 @@ export class HilogAdapter {
     // 3. 构建命令
     const [command, args] = this.buildHilogCommand(hdcPath, deviceId, options, pid || '');
     console.log(`Ready to execute hilog command: ${command} ${args.join(' ')}`);
+
+    if (options.isFollow) {
+      await this.followHilog(command, args);
+      return '';
+    }
 
     const result = await runCommand(command, args);
     if (result.exitCode !== 0 && result.stderr) {
