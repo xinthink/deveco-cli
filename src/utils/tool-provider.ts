@@ -134,7 +134,9 @@ export class ToolProvider {
     const unique: string[] = [];
 
     const add = (p: string | undefined, source: string) => {
-      if (!ToolProvider.isExistingDirectory(p)) return;
+      if (!ToolProvider.isExistingDirectory(p)) {
+        return;
+      }
       const key = path.normalize(p).toLowerCase();
       if (!seen.has(key)) {
         seen.add(key);
@@ -179,7 +181,9 @@ export class ToolProvider {
       const huaweiKey = 'HKLM\\SOFTWARE\\WOW6432Node\\Huawei\\DevEco Studio';
       const result = await regList([huaweiKey]);
       const versionKeys = result[huaweiKey]?.keys ?? [];
-      if (versionKeys.length === 0) return;
+      if (versionKeys.length === 0) {
+        return;
+      }
       const subkeys = versionKeys.map((k: string) => `${huaweiKey}\\${k}`);
       const subkeysResult = await regList(subkeys);
       for (const subkey of subkeys) {
@@ -212,7 +216,9 @@ export class ToolProvider {
     const seen = new Set<string>();
 
     for (const dir of searchDirs) {
-      if (!fs.existsSync(dir)) continue;
+      if (!fs.existsSync(dir)) {
+        continue;
+      }
       let entries: string[];
       try {
         entries = fs.readdirSync(dir);
@@ -220,11 +226,17 @@ export class ToolProvider {
         continue;
       }
       for (const entry of entries) {
-        if (!entry.endsWith('.app')) continue;
+        if (!entry.endsWith('.app')) {
+          continue;
+        }
         const lower = entry.toLowerCase();
-        if (!lower.includes('deveco')) continue;
+        if (!lower.includes('deveco')) {
+          continue;
+        }
         const fullPath = path.join(dir, entry);
-        if (!ToolProvider.isExistingDirectory(fullPath)) continue;
+        if (!ToolProvider.isExistingDirectory(fullPath)) {
+          continue;
+        }
         if (!seen.has(fullPath)) {
           seen.add(fullPath);
           candidates.push(fullPath);
@@ -290,7 +302,9 @@ export class ToolProvider {
     const len = Math.max(segA.length, segB.length);
     for (let i = 0; i < len; i++) {
       const diff = (segA[i] ?? 0) - (segB[i] ?? 0);
-      if (diff !== 0) return diff;
+      if (diff !== 0) {
+        return diff;
+      }
     }
     return 0;
   }
@@ -341,7 +355,9 @@ export class ToolProvider {
   }
 
   private static assertMinVersion(installRoot: string, version: string): void {
-    if (ToolProvider.compareVersion(version, MIN_REQUIRED_VERSION) >= 0) return;
+    if (ToolProvider.compareVersion(version, MIN_REQUIRED_VERSION) >= 0) {
+      return;
+    }
     debugLog(
       `[ToolProvider] Selected DevEco Studio ${version} at ${installRoot} — below minimum`
     );
