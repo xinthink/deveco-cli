@@ -39,19 +39,17 @@ async function handleLogCommand(options: LogOptions) {
     }
 
     console.log(cyan(`deviceId: ${deviceId}`));
-    console.log(
-      cyan(`type: ${options.crash ? 'Crash logs' : 'Common logs'}`)
-    );
+    console.log(cyan(`type: ${options.crash ? 'Crash logs' : 'Common logs'}`));
     console.log(cyan('Obtaining logs ...'));
 
     const logs = options.crash
       ? await service.getCrashLog(deviceId, options.bundleName)
       : await service.getHilog(deviceId, {
-        level: options.level,
-        bundleName: options.bundleName,
-        keyword: options.keyword,
-        isFollow: options.follow ? true : false,
-      });
+          level: options.level,
+          bundleName: options.bundleName,
+          keyword: options.keyword,
+          isFollow: options.follow ? true : false,
+        });
 
     if (logs) {
       console.log(logs);

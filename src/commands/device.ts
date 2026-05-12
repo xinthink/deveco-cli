@@ -23,8 +23,7 @@ class DeviceManager {
     this.hdcPath = hdcPath;
   }
 
-  public static async new(): Promise<DeviceManager> {
-    const toolProvider = await ToolProvider.new();
+  public static from(toolProvider: ToolProvider): DeviceManager {
     return new DeviceManager(toolProvider.hdcPath);
   }
 
@@ -406,7 +405,8 @@ async function uninstallAction(
 
 async function initDeviceManager(): Promise<DeviceManager> {
   try {
-    return await DeviceManager.new();
+    const toolProvider = await ToolProvider.new();
+    return DeviceManager.from(toolProvider);
   } catch (error) {
     console.error(
       red(`Failed to initialize device manager: ${(error as Error).message}`)

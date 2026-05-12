@@ -40,7 +40,8 @@ async function updateSkillDocs() {
         console.log(`Executing: ${command}`);
         const { stdout } = await execaCommand(command, {
           cwd: path.join(__dirname, '..'),
-          shell: true
+          shell: true,
+          env: { ...process.env, DEVECO_CLI_SKIP_VERSION_CHECK: '1' },
         });
 
         const newBlock = `\`\`\`text\n${stdout}\n\`\`\``;

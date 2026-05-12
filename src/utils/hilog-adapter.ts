@@ -269,7 +269,9 @@ export class HilogAdapter {
           return;
         }
 
-        reject(new Error(`Failed to follow hilog: process exited with code ${code}`));
+        reject(
+          new Error(`Failed to follow hilog: process exited with code ${code}`)
+        );
       });
     });
   }
@@ -445,7 +447,9 @@ export class HilogAdapter {
     const result = await runCommand(hdcPath, fetchArgs);
 
     if (result.exitCode !== 0 && result.stderr) {
-      console.error(`Warning: Failed to fetch crash log content: ${result.stderr}`);
+      console.error(
+        `Warning: Failed to fetch crash log content: ${result.stderr}`
+      );
     }
 
     // 返回合并的输出（stdout + stderr）

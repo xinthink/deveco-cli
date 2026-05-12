@@ -24,9 +24,7 @@ function registerDetachedEmulatorExitHandler(
     if (code === 0 || code === null) {
       cleanupAndResolve();
     } else {
-      cleanupAndReject(
-        errOut || `Emulator process exited with code ${code}`
-      );
+      cleanupAndReject(errOut || `Emulator process exited with code ${code}`);
     }
   });
 }
@@ -40,8 +38,7 @@ function attachDetachedEmulatorLifecycle(
   let settled = false;
   const isSettled = () => settled;
 
-  const stderrText = () =>
-    Buffer.concat(stderrChunks).toString('utf8').trim();
+  const stderrText = () => Buffer.concat(stderrChunks).toString('utf8').trim();
 
   const cleanupAndResolve = () => {
     if (settled) {

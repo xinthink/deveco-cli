@@ -7,6 +7,12 @@ import * as path from 'path';
 import * as os from 'os';
 import regedit from 'regedit';
 import { join } from 'path';
+import { red } from 'colorette';
+import { debugLog } from './logger.js';
+
+const DEVECO_DOWNLOAD_URL =
+  'https://developer.huawei.com/consumer/cn/download/';
+const MIN_REQUIRED_VERSION = '6.1.0';
 
 interface RegeditResult {
   [key: string]: {
@@ -66,6 +72,10 @@ export class ToolProvider {
     this.emulatorLauncherPath = emulatorLauncherPath;
   }
 
+  public static async checkVersion(): Promise<void> {
+    await ToolProvider.findDevEcoStudio();
+  }
+
   public static async new(): Promise<ToolProvider> {
     const devecoStudioPath = await ToolProvider.findDevEcoStudio();
     const {
@@ -91,123 +101,263 @@ export class ToolProvider {
     );
   }
 
-  private static async findDevEcoStudio(): Promise<string> {
-    const platform = os.platform();
+  private static _cachedInstallRoot: string | undefined;
 
-    if (platform === 'win32') {
-      return await ToolProvider.findDevEcoStudioWindows();
-    } else if (platform === 'darwin') {
-      return ToolProvider.findDevEcoStudioMac();
-    } else {
+  private static async findDevEcoStudio(): Promise<string> {
+    if (ToolProvider._cachedInstallRoot !== undefined) {
+      debugLog(
+        `[ToolProvider] findDevEcoStudio: cache hit → ${ToolProvider._cachedInstallRoot}`
+      );
+      return ToolProvider._cachedInstallRoot;
+    }
+    const platform = os.platform();
+    const candidates =
+      platform === 'win32'
+        ? await ToolProvider.collectCandidatesWindows()
+        : platform === 'darwin'
+          ? ToolProvider.collectCandidatesMac()
+          : (() => {
+              throw new Error(
+                'Linux is not fully supported yet for automatic DevEco Studio detection'
+              );
+            })();
+
+    ToolProvider._cachedInstallRoot =
+      ToolProvider.pickLatestByProductInfo(candidates);
+    return ToolProvider._cachedInstallRoot;
+  }
+
+  // ---------- candidate collection ----------
+
+  private static async collectCandidatesWindows(): Promise<string[]> {
+    const seen = new Set<string>();
+    const unique: string[] = [];
+
+    const add = (p: string | undefined, source: string) => {
+      if (!ToolProvider.isExistingDirectory(p)) return;
+      const key = path.normalize(p).toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push(p);
+        debugLog(`[ToolProvider] Found via ${source}: ${p}`);
+      }
+    };
+
+    await ToolProvider.addFromUninstallKey(add);
+    await ToolProvider.addFromWow64Key(add);
+    ToolProvider.addFromDefaultWindowsPath(add);
+
+    if (unique.length === 0) {
       throw new Error(
-        'Linux is not fully supported yet for automatic DevEco Studio detection'
+        'DevEco Studio installation not found in registry or default locations'
       );
     }
+
+    return unique;
   }
 
-  private static async findDevEcoStudioWindows(): Promise<string> {
-    // 1. Try registry lookup first (highest priority)
-    const uninstallPath = await ToolProvider.findDevEcoStudioFromUninstall();
-    if (uninstallPath) {
-      return uninstallPath;
-    }
-
-    const wow64Path = await ToolProvider.findDevEcoStudioFromWow64Key();
-    if (wow64Path) {
-      return wow64Path;
-    }
-
-    // 2. Check default paths as fallback
-    return ToolProvider.findDevEcoStudioFromDefaultPaths();
-  }
-
-  private static async findDevEcoStudioFromUninstall(): Promise<
-    string | undefined
-  > {
+  private static async addFromUninstallKey(
+    add: (p: string | undefined, source: string) => void
+  ): Promise<void> {
     try {
-      // Standard uninstall registry key
-      const uninstallKey =
+      const key =
         'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DevEco Studio';
-      const result = await regList([uninstallKey]);
-      const installPath = result[uninstallKey]?.values?.InstallLocation
-        ?.value as string | undefined;
-      if (ToolProvider.isExistingDirectory(installPath)) {
-        return installPath;
-      }
+      const result = await regList([key]);
+      const p = result[key]?.values?.InstallLocation?.value as
+        | string
+        | undefined;
+      add(p, 'Uninstall registry key');
     } catch {
-      // Ignore errors
+      // registry key may not exist
     }
-    return undefined;
   }
 
-  private static async findDevEcoStudioFromWow64Key(): Promise<
-    string | undefined
-  > {
+  private static async addFromWow64Key(
+    add: (p: string | undefined, source: string) => void
+  ): Promise<void> {
     try {
-      // WOW6432Node specific registry key
       const huaweiKey = 'HKLM\\SOFTWARE\\WOW6432Node\\Huawei\\DevEco Studio';
       const result = await regList([huaweiKey]);
-
       const versionKeys = result[huaweiKey]?.keys ?? [];
-      if (versionKeys.length === 0) {
-        return undefined;
-      }
-
-      // Find all subkeys (version numbers) and look up their default values
+      if (versionKeys.length === 0) return;
       const subkeys = versionKeys.map((k: string) => `${huaweiKey}\\${k}`);
       const subkeysResult = await regList(subkeys);
-
       for (const subkey of subkeys) {
-        // The default value key is represented by an empty string ''
-        const installPath = subkeysResult[subkey]?.values?.[''].value as
+        const p = subkeysResult[subkey]?.values?.['']?.value as
           | string
           | undefined;
-        if (ToolProvider.isExistingDirectory(installPath)) {
-          return installPath;
-        }
+        add(p, `WOW6432Node subkey ${subkey}`);
       }
     } catch {
-      // Ignore errors
+      // registry key may not exist
     }
-    return undefined;
+  }
+
+  private static addFromDefaultWindowsPath(
+    add: (p: string | undefined, source: string) => void
+  ): void {
+    const defaultPath = path.join(
+      'C:',
+      'Program Files',
+      'Huawei',
+      'DevEco Studio'
+    );
+    add(defaultPath, 'default installation path');
+  }
+
+  private static collectCandidatesMac(): string[] {
+    const homeDir = os.homedir();
+    const searchDirs = [path.join(homeDir, 'Applications'), '/Applications'];
+    const candidates: string[] = [];
+    const seen = new Set<string>();
+
+    for (const dir of searchDirs) {
+      if (!fs.existsSync(dir)) continue;
+      let entries: string[];
+      try {
+        entries = fs.readdirSync(dir);
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.endsWith('.app')) continue;
+        const lower = entry.toLowerCase();
+        if (!lower.includes('deveco')) continue;
+        const fullPath = path.join(dir, entry);
+        if (!ToolProvider.isExistingDirectory(fullPath)) continue;
+        if (!seen.has(fullPath)) {
+          seen.add(fullPath);
+          candidates.push(fullPath);
+          debugLog(`[ToolProvider] Found macOS candidate: ${fullPath}`);
+        }
+      }
+    }
+
+    if (candidates.length === 0) {
+      throw new Error(
+        'DevEco Studio not found in /Applications or ~/Applications'
+      );
+    }
+
+    return candidates;
+  }
+
+  // ---------- product-info.json version resolution ----------
+
+  private static productInfoPath(installRoot: string): string {
+    const platform = os.platform();
+    if (platform === 'darwin') {
+      return path.join(installRoot, 'Contents', 'product-info.json');
+    }
+    return path.join(installRoot, 'product-info.json');
+  }
+
+  private static parseProductInfoVersion(
+    installRoot: string
+  ): string | undefined {
+    const infoPath = ToolProvider.productInfoPath(installRoot);
+    if (!fs.existsSync(infoPath)) {
+      debugLog(`[ToolProvider] product-info.json not found at: ${infoPath}`);
+      return undefined;
+    }
+    try {
+      const data = JSON.parse(fs.readFileSync(infoPath, 'utf-8'));
+      const version = data?.version;
+      if (typeof version !== 'string' || version.trim() === '') {
+        debugLog(
+          `[ToolProvider] product-info.json at ${infoPath} has no valid "version" field`
+        );
+        return undefined;
+      }
+      return version.trim();
+    } catch {
+      debugLog(
+        `[ToolProvider] Failed to parse product-info.json at: ${infoPath}`
+      );
+      return undefined;
+    }
+  }
+
+  // ---------- version comparison ----------
+
+  /**
+   * Compare two version strings by numeric segments (e.g. "6.1.0.100").
+   * Returns negative if a < b, 0 if equal, positive if a > b.
+   */
+  private static compareVersion(a: string, b: string): number {
+    const segA = a.split('.').map((s) => parseInt(s, 10) || 0);
+    const segB = b.split('.').map((s) => parseInt(s, 10) || 0);
+    const len = Math.max(segA.length, segB.length);
+    for (let i = 0; i < len; i++) {
+      const diff = (segA[i] ?? 0) - (segB[i] ?? 0);
+      if (diff !== 0) return diff;
+    }
+    return 0;
+  }
+
+  // ---------- pick latest + version enforcement ----------
+
+  private static pickLatestByProductInfo(candidates: string[]): string {
+    const best = ToolProvider.selectHighestVersion(candidates);
+    ToolProvider.assertMinVersion(best.installRoot, best.version);
+    debugLog(
+      `[ToolProvider] Selected DevEco Studio ${best.version} at ${best.installRoot}`
+    );
+    return best.installRoot;
+  }
+
+  private static selectHighestVersion(candidates: string[]): {
+    installRoot: string;
+    version: string;
+  } {
+    type Entry = { installRoot: string; version: string };
+    const versioned: Entry[] = [];
+
+    for (const installRoot of candidates) {
+      const version = ToolProvider.parseProductInfoVersion(installRoot);
+      if (version !== undefined) {
+        versioned.push({ installRoot, version });
+        debugLog(`[ToolProvider] ${installRoot} => version ${version}`);
+      } else {
+        debugLog(
+          `[ToolProvider] Skipping ${installRoot}: could not read version from product-info.json`
+        );
+      }
+    }
+
+    if (versioned.length === 0) {
+      const tried = candidates.join('\n  ');
+      throw new Error(
+        `Failed to determine DevEco Studio version from product-info.json.\n` +
+          `Searched locations:\n  ${tried}\n` +
+          `Please reinstall DevEco Studio or download the latest version from:\n` +
+          `  ${DEVECO_DOWNLOAD_URL}`
+      );
+    }
+
+    return versioned.reduce((prev, cur) =>
+      ToolProvider.compareVersion(cur.version, prev.version) > 0 ? cur : prev
+    );
+  }
+
+  private static assertMinVersion(installRoot: string, version: string): void {
+    if (ToolProvider.compareVersion(version, MIN_REQUIRED_VERSION) >= 0) return;
+    debugLog(
+      `[ToolProvider] Selected DevEco Studio ${version} at ${installRoot} — below minimum`
+    );
+    console.error(
+      red(
+        `Error: The detected DevEco Studio version is ${version}, ` +
+          `which is below the minimum required version ${MIN_REQUIRED_VERSION}. ` +
+          `Please upgrade to the latest version before using deveco-cli:\n` +
+          `  ${DEVECO_DOWNLOAD_URL}`
+      )
+    );
+    process.exit(1);
   }
 
   private static isExistingDirectory(p: string | undefined): p is string {
     return !!p && fs.existsSync(p) && fs.statSync(p).isDirectory();
-  }
-
-  private static findDevEcoStudioFromDefaultPaths(): string {
-    const defaultPaths = [
-      path.join('C:', 'Program Files', 'Huawei', 'DevEco Studio'),
-    ];
-
-    for (const p of defaultPaths) {
-      if (fs.existsSync(p) && fs.statSync(p).isDirectory()) {
-        return p;
-      }
-    }
-
-    throw new Error(
-      'DevEco Studio installation not found in registry or default locations'
-    );
-  }
-
-  private static findDevEcoStudioMac(): string {
-    const homeDir = os.homedir();
-    const pathsToCheck = [
-      path.join(homeDir, 'Applications', 'DevEco-Studio.app'),
-      path.join('/Applications', 'DevEco-Studio.app'),
-    ];
-
-    for (const p of pathsToCheck) {
-      if (fs.existsSync(p) && fs.statSync(p).isDirectory()) {
-        return p;
-      }
-    }
-
-    throw new Error(
-      'DevEco Studio not found in /Applications or ~/Applications'
-    );
   }
 
   private static resolveWindowsTools(devecoStudioPath: string): {
