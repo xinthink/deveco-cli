@@ -156,9 +156,9 @@ const runCommand = new Command('run')
 
       const mainAbility = project.getMainAbility(moduleName, options.ability);
       console.log(cyan(`Launching ${bundleName}/${mainAbility}...`));
-      await hdcAdapter.launchApp(targetDeviceId, bundleName, mainAbility);
+      let launchResult = await hdcAdapter.launchApp(targetDeviceId, bundleName, mainAbility);
       console.log(
-        green(`\nApplication '${bundleName}' launched successfully.`)
+        green(`\nApplication '${bundleName}': ${launchResult}`)
       );
     } catch (error) {
       console.error(red((error as Error).message));
