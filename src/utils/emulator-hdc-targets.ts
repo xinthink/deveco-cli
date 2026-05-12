@@ -2,18 +2,8 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { ToolProvider } from './tool-provider.js';
 import { runCommand } from './cmd.js';
 import { tryGetHdcShellParam } from './hdc-param.js';
-
-export async function resolveHdcPath(): Promise<string | null> {
-  try {
-    const toolProvider = await ToolProvider.new();
-    return toolProvider.hdcPath;
-  } catch {
-    return null;
-  }
-}
 
 export async function fetchEmulatorSerials(hdcPath: string): Promise<string[]> {
   const r = await runCommand(hdcPath, ['list', 'targets']);
@@ -27,12 +17,9 @@ export async function fetchEmulatorSerials(hdcPath: string): Promise<string[]> {
 }
 
 export async function isEmulatorRunningByHdcName(
+  hdcPath: string,
   name: string
 ): Promise<boolean> {
-  const hdcPath = await resolveHdcPath();
-  if (!hdcPath) {
-    return false;
-  }
   const serials = await fetchEmulatorSerials(hdcPath);
   for (const serial of serials) {
     const hvd = await tryGetHdcShellParam(

@@ -290,17 +290,6 @@ export function parseBigSearchResponse(data: unknown): BigSearchResponse {
   return data as BigSearchResponse;
 }
 
-/** 规范化用户问题：variadic 拼接后压空白，避免多余空格影响检索。 */
-export function normalizeBigSearchQuestion(
-  content: string | string[] | undefined | null
-): string {
-  if (content == null) {
-    return '';
-  }
-  const joined = Array.isArray(content) ? content.join(' ') : content;
-  return joined.replace(/\s+/g, ' ').trim();
-}
-
 const KNOWLEDGE_URL = 'https://cn.devecostudio.huawei.com/codeGenie/bigSearch';
 export class Knowledge {
   /**

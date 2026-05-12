@@ -27,7 +27,6 @@ const whoamiCommand = new Command('whoami')
       // 输出用户信息
       console.log(cyan('Current user:'));
       console.log(green(`  User Name: ${userInfo.userName}`));
-      console.log(green(`  User ID:   ${userInfo.userId}`));
     } catch (error) {
       console.error(red((error as Error).message));
       process.exit(1);

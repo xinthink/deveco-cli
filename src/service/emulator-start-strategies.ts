@@ -21,41 +21,17 @@ function dedupeArgLists(lists: string[][]): string[][] {
   return out;
 }
 
-type EmulatorPathSource = {
-  value: string;
-  startFlag: string;
-  hvdFlag: string;
-};
-
-function collectEmulatorPathSources(
-  emulator: EmulatorInfo
-): EmulatorPathSource[] {
-  const pathSources: EmulatorPathSource[] = [];
-  const parentPath = emulator.instancePath
-    ? path.dirname(emulator.instancePath)
-    : undefined;
-  if (parentPath) {
-    pathSources.push({
-      value: parentPath,
-      startFlag: '-instancePath',
-      hvdFlag: '-path',
-    });
+/** Parent of the instance folder (e.g. .../deployed for .../deployed/AAA). */
+function resolveEmulatorDeployedParentDir(emulator: EmulatorInfo): string {
+  const ip = emulator.instancePath?.trim();
+  if (ip) {
+    return path.dirname(path.normalize(ip)).replace(/\\/g, '/');
   }
-  if (emulator.instancePath) {
-    pathSources.push({
-      value: emulator.instancePath,
-      startFlag: '-instancePath',
-      hvdFlag: '-path',
-    });
+  const p = emulator.path?.trim();
+  if (p) {
+    return path.dirname(path.normalize(p)).replace(/\\/g, '/');
   }
-  if (emulator.path) {
-    pathSources.push({
-      value: emulator.path,
-      startFlag: '-instancePath',
-      hvdFlag: '-path',
-    });
-  }
-  return pathSources;
+  return '';
 }
 
 function collectEmulatorImageSources(
@@ -70,48 +46,21 @@ function collectEmulatorImageSources(
 }
 
 /**
- * Order: path-only `-instancePath` (+ `-imageRoot` first when present), then
- * name+path, then uuid / bare name as last resorts — fewer failed launches.
+ * Prefer bare `-start <name>`; fall back to `-hvd <name> -path <deployedParent>
+ * [-imageRoot …]` when list details supply paths.
  */
 export function buildEmulatorStartArgCandidates(
   listName: string,
   emulator: EmulatorInfo
 ): string[][] {
-  const pathSources = collectEmulatorPathSources(emulator);
-  const imageSources = collectEmulatorImageSources(emulator.imageRoot);
-  const candidates: string[][] = [];
+  const candidates: string[][] = [['-start', listName]];
 
-  for (const imageArgs of imageSources) {
-    if (emulator.instancePath) {
-      candidates.push([
-        '-start',
-        '-instancePath',
-        emulator.instancePath,
-        ...imageArgs,
-      ]);
-    }
-    if (emulator.path && emulator.path !== emulator.instancePath) {
-      candidates.push(['-start', '-instancePath', emulator.path, ...imageArgs]);
+  const pathVal = resolveEmulatorDeployedParentDir(emulator);
+  if (pathVal) {
+    for (const imageArgs of collectEmulatorImageSources(emulator.imageRoot)) {
+      candidates.push(['-hvd', listName, '-path', pathVal, ...imageArgs]);
     }
   }
-
-  for (const { value: pathVal, startFlag, hvdFlag } of pathSources) {
-    for (const imageArgs of imageSources) {
-      candidates.push(['-start', listName, startFlag, pathVal, ...imageArgs]);
-      candidates.push(['-hvd', listName, hvdFlag, pathVal, ...imageArgs]);
-    }
-  }
-
-  const uuid = emulator.uuid?.trim();
-  if (uuid) {
-    for (const imageArgs of imageSources) {
-      candidates.push(['-start', uuid, ...imageArgs]);
-      candidates.push(['-hvd', uuid, ...imageArgs]);
-    }
-  }
-
-  candidates.push(['-start', listName]);
-  candidates.push(['-hvd', listName]);
 
   return dedupeArgLists(candidates);
 }

@@ -128,11 +128,12 @@ export class LoginService {
   /**
    * 执行登出操作
    * 清除本地存储的 Token
+   * @throws If not logged in
    */
   public async logout(): Promise<void> {
     const jwtToken = await tokenStorage.loadJwtToken();
     if (jwtToken == null) {
-      return;
+      throw new Error('Not logged in, cannot logout');
     }
     const regionalizedBaseUrl = this.getRegionalizedBaseUrl();
     const logoutUrl = `${regionalizedBaseUrl}/${this.config.logoutUrl}?jwtToken=${jwtToken}`;
