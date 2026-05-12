@@ -98,7 +98,10 @@ export class TokenChecker {
         refreshToken: result.userInfo.refreshToken ?? '',
       };
     } catch (err) {
-      console.error('Failed to refresh token:', err);
+      const e = err as { code?: string; message?: string };
+      console.error(
+        `Failed to refresh token: ${e.code ?? ''} ${e.message ?? ''}`
+      );
       return null;
     }
   }

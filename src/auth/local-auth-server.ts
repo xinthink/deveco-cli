@@ -6,13 +6,13 @@ import * as http from 'http';
 import * as crypto from 'crypto';
 import { URL } from 'url';
 import type { IncomingMessage, ServerResponse } from 'http';
+import type { AddressInfo } from 'net';
 import type { CallbackData } from '../types/auth';
-import { NetworkConstants } from '../config/constants';
 
 // ============ LocalAuthServer ============
 export class LocalAuthServer {
   private server: http.Server | null = null;
-  private port: number;
+  private port: number = 0;
   private clientSecret: string;
   private callbackPath: string = '/callback';
   private resolveCallback: ((value: CallbackData) => void) | null = null;
@@ -23,57 +23,32 @@ export class LocalAuthServer {
   private failedRedirectUrl: string;
 
   constructor(
-    port: number,
     clientSecret: string,
     baseUrl: string,
     successRedirectUrl: string,
     failedRedirectUrl: string
   ) {
-    this.port = port;
     this.clientSecret = clientSecret;
     this.baseUrl = baseUrl;
     this.successRedirectUrl = successRedirectUrl;
     this.failedRedirectUrl = failedRedirectUrl;
   }
 
-  public async start(): Promise<number> {
-    const portsToTry = [this.port, ...NetworkConstants.FALLBACK_PORTS];
-
-    for (const port of portsToTry) {
-      try {
-        const actualPort = await this.tryPort(port);
-        this.port = actualPort;
-        return actualPort;
-      } catch (err) {
-        if (port === portsToTry[portsToTry.length - 1]) {
-          throw new Error(
-            'All ports are in use. Please free up a port or close other instances.',
-            { cause: err }
-          );
-        }
-      }
-    }
-
-    throw new Error('Failed to start server');
-  }
-
-  private tryPort(port: number): Promise<number> {
+  public async start(): Promise<void> {
     return new Promise((resolve, reject) => {
       const server = http.createServer((req, res) => {
         this.handleRequest(req, res);
       });
-      // 禁用 keep-alive，避免连接保持
       server.keepAliveTimeout = 1;
-      server.on('error', (err: NodeJS.ErrnoException) => {
-        if (err.code === 'EADDRINUSE') {
-          reject(new Error('Port is already in use'));
-        } else {
-          reject(err);
-        }
+      server.on('error', (err) => {
+        reject(new Error('Failed to start local auth server', { cause: err }));
       });
-      server.listen(port, '0.0.0.0', () => {
+      server.listen(0, '127.0.0.1', () => {
         this.server = server;
-        resolve(port);
+        const address = server.address() as AddressInfo;
+        // 系统分配port
+        this.port = address.port;
+        resolve();
       });
     });
   }
@@ -133,7 +108,13 @@ export class LocalAuthServer {
   }
 
   private handleRequest(_req: IncomingMessage, res: ServerResponse): void {
-    const host = _req.headers.host || `localhost:${this.port}`;
+    const host = _req.headers.host || '';
+    const expectedHosts = [`127.0.0.1:${this.port}`, `localhost:${this.port}`];
+    if (!expectedHosts.includes(host.toLowerCase())) {
+      res.writeHead(400);
+      res.end('Bad Host');
+      return;
+    }
     const url = new URL(_req.url ?? '', `http://${host}`);
 
     if (url.pathname !== this.callbackPath) {

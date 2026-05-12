@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { NetworkConstants, TimeConstants } from './network';
+import { TimeConstants } from './network';
 
 /**
  * 应用配置常量
@@ -68,7 +68,6 @@ export const DEFAULT_LOGIN_CONFIG = {
   failedRedirectUrl: ApiEndpoints.LOGIN_FAILED_PATH,
   logoutUrl: ApiEndpoints.LOGOUT_PATH,
   appId: AppConfig.APP_ID,
-  defaultPort: NetworkConstants.DEFAULT_AUTH_PORT,
   timeout: TimeConstants.LOGIN_TIMEOUT_MS,
   countryCode: 'CN',
 } as const;
