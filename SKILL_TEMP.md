@@ -78,6 +78,11 @@ Manage local emulator instances created in DevEco Studio.
 - After launch, **success** is printed only when `hdc` is available and `hdc list targets` shows the instance (matched via `ohos.qemu.hvd.name`). If `hdc` is missing, success is printed after spawn. If `hdc` never sees the instance within the wait window, a warning is printed instead.
 - Starting several emulators: if any name fails, the process exits non-zero; others may still have started.
 - `stop <name>` stops one instance; quote multi-word names the same way as `start`.
+- `image list` defaults to listing only downloaded system images.
+- `image list --all` lists all system images, same as calling `emulator -imageList` without `-downloaded`.
+- `image download|remove` manages system images (long-running; streams tool output).
+- `create <name>` creates a local emulator instance. `--os-version` must match a downloaded image label from `deveco emulator image list` (quote it if it contains spaces/parentheses).
+- `delete <name>` deletes a local emulator instance.
 
 Examples:
 - `deveco emulator list`
@@ -85,29 +90,30 @@ Examples:
 - `deveco emulator start "Mate 70 Pro" HarmonyOS_Phone`  # quoted + unquoted
 - `deveco emulator start "Mate 70 Pro" "Mate 60"`  # multiple
 - `deveco emulator stop "Mate 70 Pro"`
+- `deveco emulator image list`
+- `deveco emulator image list --all`
+- `deveco emulator image download --device-type Phone --os-version "HarmonyOS 6.0.1(21)"`
+- `deveco emulator image remove --device-type Phone --os-version "HarmonyOS 6.0.1(21)"`
+- `deveco emulator create "My Phone" --device-type Phone --os-version "HarmonyOS 6.0.1(21)"`
+- `deveco emulator delete "My Phone"`
 
 ### `deveco device`
 
-List / inspect / install / uninstall on connected devices and emulators.
+List / inspect connected devices and emulators.
 
-- `list` / `info` for device discovery.
+- `list` / `view` for device discovery.
 - `-t, --target <serial>` selects a device on multi-device hosts (otherwise the command prints all serials and exits).
-- `install <paths...>` accepts multiple package paths — pass dependency `.hsp` first, then the main `.hap` / `.app`.
-- `-b <bundle> -a <ability>` after `install` launches the app on success.
-- `uninstall <bundleName>` removes the app.
 
 Examples:
 - `deveco device list`
-- `deveco device info`
-- `deveco device install ./feature.hsp ./entry.hap`
-- `deveco device install ./entry.hap -b com.example.app -a EntryAbility`
-- `deveco device uninstall com.example.app -t 127.0.0.1:5555`
+- `deveco device view`
+- `deveco device view -t 127.0.0.1:5555`
 
 ### `deveco run`
 
 Build-aware install + launch on a device or emulator. Resolves and installs HSP dependencies, then launches the configured ability. **Run `deveco build` first.**
 
-Prefer `deveco run` over `deveco device --install`. Fall back to `device --install` when you already have prebuilt artifacts (e.g. CI output) or need precise control over package paths.
+Prefer `deveco run` for install + launch. When you already have prebuilt artifacts (e.g. CI output) or need precise control over package paths, use `hdc install` directly.
 
 - `--module <module>` accepts `module` or `module@target`; auto-selected when exactly one runnable (`entry` / `feature` / `shared`) module exists.
 - `--device <name|serial>` accepts a name (substring match) or serial (e.g. `127.0.0.1:5555`); required on multi-device hosts.

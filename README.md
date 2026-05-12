@@ -58,9 +58,9 @@ If the agent doesn't pick up the skill automatically, prompt it explicitly: *"Us
 | `deveco create` | Scaffold a new HarmonyOS application project from the bundled template |
 | `deveco build` | Build / package a project or modules into `.hap` / `.hsp` / `.har` / `.app` |
 | `deveco run` | Install (with HSP deps) and launch on a device / emulator |
-| `deveco device` | List / inspect / install / uninstall on connected devices |
-| `deveco emulator` | List, start (one or many), and stop local emulators — quote instance names that contain spaces |
-| `deveco log` | Fetch hilog or crash logs (with level / bundle / keyword / follow filters) |
+| `deveco device` | List / inspect connected devices and emulators |
+| `deveco emulator` | Manage local emulators: list / start / stop / create / delete, plus system images (`image download|remove|list`) |
+| `deveco log` | Fetch hilog or crash logs (with level / bundle / keyword / from/to / tail / follow filters) |
 | `deveco knowledge` | Search the HarmonyOS / ArkTS knowledge base (requires `deveco login`) |
 | `deveco init` | Install the bundled `deveco-cli` skill into your AI agents (`claude`, `cursor`, …) so they learn how to drive `deveco` |
 | `deveco skills` | List / find / add / remove HMOS skills for AI agents and projects |
