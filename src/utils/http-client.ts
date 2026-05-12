@@ -14,30 +14,28 @@ import type { HttpResponse, HttpRequestConfig } from '../types/http';
 /**
  * HTTP 客户端类
  * 封装 axios，提供简化的请求接口
- *
  */
 export class HttpClient {
   private client: AxiosInstance;
 
   constructor() {
-    this.client = axios.create({
+    const axiosConfig: AxiosRequestConfig = {
       timeout: TimeConstants.HTTP_TIMEOUT_MS,
       headers: {
         'User-Agent': NetworkConstants.USER_AGENT,
         'accept-language': NetworkConstants.ACCEPT_LANGUAGE,
       },
-      // 不自动转换响应数据，保持原始格式
       transformResponse: [(data) => data],
-    });
+      proxy: false,
+    };
 
-    // 添加响应拦截器，统一错误处理
+    this.client = axios.create(axiosConfig);
+
     this.client.interceptors.response.use(
       (response) => response,
       (error: AxiosError) => {
-        if (error.code === 'ECONNABORTED') {
-          throw new Error('Request timeout');
-        }
-        throw error;
+        const proxyHint = `Network connection failed (${error.code}). You may need to configure a proxy`.trim();
+        throw new Error(`${error.message}\n${proxyHint}`);
       }
     );
   }
@@ -52,15 +50,13 @@ export class HttpClient {
     url: string,
     config?: HttpRequestConfig
   ): Promise<HttpResponse> {
-    const axiosConfig: AxiosRequestConfig = {
+    const response = await this.client.request({
       method: 'GET',
       url,
       params: config?.params,
       headers: config?.headers,
       timeout: config?.timeout,
-    };
-
-    const response = await this.client.request(axiosConfig);
+    });
     return this.convertResponse(response);
   }
 
@@ -74,15 +70,13 @@ export class HttpClient {
     url: string,
     config?: HttpRequestConfig
   ): Promise<HttpResponse> {
-    const axiosConfig: AxiosRequestConfig = {
+    const response = await this.client.request({
       method: 'POST',
       url,
       data: config?.params,
       headers: config?.headers,
       timeout: config?.timeout,
-    };
-
-    const response = await this.client.request(axiosConfig);
+    });
     return this.convertResponse(response);
   }
 
@@ -125,15 +119,13 @@ export class HttpClient {
     url: string,
     config?: HttpRequestConfig
   ): Promise<Buffer> {
-    const axiosConfig: AxiosRequestConfig = {
+    const response = await this.client.request({
       method: 'GET',
       url,
       responseType: 'arraybuffer',
       headers: config?.headers,
       timeout: config?.timeout,
-    };
-
-    const response = await this.client.request(axiosConfig);
+    });
 
     if (response.status !== 200) {
       throw new Error(`HTTP ${response.status}`);
