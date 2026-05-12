@@ -34,8 +34,8 @@ src/
 │   ├── create.ts             # Scaffold a new project from templates/application
 │   ├── build.ts   run.ts   update.ts
 │   ├── device.ts  emulator.ts  log.ts
-│   ├── login.ts   logout.ts
-│   └── knowledge.ts  skills.ts
+│   ├── login.ts   logout.ts   whoami.ts
+│   └── knowledge.ts  skills.ts  init.ts
 ├── auth/                     # Huawei Developer OAuth + token lifecycle
 ├── skills/                   # HMOS skills marketplace client (api + installer)
 ├── service/                  # Domain helpers
@@ -66,7 +66,7 @@ SKILL_TEMP.md                 # Edit this; SKILL.md is regenerated from it on bu
 
 ### Key Components
 
-- **`cli.ts`** — Commander entry; registers 11 subcommands. `--version` is read from `process.env.npm_package_version` (injected by tsup).
+- **`cli.ts`** — Commander entry; registers 13 subcommands. `--version` is read from `process.env.npm_package_version` (injected by tsup). Also normalizes `deveco <command> help` to `deveco <command> --help` for leaf commands.
 - **`commands/create.ts`** — Scaffolds a new application project. Requires `--app-name` (1–200 chars, letter-start, letters/digits/underscores only). `--project-path` defaults to `./<app-name>`; errors if directory exists. Path normalization: backslashes → forward slashes; consecutive slashes reduced to single. Deep paths auto-created with `mkdir -p` semantics. Validates `--bundle-name` (7–128 chars, ≥3 dot-separated segments, no consecutive dots). `--api-level` validated to `17`–`23` or auto-detected; defaults to `23` if DevEco Studio not found. Delegates file copy + config rendering to `utils/template-provider.ts`.
 - **`commands/build.ts`** — Pipeline `ohpm install --all → hvigor --sync → hvigor assemble*`. Auto-detects the entry module, resolves transitive HSP deps, and propagates `@target` suffixes. With `--product <name>` only, builds the whole-product `.app`; otherwise builds per-module `.hap` / `.hsp` / `.har`.
 - **`commands/run.ts`** — Auto-selects the runnable module (`entry`/`feature`/`shared`) and the device (name substring or exact serial), installs HSP deps then the main `.hap` via `hdc install -r`, and `aa start`s the ability (defaults to `mainElement` from `module.json5`).
@@ -75,14 +75,15 @@ SKILL_TEMP.md                 # Edit this; SKILL.md is regenerated from it on bu
 - **`service/emulator-manager.ts`** — `EmulatorManager` orchestrates `listEmulators` / `startEmulator` / `stopEmulator`. Delegates list parsing to `service/emulator-list-parse.ts` and start strategy selection to `service/emulator-start-strategies.ts`; uses `utils/emulator-spawn.ts` for the actual detached spawn (incl. Windows shell quoting fallback).
 - **`service/emulator-service.ts`** — Used by the `device` discovery flow to enumerate connected devices and installed emulators. This is separate from `commands/emulator.ts`, which implements the `deveco emulator` subcommand.
 - **`commands/log.ts`** — Thin shell over `HilogAdapter`: `--crash` switches to crash dump; otherwise common hilog with `--level` / `--bundle-name` / `--keyword` filters.
-- **`commands/knowledge.ts`** — Login-gated. Normalizes `--keywords` (multi-word, no quotes) and prints the ranked answers as a JSON array.
-- **`commands/skills.ts`** + **`skills/`** — `list` / `find` / `add` / `remove`. Downloads skill `.zip`s and extracts them into per-agent paths defined in `config/constants.ts → AGENT_SKILLS_CONFIG` (e.g. `~/.claude/skills/`, `~/.cursor/skills-cursor/`) and / or `<project>/.deveco/skills/`. With neither `--agent` nor `--project`, operates on every detected agent. The shared agent helpers (`parseAgentList` / `getAllExistingAgents` / `summarizeOperationResults`) live in `skills/agents.ts` so `init` can reuse them.
+- **`commands/knowledge.ts`** — Login-gated. Requires `--prompt <question>` and supports `--format md|markdown|json` (default `md`); `json` output is a JSON array of ranked answer chunks.
+- **`commands/whoami.ts`** — Login status helper. Prints the current Huawei Developer username from the persisted token session, or exits non-zero when not logged in.
+- **`commands/skills.ts`** + **`skills/`** — `list` / `find` / `add` / `remove`. `remove` uses `--skill <name>` (option form, not positional). Downloads skill `.zip`s and extracts them into per-agent paths defined in `config/constants.ts → AGENT_SKILLS_CONFIG` (e.g. `~/.claude/skills/`, `~/.cursor/skills-cursor/`) and / or `<project>/.deveco/skills/`. With neither `--agent` nor `--project`, operates on every detected agent. The shared agent helpers (`parseAgentList` / `getAllExistingAgents` / `summarizeOperationResults`) live in `skills/agents.ts` so `init` can reuse them.
 - **`commands/init.ts`** — Top-level `deveco init`. Installs the bundled `deveco-cli` skill (the file ships as `SKILL.md` at the package root; `resolveBundledSkillMdPath` in `skills/installer.ts` walks up from `import.meta.url` to find it) into per-agent / project paths under `<agent_skills_dir>/deveco-cli/`, reusing `installLocalSkillToAgent` / `installLocalSkillToProject`. Same `--agent` / `--project` / `-f` semantics as `skills add`.
 - **`commands/login.ts` / `logout.ts`** — Wrap `auth/login-service.ts`, which opens the OAuth URL in the browser, runs a localhost callback server (`local-auth-server.ts`), exchanges the code, fetches the user profile, and persists tokens (`token-storage.ts`).
 - **`commands/update.ts`** — `npm install -g <package>@latest` (package name from `process.env.npm_package_name`, falling back to `deveco-cli`).
 - **`utils/project.ts`** — `Project.discover(startDir)` walks up to find the project-level `build-profile.json5` (one containing `app`). Provides `getModuleType` (`entry`/`feature`/`shared`/`har`), `resolveHspDependencies`, `findArtifactPath(module, target, isEmulator, product)`, `getBundleName`, `getMainAbility`.
 - **`utils/template-provider.ts`** — Copies `templates/application/` into the target directory, fills `appName` / `bundleName` placeholders, and rewrites `sdkVersion` / `modelVersion` per the `API_CONFIGS` table (API levels 17-23). Also exposes `REQUIRED_FILES` used by `create` for the post-copy integrity check.
-- **`utils/tool-provider.ts`** — Locates DevEco Studio and resolves `nodePath` / `ohpmJsPath` / `hvigorJsPath` / `javaPath` / `hdcPath` / `emulatorPath` / `hilogPath` / `sdkPath`. Also exposes `detectApiLevel()` consumed by `create`.
+- **`utils/tool-provider.ts`** — Locates DevEco Studio and resolves `nodePath` / `ohpmJsPath` / `hvigorJsPath` / `javaPath` / `hdcPath` / `emulatorPath` / `hilogPath` / `sdkPath`. Also exposes `detectApiLevel()` consumed by `create`, and enforces minimum DevEco Studio version `6.1.0` by reading `product-info.json`.
   - **Windows**: registry (`HKLM\…\Uninstall\DevEco Studio`, then `HKLM\…\WOW6432Node\Huawei\DevEco Studio`), then default `C:\Program Files\Huawei\DevEco Studio`.
   - **macOS**: `~/Applications/DevEco-Studio.app`, then `/Applications/DevEco-Studio.app`.
   - **Linux**: not yet supported.
