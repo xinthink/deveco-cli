@@ -228,8 +228,8 @@ async function tryGetToolProvider(): Promise<ToolProvider | undefined> {
     return await ToolProvider.new();
   } catch (error) {
     const e = error as Error;
-    console.error(yellow(`DevEco Studio not found: ${e.message}`));
-    console.log(yellow('Using placeholder images instead.'));
+    console.error(yellow(`DevEco Studio tools not found: ${e.message}`));
+    console.log(yellow('Using placeholder API level instead.'));
     return undefined;
   }
 }
