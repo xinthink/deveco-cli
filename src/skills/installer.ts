@@ -15,6 +15,34 @@ import { SkillOperationResult } from '../types/skills';
 const fsp = fs.promises;
 
 /**
+ * 验证 skill 名称是否安全。仅限字母、数字、点、下划线和连字符。
+ * 使用白名单正则校验，防止路径穿越攻击
+ * @param name - skill 名称
+ * @throws 如果名称不安全
+ */
+function assertSafeSkillName(name: string): void {
+  if (!/^[A-Za-z0-9._-]+$/.test(name) || name === '.' || name === '..') {
+    throw new Error(`Unsafe skill name: ${JSON.stringify(name)}`);
+  }
+}
+
+/**
+ * 验证路径是否在指定父目录内
+ * 防止 zip slip 和路径穿越攻击
+ * @param parent - 父目录路径
+ * @param child - 待验证的子路径
+ * @throws 如果路径越界
+ */
+function assertWithin(parent: string, child: string): void {
+  const resolved = path.resolve(child);
+  const root = path.resolve(parent);
+  const rel = path.relative(root, resolved);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(`Path escape detected: ${child}`);
+  }
+}
+
+/**
  * 下载缓存
  * 避免同一 skill 重复下载
  */
@@ -64,14 +92,28 @@ export async function extractSkill(
   targetDir: string,
   skillName: string
 ): Promise<void> {
+  // 验证 skill 名称安全性
+  assertSafeSkillName(skillName);
+
   // 创建 zip 实例
   const zip = new AdmZip(zipBuffer);
+  const entries = zip.getEntries();
 
   // 确保目标目录存在
   await fsp.mkdir(targetDir, { recursive: true });
 
   // 解压到 {targetDir}/{skillName}/ 目录
   const extractPath = path.join(targetDir, skillName);
+
+  // 验证解压路径边界
+  assertWithin(targetDir, extractPath);
+
+  // 解压前遍历 zip 条目，逐一校验路径安全性
+  for (const entry of entries) {
+    const dest = path.join(extractPath, entry.entryName);
+    assertWithin(extractPath, dest);
+  }
+
   zip.extractAllTo(extractPath, true);
 }
 
@@ -133,6 +175,9 @@ async function prepareSkillDirectory(
   skillName: string,
   force: boolean
 ): Promise<{ skillDir: string; shouldSkip: boolean }> {
+  // 验证 skill 名称安全性
+  assertSafeSkillName(skillName);
+
   const skillDir = path.join(skillsDir, skillName);
 
   try {
@@ -256,6 +301,9 @@ export async function removeSkillFromAgent(
   agentName: string
 ): Promise<SkillOperationResult> {
   try {
+    // 验证 skill 名称安全性
+    assertSafeSkillName(skillName);
+
     const agentConfig =
       AGENT_SKILLS_CONFIG[agentName as keyof typeof AGENT_SKILLS_CONFIG];
 
@@ -398,6 +446,10 @@ export async function removeSkillFromProject(
   projectPath: string
 ): Promise<SkillOperationResult> {
   try {
+    // 验证 skill 名称安全性
+    assertSafeSkillName(skillName);
+
+    // 构建 skills 目录路径
     const skillsDir = getProjectSkillsDir(projectPath);
     const skillDir = path.join(skillsDir, skillName);
 

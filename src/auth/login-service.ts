@@ -58,7 +58,6 @@ export class LoginService {
       const clientSecret = this.generateClientSecret();
 
       this.server = new LocalAuthServer(
-        this.config.defaultPort,
         clientSecret,
         this.getRegionalizedBaseUrl(),
         this.config.successRedirectUrl,
