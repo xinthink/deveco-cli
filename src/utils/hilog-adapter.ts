@@ -8,6 +8,7 @@ import { ToolProvider } from './tool-provider.js';
 import { EmulatorService } from '../service/emulator-service.js';
 import { cyan, red, yellow } from 'colorette';
 import { spawn } from 'child_process';
+import { CommonUtils } from './common-utils.js';
 
 export class HilogAdapter {
   private toolProvider: ToolProvider;
@@ -276,6 +277,83 @@ export class HilogAdapter {
     });
   }
 
+  private async printTailSnapshotIfNeeded(
+    hdcPath: string,
+    deviceId: string,
+    options: HilogOptions,
+    pid: string
+  ): Promise<void> {
+    if (!options.tail) {
+      return;
+    }
+
+    const snapshotOptions = { ...options, isFollow: false };
+    const [snapshotCommand, snapshotArgs] = this.buildHilogCommand(
+      hdcPath,
+      deviceId,
+      snapshotOptions,
+      pid
+    );
+    const snapshotResult = await runCommand(snapshotCommand, snapshotArgs);
+    if (snapshotResult.exitCode !== 0 && snapshotResult.stderr) {
+      throw new Error(`Failed to get hilog: ${snapshotResult.stderr}`);
+    }
+
+    const snapshotLogs = CommonUtils.getLastLines(
+      snapshotResult.stdout || snapshotResult.stderr,
+      options.tail
+    );
+    if (snapshotLogs.trim()) {
+      console.log(snapshotLogs);
+    }
+  }
+
+  private async getHilogOnce(
+    hdcPath: string,
+    deviceId: string,
+    options: HilogOptions,
+    pid: string
+  ): Promise<string> {
+    const [command, args] = this.buildHilogCommand(
+      hdcPath,
+      deviceId,
+      options,
+      pid
+    );
+    console.log(`Ready to execute hilog command: ${command} ${args.join(' ')}`);
+
+    const result = await runCommand(command, args);
+    if (result.exitCode !== 0 && result.stderr) {
+      throw new Error(`Failed to get hilog: ${result.stderr}`);
+    }
+
+    return CommonUtils.getLastLines(
+      result.stdout || result.stderr,
+      options.tail
+    );
+  }
+
+  private async runHilogFollow(
+    hdcPath: string,
+    deviceId: string,
+    options: HilogOptions,
+    pid: string
+  ): Promise<string> {
+    await this.printTailSnapshotIfNeeded(hdcPath, deviceId, options, pid);
+
+    const [command, args] = this.buildHilogCommand(
+      hdcPath,
+      deviceId,
+      options,
+      pid
+    );
+    console.log(
+      `Ready to execute hilog command which contain follow and tail: ${command} ${args.join(' ')}`
+    );
+    await this.followHilog(command, args);
+    return '';
+  }
+
   /**
    * 获取设备的普通日志
    * @param deviceId - 设备 ID
@@ -285,36 +363,23 @@ export class HilogAdapter {
    */
   async getHilog(deviceId: string, options: HilogOptions): Promise<string> {
     const hdcPath = this.toolProvider.hdcPath;
-    // 1. 如果提供了 bundle_name，获取进程 ID
+    // 如果提供了 bundle_name，获取进程 ID
     const pid = options.bundleName
       ? await this.getPidForBundle(hdcPath, deviceId, options.bundleName)
       : undefined;
 
-    // 2. 如果提供了 log_size，调整缓冲区大小
+    // 如果提供了 log_size，调整缓冲区大小
     if (options.logSize) {
       await this.resizeHilogBuffer(hdcPath, deviceId, options.logSize);
     }
 
-    // 3. 构建命令
-    const [command, args] = this.buildHilogCommand(
-      hdcPath,
-      deviceId,
-      options,
-      pid || ''
-    );
-    console.log(`Ready to execute hilog command: ${command} ${args.join(' ')}`);
-
+    // 处理实时跟随日志（follow）
     if (options.isFollow) {
-      await this.followHilog(command, args);
-      return '';
+      return await this.runHilogFollow(hdcPath, deviceId, options, pid || '');
     }
 
-    const result = await runCommand(command, args);
-    if (result.exitCode !== 0 && result.stderr) {
-      throw new Error(`Failed to get hilog: ${result.stderr}`);
-    }
-
-    return result.stdout || result.stderr;
+    // 处理一次性拉取日志（非follow）
+    return await this.getHilogOnce(hdcPath, deviceId, options, pid || '');
   }
 
   /**
