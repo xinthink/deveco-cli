@@ -124,13 +124,18 @@ Fetch hilog or crash logs.
 
 - `--device <name|serial>` accepts name or serial; required on multi-device hosts.
 - `--crash` switches to crash log dump; `--level D|I|W|E|F` filters by level; `--bundle-name` and `--keyword` further narrow output.
-- `--tail <num>` keeps only the latest `num` lines and can be combined with other filters.
-- `--follow` streams hilog in real time (non-`--crash` mode) until interrupted (`Ctrl+C`).
+- `--from <start>` / `--to <end>` filter by relative offsets from now. Only `s`/`m` are supported (`30s`, `5m`, `2.5m`); when unit is omitted (like `120`), seconds are used.
+- `--from` and `--to` can be used independently or together. Example: `--from 30s --to 30m` means logs between 30 minutes ago and 30 seconds ago.
+- `--tail <num>` keeps only the latest `num` lines from the filtered result (so with `--from/--to`, tail means the end of that time window).
+- `--follow` streams hilog in real time (non-`--crash` mode) until interrupted (`Ctrl+C`); `--to` cannot be used with `--follow`.
 
 Examples:
 - `deveco log --level E`
 - `deveco log --crash --bundle-name com.example.app`
 - `deveco log -d 127.0.0.1:5555 --level W --keyword Init`
+- `deveco log --from 30s --to 30m --tail 200`
+- `deveco log --from 5m --to 2.5m --tail 200`
+- `deveco log --from 120 --tail 200`
 - `deveco log --tail 200 --level E`
 - `deveco log --follow`
 

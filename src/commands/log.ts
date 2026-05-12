@@ -16,6 +16,8 @@ interface LogOptions {
   keyword?: string;
   follow?: boolean;
   tail?: number;
+  from?: number;
+  to?: number;
 }
 
 function parsePositiveInt(value: string): number {
@@ -26,14 +28,37 @@ function parsePositiveInt(value: string): number {
   }
 }
 
+function parseDuration(value: string, fieldName: string): number {
+  try {
+    return CommonUtils.parseDurationToSeconds(value, fieldName);
+  } catch {
+    throw new InvalidArgumentError(
+      `${fieldName} must be like 30s, 5m or 2.5m (s/m only; seconds/default must be integers)`
+    );
+  }
+}
+
 const logCommand = new Command('log')
   .description('Obtain device application logs')
+  .configureOutput({
+    outputError: (str, write) => write(red(str)),
+  })
   .option('--device <device>', 'Target device (name or serial)')
   .option('--crash', 'Only obtain the crash log')
   .option('--level <level>', 'Log level filter: D, I, W, E, F')
   .option('--bundle-name <bundle-name>', 'Filter by application bundle name')
   .option('--keyword <keyword>', 'Keyword filter')
   .option('--tail <num>', 'Show only the latest N log lines', parsePositiveInt)
+  .option(
+    '--from <start>',
+    'Start offset from now, e.g. 30s, 5m, 2.5m, or 120',
+    (value: string) => parseDuration(value, 'from')
+  )
+  .option(
+    '--to <end>',
+    'End offset from now, e.g. 30s, 5m, 2.5m, or 120',
+    (value: string) => parseDuration(value, 'to')
+  )
   .option('--follow', 'Follow the log stream in real-time.')
   .action(async (options: LogOptions) => {
     await handleLogCommand(options);
@@ -41,6 +66,13 @@ const logCommand = new Command('log')
 
 async function handleLogCommand(options: LogOptions) {
   try {
+    const fromSeconds = options.from;
+    const toSeconds = options.to;
+
+    if (toSeconds && options.follow) {
+      throw new Error('--to cannot be used with --follow');
+    }
+
     const toolProvider = await ToolProvider.new();
     const service = new HilogAdapter(toolProvider);
 
@@ -61,10 +93,19 @@ async function handleLogCommand(options: LogOptions) {
           keyword: options.keyword,
           isFollow: options.follow ? true : false,
           tail: options.tail,
+          fromSeconds,
+          toSeconds,
         });
 
-    if (options.crash && options.tail && logs) {
-      logs = CommonUtils.getLastLines(logs, options.tail);
+    if (options.crash && logs) {
+      logs = CommonUtils.filterLogsByRelativeWindow(
+        logs,
+        fromSeconds,
+        toSeconds
+      );
+      if (options.tail) {
+        logs = CommonUtils.getLastLines(logs, options.tail);
+      }
     }
 
     if (logs) {
