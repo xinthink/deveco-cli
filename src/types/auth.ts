@@ -43,7 +43,6 @@ export interface LoginConfig {
   failedRedirectUrl: string;
   logoutUrl: string;
   appId: string;
-  defaultPort: number;
   timeout: number;
   countryCode?: string;
 }
