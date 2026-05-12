@@ -203,6 +203,12 @@ skillsCommand
       // 获取所有技能
       const skills = await fetchAllSkills(tagId);
 
+      // 处理空结果
+      if (skills.length === 0) {
+        console.log(yellow('No skills available'));
+        return;
+      }
+
       // 输出技能列表
       for (const skill of skills) {
         if (options.long) {
