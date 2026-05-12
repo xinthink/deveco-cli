@@ -26,7 +26,9 @@ export async function fetchEmulatorSerials(hdcPath: string): Promise<string[]> {
     .filter((serial) => serial.startsWith('127.0.0.1:'));
 }
 
-export async function isEmulatorRunningByHdcName(name: string): Promise<boolean> {
+export async function isEmulatorRunningByHdcName(
+  name: string
+): Promise<boolean> {
   const hdcPath = await resolveHdcPath();
   if (!hdcPath) {
     return false;

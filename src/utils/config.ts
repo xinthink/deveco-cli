@@ -13,6 +13,8 @@ export interface HilogOptions {
   logSize?: string;
   isFollow?: boolean;
   tail?: number;
+  fromSeconds?: number;
+  toSeconds?: number;
 }
 
 export interface DeviceInfo {

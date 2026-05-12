@@ -183,7 +183,11 @@ async function waitForEmulatorByHdcName(
   while (Date.now() < deadline) {
     const serials = await fetchEmulatorSerials(hdcPath);
     for (const serial of serials) {
-      const hvd = await tryGetHdcShellParam(hdcPath, serial, 'ohos.qemu.hvd.name');
+      const hvd = await tryGetHdcShellParam(
+        hdcPath,
+        serial,
+        'ohos.qemu.hvd.name'
+      );
       if (hvd && normalizeListNameKey(hvd) === normalizeListNameKey(name)) {
         return true;
       }
@@ -235,7 +239,9 @@ async function startAction(emulatorManager: EmulatorManager, names: string[]) {
     if (result.status === 'rejected') {
       anyFailed = true;
       const e = result.reason as Error & { stdout?: string; stderr?: string };
-      console.error(red(`Failed to start emulator "${names[i]}": ${e.message}`));
+      console.error(
+        red(`Failed to start emulator "${names[i]}": ${e.message}`)
+      );
       if (e.stdout) {
         console.error(gray(e.stdout));
       }

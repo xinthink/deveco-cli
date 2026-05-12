@@ -147,6 +147,7 @@ export class HilogAdapter {
     bundleName: string
   ): Promise<string | null> {
     console.log(`Trying to get PID for bundle: ${bundleName}`);
+    CommonUtils.assertBundleName(bundleName);
 
     // 执行命令: hdc -t <device_id> shell pidof <bundle_name>
     const result = await runCommand(hdcPath, [
@@ -224,16 +225,19 @@ export class HilogAdapter {
     }
 
     if (options.tag) {
+      CommonUtils.assertHilogToken(options.tag, 'tag');
       args.push('-T', options.tag);
     }
 
     // 添加日志级别过滤
     if (options.level) {
+      CommonUtils.assertHilogLevel(options.level);
       args.push('-L', options.level);
     }
 
     // 添加领域过滤
     if (options.domain) {
+      CommonUtils.assertHilogToken(options.domain, 'domain');
       args.push('-D', options.domain);
     }
 
@@ -244,6 +248,7 @@ export class HilogAdapter {
 
     // 添加关键字过滤
     if (options.keyword) {
+      CommonUtils.assertHilogToken(options.keyword, 'keyword');
       args.push('-e', options.keyword);
     }
 
@@ -283,7 +288,7 @@ export class HilogAdapter {
     options: HilogOptions,
     pid: string
   ): Promise<void> {
-    if (!options.tail) {
+    if (!options.tail && !options.fromSeconds && !options.toSeconds) {
       return;
     }
 
@@ -299,10 +304,12 @@ export class HilogAdapter {
       throw new Error(`Failed to get hilog: ${snapshotResult.stderr}`);
     }
 
-    const snapshotLogs = CommonUtils.getLastLines(
+    let snapshotLogs = CommonUtils.filterLogsByRelativeWindow(
       snapshotResult.stdout || snapshotResult.stderr,
-      options.tail
+      options.fromSeconds,
+      options.toSeconds
     );
+    snapshotLogs = CommonUtils.getLastLines(snapshotLogs, options.tail);
     if (snapshotLogs.trim()) {
       console.log(snapshotLogs);
     }
@@ -327,10 +334,13 @@ export class HilogAdapter {
       throw new Error(`Failed to get hilog: ${result.stderr}`);
     }
 
-    return CommonUtils.getLastLines(
+    let logs = CommonUtils.filterLogsByRelativeWindow(
       result.stdout || result.stderr,
-      options.tail
+      options.fromSeconds,
+      options.toSeconds
     );
+    logs = CommonUtils.getLastLines(logs, options.tail);
+    return logs;
   }
 
   private async runHilogFollow(
@@ -445,8 +455,7 @@ export class HilogAdapter {
       '-s',
       '1201',
       '-a',
-      '-p',
-      'Faultlogger',
+      `-p Faultlogger`,
     ];
 
     console.log(`Executing command: ${hdcPath} ${listArgs.join(' ')}`);
@@ -467,14 +476,22 @@ export class HilogAdapter {
     const filenames: string[] = result.stdout
       .split('\n')
       .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .filter((line) => {
+        try {
+          CommonUtils.assertCrashFilename(line);
+          return true;
+        } catch {
+          return false;
+        }
+      })
       .filter((line) => {
         // 如果提供了 bundleName，只保留包含该名称的行（忽略大小写）
         if (!bundleName) {
           return true;
         }
         return line.toLowerCase().includes(bundleName.toLowerCase());
-      })
-      .filter((line) => line.length > 0);
+      });
 
     return filenames;
   }
@@ -494,8 +511,6 @@ export class HilogAdapter {
   ): Promise<string> {
     console.log(`Fetching latest crash log file: ${filename}`);
 
-    // 构建命令参数
-    // 命令格式: hdc -t <device_id> shell hidumper -s 1201 -a -p Faultlogger -f <filename>
     const fetchArgs = [
       '-t',
       deviceId,

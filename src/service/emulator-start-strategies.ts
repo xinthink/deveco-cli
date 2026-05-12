@@ -27,7 +27,9 @@ type EmulatorPathSource = {
   hvdFlag: string;
 };
 
-function collectEmulatorPathSources(emulator: EmulatorInfo): EmulatorPathSource[] {
+function collectEmulatorPathSources(
+  emulator: EmulatorInfo
+): EmulatorPathSource[] {
   const pathSources: EmulatorPathSource[] = [];
   const parentPath = emulator.instancePath
     ? path.dirname(emulator.instancePath)
@@ -56,7 +58,9 @@ function collectEmulatorPathSources(emulator: EmulatorInfo): EmulatorPathSource[
   return pathSources;
 }
 
-function collectEmulatorImageSources(imageRoot: string | undefined): string[][] {
+function collectEmulatorImageSources(
+  imageRoot: string | undefined
+): string[][] {
   const imageSources: string[][] = [];
   if (imageRoot) {
     imageSources.push(['-imageRoot', imageRoot]);
@@ -93,13 +97,7 @@ export function buildEmulatorStartArgCandidates(
 
   for (const { value: pathVal, startFlag, hvdFlag } of pathSources) {
     for (const imageArgs of imageSources) {
-      candidates.push([
-        '-start',
-        listName,
-        startFlag,
-        pathVal,
-        ...imageArgs,
-      ]);
+      candidates.push(['-start', listName, startFlag, pathVal, ...imageArgs]);
       candidates.push(['-hvd', listName, hvdFlag, pathVal, ...imageArgs]);
     }
   }
@@ -145,10 +143,7 @@ export async function runAllEmulatorStartStrategies(
   executeEmulatorDetached: (args: string[]) => Promise<void>
 ): Promise<{ ok: true } | { ok: false; lastError: Error }> {
   let lastError: Error = new Error('No start strategy ran');
-  const candidates = buildEmulatorStartArgCandidates(
-    listName,
-    targetEmulator
-  );
+  const candidates = buildEmulatorStartArgCandidates(listName, targetEmulator);
 
   const spacedName = /\s/.test(listName);
   const hasInstancePath = Boolean(targetEmulator.instancePath?.trim());

@@ -34,7 +34,7 @@ export class HttpClient {
     this.client.interceptors.response.use(
       (response) => response,
       (error: AxiosError) => {
-        const proxyHint = `Network connection failed (${error.code}). You may need to configure a proxy`.trim();
+        const proxyHint = `Network connection failed (${error.code}). Please check your proxy configuration or network settings`;
         throw new Error(`${error.message}\n${proxyHint}`);
       }
     );
