@@ -8,10 +8,8 @@ import { green, cyan, red, yellow, gray } from 'colorette';
 import type { EmulatorInfo } from '../service/emulator-types.js';
 import { normalizeListNameKey } from '../service/emulator-types.js';
 import { EmulatorManager } from '../service/emulator-manager.js';
-import {
-  resolveHdcPath,
-  fetchEmulatorSerials,
-} from '../utils/emulator-hdc-targets.js';
+import { ToolProvider } from '../utils/tool-provider.js';
+import { fetchEmulatorSerials } from '../utils/emulator-hdc-targets.js';
 
 function printEmulatorDetail(
   emu: EmulatorInfo,
@@ -116,7 +114,7 @@ async function buildEmulatorHdcSerialMaps(
   return { productSerialMap, hvdSerialMap };
 }
 
-async function listAction(emulatorManager: EmulatorManager) {
+async function listAction(emulatorManager: EmulatorManager, hdcPath: string) {
   try {
     const emulators = await emulatorManager.listEmulators();
 
@@ -133,12 +131,9 @@ async function listAction(emulatorManager: EmulatorManager) {
 
     let productSerialMap = new Map<string, string>();
     let hvdSerialMap = new Map<string, string>();
-    const hdcPath = await resolveHdcPath();
-    if (hdcPath) {
-      const maps = await buildEmulatorHdcSerialMaps(hdcPath, runningNames);
-      productSerialMap = maps.productSerialMap;
-      hvdSerialMap = maps.hvdSerialMap;
-    }
+    const maps = await buildEmulatorHdcSerialMaps(hdcPath, runningNames);
+    productSerialMap = maps.productSerialMap;
+    hvdSerialMap = maps.hvdSerialMap;
 
     for (const emu of emulators) {
       const serial =
@@ -199,7 +194,7 @@ async function waitForEmulatorByHdcName(
 
 async function startOneEmulator(
   emulatorManager: EmulatorManager,
-  hdcPath: string | null,
+  hdcPath: string,
   name: string
 ): Promise<void> {
   const outcome = await emulatorManager.startEmulator(name);
@@ -210,25 +205,23 @@ async function startOneEmulator(
 
   console.log(cyan(`Starting emulator "${name}"...`));
 
-  if (hdcPath) {
-    const confirmed = await waitForEmulatorByHdcName(hdcPath, name);
-    if (confirmed) {
-      console.log(green(`Emulator "${name}" started successfully.`));
-    } else {
-      console.log(
-        yellow(
-          `Emulator "${name}" was launched but did not appear in hdc list targets within the timeout.`
-        )
-      );
-    }
-  } else {
+  const confirmed = await waitForEmulatorByHdcName(hdcPath, name);
+  if (confirmed) {
     console.log(green(`Emulator "${name}" started successfully.`));
+  } else {
+    console.log(
+      yellow(
+        `Emulator "${name}" was launched but did not appear in hdc list targets within the timeout.`
+      )
+    );
   }
 }
 
-async function startAction(emulatorManager: EmulatorManager, names: string[]) {
-  const hdcPath = await resolveHdcPath();
-
+async function startAction(
+  emulatorManager: EmulatorManager,
+  hdcPath: string,
+  names: string[]
+) {
   const results = await Promise.allSettled(
     names.map((name) => startOneEmulator(emulatorManager, hdcPath, name))
   );
@@ -267,9 +260,14 @@ async function stopAction(emulatorManager: EmulatorManager, name: string) {
   }
 }
 
-async function initEmulatorManager(): Promise<EmulatorManager> {
+async function initEmulatorManager(): Promise<{
+  manager: EmulatorManager;
+  toolProvider: ToolProvider;
+}> {
   try {
-    return await EmulatorManager.new();
+    const toolProvider = await ToolProvider.new();
+    const manager = EmulatorManager.from(toolProvider);
+    return { manager, toolProvider };
   } catch (error) {
     console.error(
       red(`Failed to initialize emulator: ${(error as Error).message}`)
@@ -287,24 +285,24 @@ emulatorCommand
   .command('list')
   .description('List all emulator instances')
   .action(async () => {
-    const emulatorManager = await initEmulatorManager();
-    await listAction(emulatorManager);
+    const { manager, toolProvider } = await initEmulatorManager();
+    await listAction(manager, toolProvider.hdcPath);
   });
 
 emulatorCommand
   .command('start <names...>')
   .description('Start one or more emulator instances')
   .action(async (names: string[]) => {
-    const emulatorManager = await initEmulatorManager();
-    await startAction(emulatorManager, names);
+    const { manager, toolProvider } = await initEmulatorManager();
+    await startAction(manager, toolProvider.hdcPath, names);
   });
 
 emulatorCommand
   .command('stop <name>')
   .description('Stop an emulator instance')
   .action(async (name: string) => {
-    const emulatorManager = await initEmulatorManager();
-    await stopAction(emulatorManager, name);
+    const { manager } = await initEmulatorManager();
+    await stopAction(manager, name);
   });
 
 export default emulatorCommand;

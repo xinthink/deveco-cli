@@ -22,6 +22,7 @@ import knowledgeCommand from './commands/knowledge.js';
 import logCommand from './commands/log.js';
 import createCommand from './commands/create.js';
 import initCommand from './commands/init.js';
+import { ToolProvider } from './utils/tool-provider.js';
 
 program
   .name('deveco')
@@ -48,6 +49,9 @@ program.addCommand(initCommand);
 const rawArgs = process.argv.slice(2);
 if (rawArgs.length >= 2 && rawArgs[rawArgs.length - 1] === 'help') {
   process.argv = [...process.argv.slice(0, -1), '--help'];
+}
+if (!process.env.DEVECO_CLI_SKIP_VERSION_CHECK) {
+  await ToolProvider.checkVersion();
 }
 
 program.parseAsync(process.argv).catch((err) => {

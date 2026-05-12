@@ -14,15 +14,20 @@ import { parseEmulatorListOutput } from './emulator-list-parse.js';
 export class EmulatorManager {
   private emulatorPath: string;
   private sdkPath: string;
+  private hdcPath: string;
 
-  private constructor(emulatorPath: string, sdkPath: string) {
+  private constructor(emulatorPath: string, sdkPath: string, hdcPath: string) {
     this.emulatorPath = emulatorPath;
     this.sdkPath = sdkPath;
+    this.hdcPath = hdcPath;
   }
 
-  public static async new(): Promise<EmulatorManager> {
-    const toolProvider = await ToolProvider.new();
-    return new EmulatorManager(toolProvider.emulatorPath, toolProvider.sdkPath);
+  public static from(toolProvider: ToolProvider): EmulatorManager {
+    return new EmulatorManager(
+      toolProvider.emulatorPath,
+      toolProvider.sdkPath,
+      toolProvider.hdcPath
+    );
   }
 
   private async executeEmulator(
@@ -98,7 +103,7 @@ export class EmulatorManager {
         return true;
       }
     }
-    return isEmulatorRunningByHdcName(name);
+    return isEmulatorRunningByHdcName(this.hdcPath, name);
   }
 
   public async stopEmulator(name: string): Promise<void> {
