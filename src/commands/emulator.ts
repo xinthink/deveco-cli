@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { tryGetHdcShellParam } from '../utils/hdc-param.js';
 import { green, cyan, red, yellow, gray } from 'colorette';
 import type { EmulatorInfo } from '../service/emulator-types.js';
@@ -10,6 +10,63 @@ import { normalizeListNameKey } from '../service/emulator-types.js';
 import { EmulatorManager } from '../service/emulator-manager.js';
 import { ToolProvider } from '../utils/tool-provider.js';
 import { fetchEmulatorSerials } from '../utils/emulator-hdc-targets.js';
+
+function validateEmulatorOsVersionArg(version: string): void {
+  const v = version.trim();
+  if (!v) {
+    throw new Error('--os-version must not be empty.');
+  }
+  if (/^\d+$/.test(v)) {
+    throw new Error(
+      `--os-version "${version}" is invalid: use the full image label, e.g. HarmonyOS 5.1.1(19).`
+    );
+  }
+  if (!/^HarmonyOS\s+/i.test(v)) {
+    if (/^HarmonyOS$/i.test(v)) {
+      throw new Error(
+        '--os-version is incomplete (only "HarmonyOS"). On PowerShell/cmd, quote the full label, e.g. --os-version "HarmonyOS 6.0.1(21)"'
+      );
+    }
+    throw new Error(
+      `--os-version must start with "HarmonyOS " (e.g. HarmonyOS 5.1.1(19)). Got: "${version}"`
+    );
+  }
+}
+
+function assertOsVersionAgainstDownloadedImages(
+  osVersion: string,
+  downloaded: string[]
+): void {
+  const norm = (s: string) => s.normalize('NFKC').trim();
+  const user = norm(osVersion);
+  if (downloaded.length === 0) {
+    console.error(
+      yellow(
+        'Could not parse any downloaded images from `emulator -imageList -downloaded true` (JSON array expected).'
+      )
+    );
+    console.error(
+      yellow(
+        'Run `deveco emulator image download ...` then `deveco emulator image list` and copy an `osVersion` string exactly.'
+      )
+    );
+    throw new Error(
+      'No downloaded osVersion values parsed; cannot validate --os-version.'
+    );
+  }
+  if (!downloaded.some((d) => norm(d) === user)) {
+    console.error(
+      red(
+        `--os-version does not match any downloaded image (exact string required).`
+      )
+    );
+    console.log(yellow('Use one of these --os-version values:'));
+    for (const v of downloaded) {
+      console.log(`  ${v}`);
+    }
+    throw new Error(`No downloaded image matches --os-version "${osVersion}".`);
+  }
+}
 
 function printEmulatorDetail(
   emu: EmulatorInfo,
@@ -309,6 +366,287 @@ const emulatorCommand = new Command('emulator').description(
   'Manage emulator instances'
 );
 
+const EMULATOR_IMAGE_DEVICE_TYPES = [
+  'Phone',
+  'Foldable',
+  'WideFold',
+  'TripleFold',
+  'Tablet',
+  '2in1',
+  '2in1 Foldable',
+  'Wearable',
+  'TV',
+] as const;
+
+function deviceTypeOption(required: boolean) {
+  const opt = new Option(
+    '--device-type <type>',
+    'Emulator device type'
+  ).choices([...EMULATOR_IMAGE_DEVICE_TYPES]);
+  return required ? opt.makeOptionMandatory() : opt;
+}
+
+type ImageListFormat = 'table' | 'json';
+
+function getRecordValue(
+  obj: Record<string, unknown>,
+  keys: string[]
+): unknown {
+  for (const k of keys) {
+    if (k in obj) {
+      return obj[k];
+    }
+  }
+  return undefined;
+}
+
+function toText(value: unknown): string {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  return String(value).trim();
+}
+
+function toBoolText(value: unknown): string {
+  const t = toText(value).toLowerCase();
+  if (t === 'true') {
+    return 'true';
+  }
+  if (t === 'false') {
+    return 'false';
+  }
+  return t;
+}
+
+type ImageListTableRow = { cells: string[]; highlight: boolean };
+
+const IMAGE_LIST_TABLE_HEADERS = [
+  'OS Version',
+  'Device Type',
+  'Software Version',
+  'Release Type',
+  'Upgradable',
+  'Downloaded',
+] as const;
+
+function parseJsonArrayOrNull(text: string): unknown[] | null {
+  try {
+    const data = JSON.parse(text) as unknown;
+    return Array.isArray(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildImageListTableRows(
+  data: unknown[],
+  highlightDownloaded: boolean
+): ImageListTableRow[] {
+  const rows: ImageListTableRow[] = [];
+  for (const item of data) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+    const row = item as Record<string, unknown>;
+    const osVersion = toText(
+      getRecordValue(row, ['osVersion', 'OsVersion', 'OSVersion', 'os_version'])
+    );
+    const deviceType = toText(
+      getRecordValue(row, ['deviceType', 'DeviceType', 'device_type'])
+    );
+    const downloaded = toBoolText(
+      getRecordValue(row, ['downloaded', 'Downloaded', 'isDownloaded'])
+    );
+    const softwareVersion = toText(
+      getRecordValue(row, [
+        'SoftWareVersion',
+        'SoftwareVersion',
+        'softwareVersion',
+        'software_version',
+        'version',
+      ])
+    );
+    const releaseType = toText(
+      getRecordValue(row, ['releaseType', 'ReleaseType', 'release_type'])
+    );
+    const upgradable = toBoolText(
+      getRecordValue(row, ['upgradable', 'Upgradable', 'isUpgradable'])
+    );
+    rows.push({
+      cells: [
+        osVersion,
+        deviceType,
+        softwareVersion,
+        releaseType,
+        upgradable,
+        downloaded,
+      ],
+      highlight: highlightDownloaded && downloaded === 'true',
+    });
+  }
+  return rows;
+}
+
+function computeTableWidths(
+  headers: readonly string[],
+  rows: ImageListTableRow[]
+): number[] {
+  return headers.map((h, idx) => {
+    let w = h.length;
+    for (const r of rows) {
+      w = Math.max(w, (r.cells[idx] ?? '').length);
+    }
+    return w;
+  });
+}
+
+function padCell(s: string, w: number): string {
+  return s + ' '.repeat(Math.max(0, w - s.length));
+}
+
+function renderTable(
+  headers: readonly string[],
+  widths: number[],
+  rows: ImageListTableRow[]
+): string {
+  const lines: string[] = [];
+  lines.push(headers.map((h, i) => padCell(h, widths[i])).join('  '));
+  lines.push(widths.map((w) => '-'.repeat(w)).join('  '));
+  for (const r of rows) {
+    const line = r.cells
+      .map((c, i) => padCell(c ?? '', widths[i]))
+      .join('  ')
+      .trimEnd();
+    lines.push(r.highlight ? green(line) : line);
+  }
+  return lines.join('\n');
+}
+
+function formatImageListTable(
+  stdout: string,
+  highlightDownloaded: boolean
+): string {
+  const text = stdout.trim();
+  if (!text) {
+    return '';
+  }
+  const data = parseJsonArrayOrNull(text);
+  if (!data) {
+    return stdout.trimEnd();
+  }
+  const rows = buildImageListTableRows(data, highlightDownloaded);
+  const widths = computeTableWidths(IMAGE_LIST_TABLE_HEADERS, rows);
+  return renderTable(IMAGE_LIST_TABLE_HEADERS, widths, rows);
+}
+
+const imageCommand = new Command('image').description(
+  'HarmonyOS emulator system images (download, list, remove)'
+);
+
+imageCommand
+  .command('download')
+  .description('Download a system image')
+  .addOption(deviceTypeOption(true))
+  .requiredOption(
+    '--os-version <version>',
+    'e.g. HarmonyOS 5.1.1(19) or HarmonyOS 6.0.1(21)'
+  )
+  .option('--force', 'Overwrite an existing image')
+  .action(
+    async (opts: {
+      deviceType: string;
+      osVersion: string;
+      force?: boolean;
+    }) => {
+      const { manager } = await initEmulatorManager();
+      try {
+        await manager.installEmulatorImage({
+          deviceType: opts.deviceType,
+          osVersion: opts.osVersion,
+          force: opts.force === true,
+        });
+      } catch (error) {
+        console.error(
+          red(`Failed to download system image: ${(error as Error).message}`)
+        );
+        process.exit(1);
+      }
+    }
+  );
+
+imageCommand
+  .command('remove')
+  .description('Remove a downloaded system image')
+  .addOption(deviceTypeOption(true))
+  .requiredOption('--os-version <version>', 'Same format as for download')
+  .action(
+    async (opts: {
+      deviceType: string;
+      osVersion: string;
+    }) => {
+      const { manager } = await initEmulatorManager();
+      try {
+        await manager.uninstallEmulatorImage({
+          deviceType: opts.deviceType,
+          osVersion: opts.osVersion,
+        });
+      } catch (error) {
+        console.error(
+          red(`Failed to remove system image: ${(error as Error).message}`)
+        );
+        process.exit(1);
+      }
+    }
+  );
+
+imageCommand
+  .command('list')
+  .description('List system images')
+  .addOption(deviceTypeOption(false))
+  .option('--all', 'List all images (downloaded and not downloaded)')
+  .addOption(
+    new Option('--format <format>', 'Output format')
+      .choices(['table', 'json'])
+      .default('table')
+  )
+  .action(
+    async (opts: {
+      deviceType?: string;
+      all?: boolean;
+      format?: ImageListFormat;
+    }) => {
+      const { manager } = await initEmulatorManager();
+      try {
+        let downloaded: boolean | undefined;
+        if (opts.all) {
+          downloaded = undefined;
+        } else {
+          downloaded = true;
+        }
+        const out = await manager.listEmulatorImages({
+          deviceType: opts.deviceType,
+          downloaded,
+        });
+        if (opts.format === 'json') {
+          console.log(out.trimEnd());
+          return;
+        }
+        const table = formatImageListTable(out, opts.all === true);
+        console.log(table);
+      } catch (error) {
+        console.error(
+          red(`Failed to list emulator images: ${(error as Error).message}`)
+        );
+        process.exit(1);
+      }
+    }
+  );
+
+emulatorCommand.addCommand(imageCommand);
+
 emulatorCommand
   .command('list')
   .description('List all emulator instances')
@@ -331,6 +669,84 @@ emulatorCommand
   .action(async (name: string) => {
     const { manager, toolProvider } = await initEmulatorManager();
     await stopAction(manager, toolProvider.hdcPath, name);
+  });
+
+const createEmulatorCmd = emulatorCommand
+  .command('create <name>')
+  .description(
+    'Create a local emulator. Runs emulator -create <name> …; --os-version must match a downloaded image from `emulator image list`.'
+  )
+  .addOption(deviceTypeOption(true))
+  .requiredOption(
+    '--os-version <version>',
+    'Exact downloaded image label. Quote in PowerShell (e.g. "HarmonyOS 6.0.1(21)") or use --os-version="…"; see `deveco emulator image list`'
+  )
+  .option('--force', 'Overwrite if the tool supports it');
+
+createEmulatorCmd.configureOutput({
+  outputError: (str, write) => {
+    write(str);
+    if (/too many arguments/i.test(str)) {
+      write(
+        `\n${yellow('Tip: ')}${gray('Unquoted --os-version values with spaces/parentheses are split into multiple arguments. Use:')}\n` +
+          `  ${cyan('deveco emulator create 123 --device-type Phone --os-version \"HarmonyOS 6.0.1(21)\"')}\n` +
+          `  ${cyan('deveco emulator create 123 --device-type Phone --os-version=\"HarmonyOS 6.0.1(21)\"')}\n`
+      );
+    }
+  },
+});
+
+createEmulatorCmd.action(
+  async (
+    name: string,
+    opts: {
+      deviceType: string;
+      osVersion: string;
+      force?: boolean;
+    }
+  ) => {
+    try {
+      validateEmulatorOsVersionArg(opts.osVersion);
+      const { manager } = await initEmulatorManager();
+      const downloaded = await manager.listDownloadedImageOsVersions();
+      assertOsVersionAgainstDownloadedImages(opts.osVersion, downloaded);
+      console.log(cyan(`Creating emulator "${name}"...`));
+      await manager.createVirtualDevice({
+        name,
+        deviceType: opts.deviceType,
+        osVersion: opts.osVersion,
+        force: opts.force === true,
+      });
+      console.log(green(`Emulator "${name}" created successfully.`));
+    } catch (error) {
+      console.error(
+        red(`Failed to create emulator: ${(error as Error).message}`)
+      );
+      process.exit(1);
+    }
+  }
+);
+
+emulatorCommand
+  .command('delete <name>')
+  .description('Delete a local emulator instance')
+  .action(async (name: string) => {
+    const { manager } = await initEmulatorManager();
+    console.log(cyan(`Deleting emulator "${name}"...`));
+    try {
+      const deletedName = await manager.deleteVirtualDevice(name);
+      console.log(green(`Emulator "${deletedName}" deleted successfully.`));
+    } catch (error) {
+      const e = error as Error & { stdout?: string; stderr?: string };
+      console.error(red(`Failed to delete emulator: ${e.message}`));
+      if (e.stdout) {
+        console.error(gray(e.stdout));
+      }
+      if (e.stderr) {
+        console.error(gray(e.stderr));
+      }
+      process.exit(1);
+    }
   });
 
 export default emulatorCommand;
