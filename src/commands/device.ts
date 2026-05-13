@@ -12,8 +12,6 @@ import {
 import { EmulatorManager } from '../service/emulator-manager.js';
 import type { EmulatorInfo } from '../service/emulator-types.js';
 import { isLocalEmulatorSerial } from '../utils/emulator-hdc-targets.js';
-import * as path from 'path';
-import fs from 'fs-extra';
 import { green, cyan, red, yellow, gray } from 'colorette';
 import ora, { type Ora } from 'ora';
 import { exitWithListCommandError } from '../utils/ora-fail.js';
@@ -173,7 +171,7 @@ class DeviceManager {
       }
 
       throw new Error(
-        `Device "${deviceSelector}" not found. Use \`deveco device list\` to see available targets.`
+        `Device "${deviceSelector}" not found. Use \`devecocli device list\` to see available targets.`
       );
     }
 
@@ -329,7 +327,7 @@ async function viewAction(
 ) {
   try {
     if (!deviceSelector) {
-      await checkMultiDevice(deviceManager, 'deveco device view');
+      await checkMultiDevice(deviceManager, 'devecocli device view');
     }
 
     const devices = await deviceManager.listDevices();
@@ -384,7 +382,7 @@ async function installAction(
     if (!deviceSerial) {
       await checkMultiDevice(
         deviceManager,
-        `deveco device install ${packagePaths.join(' ')}`
+        `devecocli device install ${packagePaths.join(' ')}`
       );
     }
 
@@ -414,7 +412,7 @@ async function uninstallAction(
     if (!deviceSerial) {
       await checkMultiDevice(
         deviceManager,
-        `deveco device uninstall ${bundleName}`
+        `devecocli device uninstall ${bundleName}`
       );
     }
 

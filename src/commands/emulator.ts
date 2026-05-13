@@ -67,7 +67,7 @@ function assertOsVersionAgainstDownloadedImages(
     );
     console.error(
       yellow(
-        'Run `deveco emulator image download ...` then `deveco emulator image list` and copy an `osVersion` string exactly.'
+        'Run `devecocli emulator image download ...` then `devecocli emulator image list` and copy an `osVersion` string exactly.'
       )
     );
     throw new Error(
@@ -712,7 +712,7 @@ const createEmulatorCmd = emulatorCommand
   .addOption(deviceTypeOption(true))
   .requiredOption(
     '--os-version <version>',
-    'Exact downloaded image label. Quote in PowerShell (e.g. "HarmonyOS 6.0.1(21)") or use --os-version="…"; see `deveco emulator image list`'
+    'Exact downloaded image label. Quote in PowerShell (e.g. "HarmonyOS 6.0.1(21)") or use --os-version="…"; see `devecocli emulator image list`'
   )
   .option('--force', 'Overwrite if the tool supports it');
 
@@ -722,8 +722,8 @@ createEmulatorCmd.configureOutput({
     if (/too many arguments/i.test(str)) {
       write(
         `\n${yellow('Tip: ')}${gray('Unquoted --os-version values with spaces/parentheses are split into multiple arguments. Use:')}\n` +
-          `  ${cyan('deveco emulator create 123 --device-type Phone --os-version \"HarmonyOS 6.0.1(21)\"')}\n` +
-          `  ${cyan('deveco emulator create 123 --device-type Phone --os-version=\"HarmonyOS 6.0.1(21)\"')}\n`
+          `  ${cyan('devecocli emulator create 123 --device-type Phone --os-version "HarmonyOS 6.0.1(21)"')}\n` +
+          `  ${cyan('devecocli emulator create 123 --device-type Phone --os-version="HarmonyOS 6.0.1(21)"')}\n`
       );
     }
   },
