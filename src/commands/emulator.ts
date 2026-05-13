@@ -327,10 +327,16 @@ async function stopAction(
   name: string
 ) {
   console.log(cyan(`Stopping emulator "${name}"...`));
+  let outcome: 'stopped' | 'already-stopped';
   try {
-    await emulatorManager.stopEmulator(name);
+    outcome = await emulatorManager.stopEmulator(name);
   } catch (error) {
     handleError('stop', name, error);
+  }
+
+  if (outcome === 'already-stopped') {
+    console.log(yellow(`Emulator "${name}" is already stopped.`));
+    return;
   }
 
   const confirmed = await waitForEmulatorHdcState(hdcPath, name, false);

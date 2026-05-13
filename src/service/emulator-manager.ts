@@ -107,8 +107,24 @@ export class EmulatorManager {
     return isEmulatorRunningByHdcName(this.hdcPath, name);
   }
 
-  public async stopEmulator(name: string): Promise<void> {
-    await this.executeEmulator(['-stop', name]);
+  public async stopEmulator(
+    name: string
+  ): Promise<'stopped' | 'already-stopped'> {
+    const emulators = await this.listEmulators();
+    const nameKey = normalizeListNameKey(name);
+    const target = emulators.find(
+      (e) => normalizeListNameKey(e.name) === nameKey
+    );
+    if (!target) {
+      throw new Error(`Emulator "${name}" not found.`);
+    }
+    const listName = target.name;
+    const running = await this.isAlreadyRunning(listName, target);
+    if (!running) {
+      return 'already-stopped';
+    }
+    await this.executeEmulator(['-stop', listName]);
+    return 'stopped';
   }
 
   private async executeEmulatorInherit(args: string[]): Promise<void> {
