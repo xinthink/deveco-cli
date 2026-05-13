@@ -17,12 +17,6 @@ export const TimeConstants = {
  * 网络相关常量
  */
 export const NetworkConstants = {
-  /** 默认本地认证服务器端口 */
-  DEFAULT_AUTH_PORT: 10102,
-
-  /** 备用端口列表 */
-  FALLBACK_PORTS: [34577, 34578, 34579, 34580],
-
   /** HTTP User-Agent */
   USER_AGENT:
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',

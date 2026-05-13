@@ -121,7 +121,7 @@ export class HdcAdapter {
 
       // 2. Push all packages to the remote directory
       for (const localPath of apkPaths) {
-        await this.runHdc([
+        let sendRes = await this.runHdc([
           '-t',
           target,
           'file',
@@ -129,11 +129,14 @@ export class HdcAdapter {
           localPath,
           remoteDir + '/',
         ]);
+        if (!sendRes.startsWith('FileTransfer finish')) {
+          throw new Error(sendRes);
+        }
       }
 
       // 3. Install from the temporary directory
       // Using 'bm install -p' for directory installation
-      await this.runHdc([
+      let installRes = await this.runHdc([
         '-t',
         target,
         'shell',
@@ -142,6 +145,9 @@ export class HdcAdapter {
         '-p',
         remoteDir,
       ]);
+      if (!installRes.includes('install bundle successfully.')) {
+          throw new Error(installRes);
+       }
     } finally {
       // 4. Remove the temporary directory
       await this.runHdc(['-t', target, 'shell', 'rm', '-rf', remoteDir], false);
@@ -152,7 +158,7 @@ export class HdcAdapter {
     target: string,
     bundleName: string,
     mainAbility: string
-  ): Promise<void> {
+  ): Promise<string> {
     const args = [
       '-t',
       target,
@@ -164,6 +170,6 @@ export class HdcAdapter {
       '-b',
       bundleName,
     ];
-    await this.runHdc(args);
+    return await this.runHdc(args);
   }
 }
