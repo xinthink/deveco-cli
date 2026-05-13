@@ -106,7 +106,7 @@ SKILL_TEMP.md                 # Edit this; SKILL.md is regenerated from it on bu
 - **Modules**: ES Modules (`"type": "module"`); internal imports must use `.js` even though sources are `.ts`
 - **Build**: `tsup` (single minified `dist/cli.js`, with `npm_package_version` / `npm_package_name` injected at build time)
 - **CLI framework**: Commander.js
-- **Runtime deps**: `commander`, `execa`, `axios`, `json5`, `regedit`, `fs-extra`, `adm-zip`, `natural` + `string-similarity-js` (knowledge ranking), `colorette`, `ora`
+- **Runtime deps**: `commander`, `execa`, `axios`, `json5`, `regedit`, `fs-extra`, `adm-zip`, `string-similarity-js` (knowledge ranking), `colorette`, `ora`
 - **Dev tooling**: `eslint`, `typescript-eslint`, `prettier`, `tsx`, `tsup`, `generate-license-file`
 
 ## CLI Conventions
