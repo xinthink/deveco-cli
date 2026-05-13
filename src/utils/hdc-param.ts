@@ -36,3 +36,45 @@ export async function tryGetHdcShellParam(
   }
   return parseHdcParamStdout(raw);
 }
+
+const BATCH_DELIM = '__DEVECO_PARAM_DELIM__';
+
+export async function tryGetHdcShellParams(
+  hdcPath: string,
+  deviceId: string,
+  paramKeys: string[]
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (paramKeys.length === 0) {
+    return result;
+  }
+  if (paramKeys.length === 1) {
+    const v = await tryGetHdcShellParam(hdcPath, deviceId, paramKeys[0]);
+    if (v) {
+      result.set(paramKeys[0], v);
+    }
+    return result;
+  }
+
+  const command =
+    paramKeys.map((k) => `param get ${k}`).join(`; echo ${BATCH_DELIM}; `) +
+    `; echo ${BATCH_DELIM}`;
+
+  const r = await runCommand(hdcPath, ['-t', deviceId, 'shell', command]);
+  if (r.exitCode !== 0) {
+    return result;
+  }
+
+  const segments = r.stdout.split(BATCH_DELIM);
+  for (let i = 0; i < paramKeys.length; i++) {
+    const raw = segments[i] ?? '';
+    if (!raw.trim()) {
+      continue;
+    }
+    const value = parseHdcParamStdout(raw);
+    if (value) {
+      result.set(paramKeys[i], value);
+    }
+  }
+  return result;
+}
