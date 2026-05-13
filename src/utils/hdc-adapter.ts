@@ -107,6 +107,20 @@ export class HdcAdapter {
     return 'Unknown Device';
   }
 
+  public async uninstallApp(target: string, bundleName: string): Promise<boolean> {
+    const stdout = await this.runHdc(
+      ['-t', target, 'shell', 'bm', 'uninstall', '-n', bundleName],
+      false
+    );
+    if (stdout.includes('uninstall bundle successfully')) {
+      return true;
+    }
+    if (stdout.includes('uninstall missing installed bundle')) {
+      return false;
+    }
+    throw new Error(`Uninstall failed: ${stdout}`);
+  }
+
   public async installApp(target: string, apkPaths: string[]): Promise<void> {
     if (apkPaths.length === 0) {
       return;
@@ -121,7 +135,7 @@ export class HdcAdapter {
 
       // 2. Push all packages to the remote directory
       for (const localPath of apkPaths) {
-        let sendRes = await this.runHdc([
+        const sendRes = await this.runHdc([
           '-t',
           target,
           'file',
@@ -136,7 +150,7 @@ export class HdcAdapter {
 
       // 3. Install from the temporary directory
       // Using 'bm install -p' for directory installation
-      let installRes = await this.runHdc([
+      const installRes = await this.runHdc([
         '-t',
         target,
         'shell',

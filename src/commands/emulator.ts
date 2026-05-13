@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { tryGetHdcShellParams } from '../utils/hdc-param.js';
 import { green, cyan, red, yellow, gray } from 'colorette';
 import ora, { type Ora } from 'ora';
