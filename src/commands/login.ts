@@ -41,11 +41,12 @@ const loginCommand = new Command('login')
       console.log(cyan('Press Enter to open browser for login...'));
       await waitForEnter();
       const userInfo = await loginService.login();
-      console.log(green('✓ Login successful'));
-      console.log(green(`  Welcome, ${userInfo.userName}!`));
+      console.log(
+        green(`Login successful. Logged in as ${userInfo.userName}.`)
+      );
     } catch (error) {
       const e = error as Error;
-      console.error(red('✗ Login failed'));
+      console.error(red('Login failed'));
       if (e.message) {
         console.error(red(`  Error: ${e.message}`));
       }

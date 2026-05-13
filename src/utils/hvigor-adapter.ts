@@ -83,6 +83,17 @@ export class HvigorAdapter {
     await this.runHvigor(args);
   }
 
+  public async clean(): Promise<void> {
+    const args: string[] = [
+      'clean',
+      '--analyze=normal',
+      '--parallel',
+      '--no-daemon',
+    ];
+
+    await this.runHvigor(args);
+  }
+
   private async runHvigor(args: string[]): Promise<void> {
     const cmd = this.toolProvider.nodePath;
     const cmdArgs = [this.toolProvider.hvigorJsPath, ...args];

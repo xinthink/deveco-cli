@@ -331,11 +331,32 @@ export class Knowledge {
 
     // 仅对整包 body 做一次 JSON.stringify；question 本身应是字符串字段，勿再 JSON.stringify(content)。
     const body = { question: content };
-    const response = await fetch(KNOWLEDGE_URL, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
+
+    // 10s 超时：原生 fetch 无内建超时，必须用 AbortController；finally 清理 timer 防止挂起进程。
+    const KNOWLEDGE_FETCH_TIMEOUT_MS = 10000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      KNOWLEDGE_FETCH_TIMEOUT_MS
+    );
+    let response: Response;
+    try {
+      response = await fetch(KNOWLEDGE_URL, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if ((err as { name?: string })?.name === 'AbortError') {
+        throw new Error(
+          `Knowledge search request timed out after ${KNOWLEDGE_FETCH_TIMEOUT_MS}ms`
+        );
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     const rawText = await response.text();
     const payload = this.parseBigSearchHttpResponse(response, rawText);

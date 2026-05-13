@@ -2,6 +2,7 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
+import { execFileSync } from 'child_process';
 import fs, { existsSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -254,7 +255,7 @@ export class ToolProvider {
     return candidates;
   }
 
-  // ---------- product-info.json version resolution ----------
+  // ---------- install version resolution (product-info.json / macOS Info.plist) ----------
 
   private static productInfoPath(installRoot: string): string {
     const platform = os.platform();
@@ -264,9 +265,61 @@ export class ToolProvider {
     return path.join(installRoot, 'product-info.json');
   }
 
+  private static macInfoPlistPath(installRoot: string): string {
+    return path.join(installRoot, 'Contents', 'Info.plist');
+  }
+
+  /**
+   * macOS: read a string key from the app Info.plist (XML or binary plist) via `defaults read`.
+   */
+  private static readMacInfoPlistKey(
+    plistPath: string,
+    key: string
+  ): string | undefined {
+    if (!fs.existsSync(plistPath)) {
+      debugLog(`[ToolProvider] Info.plist not found at: ${plistPath}`);
+      return undefined;
+    }
+    try {
+      const out = execFileSync('defaults', ['read', plistPath, key], {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 5000,
+      }).trim();
+      if (out.length > 0 && out !== '(null)') {
+        return out;
+      }
+    } catch {
+      debugLog(
+        `[ToolProvider] defaults read failed for ${plistPath} key ${key}`
+      );
+    }
+    return undefined;
+  }
+
+  /** Prefer CFBundleShortVersionString, then CFBundleVersion (build number). */
+  private static parseMacInfoPlistVersion(
+    installRoot: string
+  ): string | undefined {
+    const plistPath = ToolProvider.macInfoPlistPath(installRoot);
+    return (
+      ToolProvider.readMacInfoPlistKey(
+        plistPath,
+        'CFBundleShortVersionString'
+      ) ?? ToolProvider.readMacInfoPlistKey(plistPath, 'CFBundleVersion')
+    );
+  }
+
   private static parseProductInfoVersion(
     installRoot: string
   ): string | undefined {
+    if (os.platform() === 'darwin') {
+      const fromPlist = ToolProvider.parseMacInfoPlistVersion(installRoot);
+      if (fromPlist !== undefined) {
+        return fromPlist;
+      }
+    }
+
     const infoPath = ToolProvider.productInfoPath(installRoot);
     if (!fs.existsSync(infoPath)) {
       debugLog(`[ToolProvider] product-info.json not found at: ${infoPath}`);
@@ -334,18 +387,22 @@ export class ToolProvider {
         debugLog(`[ToolProvider] ${installRoot} => version ${version}`);
       } else {
         debugLog(
-          `[ToolProvider] Skipping ${installRoot}: could not read version from product-info.json`
+          `[ToolProvider] Skipping ${installRoot}: could not read version (Info.plist / product-info.json)`
         );
       }
     }
 
     if (versioned.length === 0) {
       const tried = candidates.join('\n  ');
+      const hint =
+        os.platform() === 'darwin'
+          ? 'Contents/Info.plist (CFBundleShortVersionString / CFBundleVersion) and Contents/product-info.json'
+          : 'product-info.json';
       throw new Error(
-        `Failed to determine DevEco Studio version from product-info.json.\n` +
+        `Failed to determine DevEco Studio version from ${hint}.\n` +
           `Searched locations:\n  ${tried}\n` +
           `Please reinstall DevEco Studio or download the latest version from:\n` +
-          `  ${DEVECO_DOWNLOAD_URL}`
+          DEVECO_DOWNLOAD_URL
       );
     }
 
@@ -365,9 +422,10 @@ export class ToolProvider {
       red(
         `Error: The detected DevEco Studio version is ${version}, ` +
           `which is below the minimum required version ${MIN_REQUIRED_VERSION}. ` +
-          `Please upgrade to the latest version before using deveco-cli:\n` +
-          `  ${DEVECO_DOWNLOAD_URL}`
-      )
+          `Please upgrade to the latest version before using deveco-cli:`
+      ) +
+        '\n' +
+        DEVECO_DOWNLOAD_URL
     );
     process.exit(1);
   }

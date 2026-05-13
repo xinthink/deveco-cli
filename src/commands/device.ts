@@ -5,9 +5,25 @@
 import { Command } from 'commander';
 import { execa } from 'execa';
 import { ToolProvider } from '../utils/tool-provider.js';
+import {
+  tryGetHdcShellParam,
+  tryGetHdcShellParams,
+} from '../utils/hdc-param.js';
+import { EmulatorManager } from '../service/emulator-manager.js';
+import type { EmulatorInfo } from '../service/emulator-types.js';
+import { isLocalEmulatorSerial } from '../utils/emulator-hdc-targets.js';
 import * as path from 'path';
 import fs from 'fs-extra';
 import { green, cyan, red, yellow, gray } from 'colorette';
+import ora, { type Ora } from 'ora';
+import { exitWithListCommandError } from '../utils/ora-fail.js';
+
+interface DeviceListEntry {
+  serial?: string;
+  name?: string;
+  isEmulator: boolean;
+  isConnected: boolean;
+}
 
 interface DeviceInfo {
   serial: string;
@@ -30,37 +46,9 @@ class DeviceManager {
   private async executeHdc(
     args: string[]
   ): Promise<{ stdout: string; stderr: string }> {
-    const result = await execa(this.hdcPath, args, {
+    return execa(this.hdcPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    return result;
-  }
-
-  private extractHdcFailure(output: string): string | null {
-    const normalized = output.replace(/\r/g, '');
-    const lines = normalized
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-
-    const failurePatterns = [
-      'failed to ',
-      'error:',
-      'install failed',
-      'uninstall failed',
-      'msg:error',
-      'failed to uninstall',
-      '[fail]',
-    ];
-
-    for (const line of lines) {
-      const lower = line.toLowerCase();
-      if (failurePatterns.some((p) => lower.includes(p))) {
-        return line;
-      }
-    }
-
-    return null;
   }
 
   public async listDevices(): Promise<DeviceInfo[]> {
@@ -88,35 +76,14 @@ class DeviceManager {
 
   public async getDeviceModel(serial: string): Promise<string> {
     try {
-      const [brand, model, name] = await Promise.all([
-        this.executeHdc([
-          '-t',
-          serial,
-          'shell',
-          'param',
-          'get',
-          'const.product.brand',
-        ]),
-        this.executeHdc([
-          '-t',
-          serial,
-          'shell',
-          'param',
-          'get',
-          'const.product.model',
-        ]),
-        this.executeHdc([
-          '-t',
-          serial,
-          'shell',
-          'param',
-          'get',
-          'const.product.name',
-        ]),
+      const params = await tryGetHdcShellParams(this.hdcPath, serial, [
+        'const.product.brand',
+        'const.product.model',
+        'const.product.name',
       ]);
-      const brandStr = brand.stdout.trim();
-      const modelStr = model.stdout.trim();
-      const nameStr = name.stdout.trim();
+      const brandStr = params.get('const.product.brand') ?? '';
+      const modelStr = params.get('const.product.model') ?? '';
+      const nameStr = params.get('const.product.name') ?? '';
       const displayName =
         modelStr && modelStr !== 'emulator' ? modelStr : nameStr || modelStr;
       if (brandStr && displayName) {
@@ -146,35 +113,14 @@ class DeviceManager {
   public async getDeviceDetail(serial: string): Promise<DeviceInfo> {
     const detail: DeviceInfo = { serial, status: 'device' };
     try {
-      const [deviceType, apiVersion, releaseType] = await Promise.all([
-        this.executeHdc([
-          '-t',
-          serial,
-          'shell',
-          'param',
-          'get',
-          'const.product.devicetype',
-        ]),
-        this.executeHdc([
-          '-t',
-          serial,
-          'shell',
-          'param',
-          'get',
-          'const.ohos.apiversion',
-        ]),
-        this.executeHdc([
-          '-t',
-          serial,
-          'shell',
-          'param',
-          'get',
-          'const.ohos.releasetype',
-        ]),
+      const params = await tryGetHdcShellParams(this.hdcPath, serial, [
+        'const.product.devicetype',
+        'const.ohos.apiversion',
+        'const.ohos.releasetype',
       ]);
-      detail.deviceType = deviceType.stdout.trim();
-      const apiVer = apiVersion.stdout.trim();
-      const relType = releaseType.stdout.trim();
+      detail.deviceType = params.get('const.product.devicetype');
+      const apiVer = params.get('const.ohos.apiversion');
+      const relType = params.get('const.ohos.releasetype');
       if (apiVer) {
         detail.osVersion = relType
           ? `API ${apiVer} (${relType})`
@@ -185,104 +131,105 @@ class DeviceManager {
     }
     return detail;
   }
+}
 
-  public async installApp(
-    packagePaths: string[],
-    deviceSerial?: string
-  ): Promise<void> {
-    if (packagePaths.length === 0) {
-      throw new Error('No packages to install');
-    }
-
-    const resolvedPaths = packagePaths.map((p) => {
-      const resolved = path.resolve(p);
-      if (!fs.existsSync(resolved)) {
-        throw new Error(`Application package not found: ${resolved}`);
+async function resolveConnectedEntries(
+  hdcPath: string,
+  serials: string[]
+): Promise<{ entries: DeviceListEntry[]; runningEmulatorNames: Set<string> }> {
+  const entries = await Promise.all(
+    serials.map(async (serial): Promise<DeviceListEntry> => {
+      const isEmulator = isLocalEmulatorSerial(serial);
+      const paramKey = isEmulator ? 'ohos.qemu.hvd.name' : 'const.product.name';
+      let name: string | undefined;
+      try {
+        name = await tryGetHdcShellParam(hdcPath, serial, paramKey);
+      } catch {
+        name = undefined;
       }
-      return resolved;
-    });
+      return { serial, name, isEmulator, isConnected: true };
+    })
+  );
 
-    for (let i = 0; i < resolvedPaths.length; i++) {
-      const isLast = i === resolvedPaths.length - 1;
-      const resolvedPath = resolvedPaths[i];
-
-      if (isLast && resolvedPaths.length > 1) {
-        console.log(cyan(`Installing main package: ${resolvedPath}`));
-      } else if (resolvedPaths.length > 1) {
-        console.log(
-          cyan(`Installing dependency package (${i + 1}): ${resolvedPath}`)
-        );
-      } else {
-        console.log(cyan(`Installing package: ${resolvedPath}`));
-      }
-
-      const args = deviceSerial
-        ? ['-t', deviceSerial, 'install', '-r', resolvedPath]
-        : ['install', '-r', resolvedPath];
-      const { stdout, stderr } = await this.executeHdc(args);
-      const failure = this.extractHdcFailure(`${stdout}\n${stderr}`);
-      if (failure) {
-        throw new Error(failure);
-      }
+  const runningEmulatorNames = new Set<string>();
+  for (const entry of entries) {
+    if (entry.isEmulator && entry.name) {
+      runningEmulatorNames.add(entry.name);
     }
   }
 
-  public async startApp(
-    bundleName: string,
-    ability: string,
-    deviceSerial?: string
-  ): Promise<void> {
-    const args = deviceSerial
-      ? [
-          '-t',
-          deviceSerial,
-          'shell',
-          'aa',
-          'start',
-          '-a',
-          ability,
-          '-b',
-          bundleName,
-        ]
-      : ['shell', 'aa', 'start', '-a', ability, '-b', bundleName];
-    const { stdout, stderr } = await this.executeHdc(args);
-    const failure = this.extractHdcFailure(`${stdout}\n${stderr}`);
-    if (failure) {
-      throw new Error(failure);
-    }
-  }
+  return { entries, runningEmulatorNames };
+}
 
-  public async uninstallApp(
-    bundleName: string,
-    deviceSerial?: string
-  ): Promise<void> {
-    const args = deviceSerial
-      ? ['-t', deviceSerial, 'uninstall', bundleName]
-      : ['uninstall', bundleName];
-    const { stdout, stderr } = await this.executeHdc(args);
-    const failure = this.extractHdcFailure(`${stdout}\n${stderr}`);
-    if (failure) {
-      throw new Error(failure);
-    }
+async function loadInstalledEmulators(
+  toolProvider: ToolProvider
+): Promise<EmulatorInfo[]> {
+  if (!toolProvider.emulatorPath) {
+    return [];
+  }
+  try {
+    const emulatorManager = EmulatorManager.from(toolProvider);
+    return await emulatorManager.listEmulators();
+  } catch {
+    return [];
   }
 }
 
-async function listAction(deviceManager: DeviceManager) {
+function appendOfflineEmulators(
+  installed: EmulatorInfo[],
+  runningEmulatorNames: Set<string>,
+  entries: DeviceListEntry[]
+): void {
+  for (const emu of installed) {
+    if (!emu.name || runningEmulatorNames.has(emu.name)) {
+      continue;
+    }
+    entries.push({
+      name: emu.name,
+      isEmulator: true,
+      isConnected: false,
+    });
+  }
+}
+
+function printDeviceEntry(entry: DeviceListEntry): void {
+  const display = entry.name ?? entry.serial ?? '';
+  const status = entry.isConnected
+    ? (entry.serial ?? 'connected')
+    : 'not connected';
+  const tag = entry.isEmulator ? 'emulator' : 'device';
+  console.log(`  ${display} [${status}]  ${gray(`(${tag})`)}`);
+}
+
+async function listAction(
+  deviceManager: DeviceManager,
+  toolProvider: ToolProvider,
+  spinner?: Ora
+) {
   try {
     const devices = await deviceManager.listDevices();
+    const serials = devices.map((d) => d.serial);
 
-    if (devices.length === 0) {
+    const [{ entries, runningEmulatorNames }, installed] = await Promise.all([
+      resolveConnectedEntries(toolProvider.hdcPath, serials),
+      loadInstalledEmulators(toolProvider),
+    ]);
+    appendOfflineEmulators(installed, runningEmulatorNames, entries);
+
+    spinner?.stop();
+    if (entries.length === 0) {
       console.log('  [Empty]');
     } else {
-      for (const device of devices) {
-        const modelName = await deviceManager.getDeviceModel(device.serial);
-        console.log(`  ${modelName} [${device.serial}]`);
+      for (const entry of entries) {
+        printDeviceEntry(entry);
       }
     }
     console.log('');
   } catch (error) {
-    console.error(red(`Failed to list devices: ${(error as Error).message}`));
-    process.exit(1);
+    exitWithListCommandError(
+      spinner,
+      `Failed to list devices: ${(error as Error).message}`
+    );
   }
 }
 
@@ -304,10 +251,10 @@ async function checkMultiDevice(
   process.exit(1);
 }
 
-async function infoAction(deviceManager: DeviceManager, deviceSerial?: string) {
+async function viewAction(deviceManager: DeviceManager, deviceSerial?: string) {
   try {
     if (!deviceSerial) {
-      await checkMultiDevice(deviceManager, 'deveco device info');
+      await checkMultiDevice(deviceManager, 'deveco device view');
     }
 
     const devices = await deviceManager.listDevices();
@@ -331,7 +278,7 @@ async function infoAction(deviceManager: DeviceManager, deviceSerial?: string) {
     console.log('');
   } catch (error) {
     console.error(
-      red(`Failed to get device info: ${(error as Error).message}`)
+      red(`Failed to show device details: ${(error as Error).message}`)
     );
     process.exit(1);
   }
@@ -403,10 +350,14 @@ async function uninstallAction(
   }
 }
 
-async function initDeviceManager(): Promise<DeviceManager> {
+async function initDeviceManager(): Promise<{
+  manager: DeviceManager;
+  toolProvider: ToolProvider;
+}> {
   try {
     const toolProvider = await ToolProvider.new();
-    return DeviceManager.from(toolProvider);
+    const manager = DeviceManager.from(toolProvider);
+    return { manager, toolProvider };
   } catch (error) {
     console.error(
       red(`Failed to initialize device manager: ${(error as Error).message}`)
@@ -424,17 +375,21 @@ deviceCommand
   .command('list')
   .description('List all connected devices')
   .action(async () => {
-    const deviceManager = await initDeviceManager();
-    await listAction(deviceManager);
+    const { manager, toolProvider } = await initDeviceManager();
+    const spinner = ora({
+      text: 'Querying connected devices…',
+      color: 'cyan',
+    }).start();
+    await listAction(manager, toolProvider, spinner);
   });
 
 deviceCommand
-  .command('info')
+  .command('view')
   .description('Show detailed device information')
   .option('-t, --target <serial>', 'Target device serial number')
   .action(async (options: { target?: string }) => {
-    const deviceManager = await initDeviceManager();
-    await infoAction(deviceManager, options.target);
+    const { manager } = await initDeviceManager();
+    await infoAction(manager, options.target);
   });
 
 deviceCommand
@@ -454,9 +409,9 @@ deviceCommand
       packagePaths: string[],
       options: { target?: string; bundleName?: string; ability?: string }
     ) => {
-      const deviceManager = await initDeviceManager();
+      const { manager } = await initDeviceManager();
       await installAction(
-        deviceManager,
+        manager,
         packagePaths,
         options.target,
         options.bundleName,
@@ -470,8 +425,8 @@ deviceCommand
   .description('Uninstall an application by bundle name')
   .option('-t, --target <serial>', 'Target device serial number')
   .action(async (bundleName: string, options: { target?: string }) => {
-    const deviceManager = await initDeviceManager();
-    await uninstallAction(deviceManager, bundleName, options.target);
+    const { manager } = await initDeviceManager();
+    await uninstallAction(manager, bundleName, options.target);
   });
 
 export default deviceCommand;
