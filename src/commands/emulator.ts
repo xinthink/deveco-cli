@@ -164,28 +164,42 @@ function handleError(action: string, name: string, error: unknown): never {
 const EMULATOR_CONFIRM_POLL_INTERVAL_MS = 2000;
 const EMULATOR_CONFIRM_TIMEOUT_MS = 60000;
 
+async function isEmulatorPresentByHdcName(
+  hdcPath: string,
+  name: string
+): Promise<boolean> {
+  const targetKey = normalizeListNameKey(name);
+  const serials = await fetchEmulatorSerials(hdcPath);
+  for (const serial of serials) {
+    const hvd = await tryGetHdcShellParam(
+      hdcPath,
+      serial,
+      'ohos.qemu.hvd.name'
+    );
+    if (hvd && normalizeListNameKey(hvd) === targetKey) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
- * Poll `hdc list targets` until the named emulator appears (via ohos.qemu.hvd.name),
- * or until the timeout is reached.  Returns true when confirmed, false on timeout.
+ * Poll `hdc list targets` until the named emulator reaches the desired
+ * presence state (appeared / disappeared), or until the timeout is reached.
+ * Returns true when confirmed, false on timeout.
  */
-async function waitForEmulatorByHdcName(
+async function waitForEmulatorHdcState(
   hdcPath: string,
   name: string,
+  expectPresent: boolean,
   timeoutMs = EMULATOR_CONFIRM_TIMEOUT_MS,
   intervalMs = EMULATOR_CONFIRM_POLL_INTERVAL_MS
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const serials = await fetchEmulatorSerials(hdcPath);
-    for (const serial of serials) {
-      const hvd = await tryGetHdcShellParam(
-        hdcPath,
-        serial,
-        'ohos.qemu.hvd.name'
-      );
-      if (hvd && normalizeListNameKey(hvd) === normalizeListNameKey(name)) {
-        return true;
-      }
+    const present = await isEmulatorPresentByHdcName(hdcPath, name);
+    if (present === expectPresent) {
+      return true;
     }
     await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
   }
@@ -205,7 +219,7 @@ async function startOneEmulator(
 
   console.log(cyan(`Starting emulator "${name}"...`));
 
-  const confirmed = await waitForEmulatorByHdcName(hdcPath, name);
+  const confirmed = await waitForEmulatorHdcState(hdcPath, name, true);
   if (confirmed) {
     console.log(green(`Emulator "${name}" started successfully.`));
   } else {
@@ -250,13 +264,27 @@ async function startAction(
   }
 }
 
-async function stopAction(emulatorManager: EmulatorManager, name: string) {
+async function stopAction(
+  emulatorManager: EmulatorManager,
+  hdcPath: string,
+  name: string
+) {
   console.log(cyan(`Stopping emulator "${name}"...`));
   try {
     await emulatorManager.stopEmulator(name);
-    console.log(green(`Emulator "${name}" stopped successfully!`));
   } catch (error) {
     handleError('stop', name, error);
+  }
+
+  const confirmed = await waitForEmulatorHdcState(hdcPath, name, false);
+  if (confirmed) {
+    console.log(green(`Emulator "${name}" stopped successfully!`));
+  } else {
+    console.log(
+      yellow(
+        `Emulator "${name}" stop signal was sent but the instance is still visible in hdc list targets within the timeout.`
+      )
+    );
   }
 }
 
@@ -301,8 +329,8 @@ emulatorCommand
   .command('stop <name>')
   .description('Stop an emulator instance')
   .action(async (name: string) => {
-    const { manager } = await initEmulatorManager();
-    await stopAction(manager, name);
+    const { manager, toolProvider } = await initEmulatorManager();
+    await stopAction(manager, toolProvider.hdcPath, name);
   });
 
 export default emulatorCommand;
