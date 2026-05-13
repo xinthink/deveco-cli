@@ -41,12 +41,13 @@ Examples:
 
 Search HarmonyOS app development knowledge (ArkTS / ArkUI / API usage, etc.) while coding. Requires `deveco login`.
 
-- `--keywords <words...>` takes multi-word input without quotes.
-- Output is a JSON array of top-ranked answers (suitable for piping back to an LLM).
+- `--prompt <question>` (**required**) accepts natural-language questions or keywords.
+- `--format <fmt>` controls output format: `md` / `markdown` / `json` (default: `md`).
+- `json` output is a JSON array of ranked answer chunks (suitable for piping back to an LLM).
 
 Examples:
-- `deveco knowledge --keywords ArkTS Row 布局`
-- `deveco knowledge --keywords @State @Prop 区别`
+- `deveco knowledge --prompt "ArkTS Row 布局"`
+- `deveco knowledge --prompt "@State 和 @Prop 区别" --format json`
 
 ### `deveco build`
 
@@ -74,9 +75,9 @@ Examples:
 Manage local emulator instances created in DevEco Studio.
 
 - `list` shows each emulator with `[serial]` (running) or `[stopped]`.
-- `start <names...>` starts one or more instances in parallel (non-blocking spawn per instance). Names with spaces must be quoted so each name is one shell argument, e.g. `"Mate 70 Pro"`. You can mix quoted and unquoted names on one line.
-- After launch, **success** is printed only when `hdc` is available and `hdc list targets` shows the instance (matched via `ohos.qemu.hvd.name`). If `hdc` is missing, success is printed after spawn. If `hdc` never sees the instance within the wait window, a warning is printed instead.
-- Starting several emulators: if any name fails, the process exits non-zero; others may still have started.
+- `start <names...>` starts one or more instances in parallel; quote names with spaces (e.g. `"Mate 70 Pro"`).
+- With `hdc` available, success is reported only after the instance appears in `hdc list targets` (matched by `ohos.qemu.hvd.name`); without `hdc`, success is reported after spawn.
+- If multiple names are given and any fails, the command exits non-zero (others may still have started).
 - `stop <name>` stops one instance; quote multi-word names the same way as `start`.
 
 Examples:
@@ -105,9 +106,9 @@ Examples:
 
 ### `deveco run`
 
-Build-aware install + launch on a device or emulator. Resolves and installs HSP dependencies, then launches the configured ability. **Run `deveco build` first.**
+Build-aware install + launch on a device or emulator: resolves HSP dependencies, installs artifacts, then launches ability. **Run `deveco build` first.**
 
-Prefer `deveco run` over `deveco device --install`. Fall back to `device --install` when you already have prebuilt artifacts (e.g. CI output) or need precise control over package paths.
+Prefer `deveco run`; use `deveco device install` when you already have prebuilt artifacts (e.g. CI output) or need explicit package path control.
 
 - `--module <module>` accepts `module` or `module@target`; auto-selected when exactly one runnable (`entry` / `feature` / `shared`) module exists.
 - `--device <name|serial>` accepts a name (substring match) or serial (e.g. `127.0.0.1:5555`); required on multi-device hosts.
@@ -124,15 +125,14 @@ Fetch hilog or crash logs.
 
 - `--device <name|serial>` accepts name or serial; required on multi-device hosts.
 - `--crash` switches to crash log dump; `--level D|I|W|E|F` filters by level; `--bundle-name` and `--keyword` further narrow output.
-- `--from <start>` / `--to <end>` filter by relative offsets from now. Only `s`/`m` are supported (`30s`, `5m`, `2.5m`); when unit is omitted (like `120`), seconds are used.
-- `--from` and `--to` can be used independently or together. Example: `--from 30s --to 30m` means logs between 30 minutes ago and 30 seconds ago.
+- `--from <start>` / `--to <end>` use relative offsets from now; support `s`/`m` (`30s`, `5m`, `2.5m`), and default to seconds when unit is omitted (`120`).
 - `--tail <num>` keeps only the latest `num` lines from the filtered result (so with `--from/--to`, tail means the end of that time window).
 - `--follow` streams hilog in real time (non-`--crash` mode) until interrupted (`Ctrl+C`); `--to` cannot be used with `--follow`.
 
 Examples:
 - `deveco log --level E`
 - `deveco log --crash --bundle-name com.example.app`
-- `deveco log -d 127.0.0.1:5555 --level W --keyword Init`
+- `deveco log --device 127.0.0.1:5555 --level W --keyword Init`
 - `deveco log --from 30s --to 30m --tail 200`
 - `deveco log --from 5m --to 2.5m --tail 200`
 - `deveco log --from 120 --tail 200`
@@ -144,6 +144,10 @@ Examples:
 ### `deveco login` / `deveco logout`
 
 Sign in / out of a Huawei Developer account (required by `deveco knowledge`).
+
+### `deveco whoami`
+
+Show the currently logged-in Huawei Developer user. If no login session exists, it prints an error and exits non-zero.
 
 ### `deveco init`
 
@@ -157,7 +161,7 @@ Subcommands:
 - `list [-l|--long]` — list available skills.
 - `find <keyword>` — search by keyword.
 - `add (--all | --skill <name>) [--agent <a,b,…>] [--project <path>] [-f|--force]` — install. Must pick `--all` **or** `--skill` (not both). With neither `--agent` nor `--project`, installs to all detected agents.
-- `remove <skill-name> [--agent <a,b,…>] [--project <path>]` — uninstall.
+- `remove --skill <name> [--agent <a,b,…>] [--project <path>]` — uninstall.
 
 Examples:
 - `deveco skills list --long`
@@ -165,7 +169,7 @@ Examples:
 - `deveco skills add --all`
 - `deveco skills add --skill deveco-cli --agent claude --force`
 - `deveco skills add --skill deveco-cli --project ./my-app`
-- `deveco skills remove deveco-cli`
+- `deveco skills remove --skill deveco-cli`
 
 ## 3. Maintenance
 
@@ -196,7 +200,7 @@ deveco log --crash --bundle-name com.example.app
 ```bash
 deveco device list                            # find the target serial
 deveco run --device 127.0.0.1:5555
-deveco log -d 127.0.0.1:5555 --level E
+deveco log --device 127.0.0.1:5555 --level E
 ```
 
 ### Release build for QA / publishing
@@ -208,12 +212,12 @@ deveco build --product oversea --build-mode release
 ## Troubleshooting
 
 - **"DevEco Studio not found"** — install DevEco Studio in its default location.
-- **"Product / Build mode `<x>` not found"** — the value must exist in `build-profile.json5`.
-- **"Multiple entry modules" / "No entry module"** — pass `--modules` (build) or `--module` (run).
+- **"Product / Build mode `<x>` not found"** — ensure it exists in `build-profile.json5`.
+- **"Multiple entry modules" / "No entry module"** — pass `--modules` (`build`) or `--module` (`run`).
 - **"No active devices"** — connect a device or start an emulator.
-- **"Multiple devices connected"** — disambiguate with `-t <serial>` (`deveco device …`) or `--device <name|serial>` (`run` / `log`).
+- **"Multiple devices connected"** — specify `-t <serial>` (`deveco device …`) or `--device <name|serial>` (`run` / `log`).
 - **"Module is of type `<x>`, which is not runnable"** — pick an `entry` / `feature` / `shared` module.
-- **`create` says "Invalid API level"** — `--api-level` must be an integer in `17`–`23`, or omit it to auto-detect.
+- **`create` says "Invalid API level"** — `--api-level` must be an integer in `17`–`23`, or omit it for auto-detect.
 - **`knowledge` says "Please login first"** — run `deveco login`.
 - **`skills add` reports `Agent "<name>" 不存在`** — check the agent name or omit `--agent` for auto-detect.
 - **Stale CLI / missing flags** — run `deveco update`.

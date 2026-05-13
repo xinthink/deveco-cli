@@ -62,9 +62,10 @@ If the agent doesn't pick up the skill automatically, prompt it explicitly: *"Us
 | `deveco emulator` | List, start (one or many), and stop local emulators — quote instance names that contain spaces |
 | `deveco log` | Fetch hilog or crash logs (with level / bundle / keyword / from/to / tail / follow filters) |
 | `deveco knowledge` | Search the HarmonyOS / ArkTS knowledge base (requires `deveco login`) |
+| `deveco whoami` | Show the currently logged-in Huawei Developer user |
 | `deveco init` | Install the bundled `deveco-cli` skill into your AI agents (`claude`, `cursor`, …) so they learn how to drive `deveco` |
 | `deveco skills` | List / find / add / remove HMOS skills for AI agents and projects |
-| `deveco login` / `logout` | Sign in / out of a Huawei Developer account |
+| `deveco login` / `deveco logout` | Sign in / out of a Huawei Developer account |
 | `deveco update` | Update the CLI itself (`npm install -g deveco-cli@latest`) |
 
 Run `deveco <cmd> --help` for full options, or see [`SKILL.md`](./SKILL.md) for the detailed reference (also consumed by AI agents).
