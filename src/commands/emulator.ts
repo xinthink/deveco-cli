@@ -11,6 +11,15 @@ import { EmulatorManager } from '../service/emulator-manager.js';
 import { ToolProvider } from '../utils/tool-provider.js';
 import { fetchEmulatorSerials } from '../utils/emulator-hdc-targets.js';
 
+function validateVirtualDeviceName(name: string): void {
+  const n = name.trim();
+  if (!n || !/^[A-Za-z0-9_ ]+$/.test(n)) {
+    throw new Error(
+      'The virtual device name can only contain letters, spaces, numbers, and underscores (_).'
+    );
+  }
+}
+
 function validateEmulatorOsVersionArg(version: string): void {
   const v = version.trim();
   if (!v) {
@@ -712,6 +721,7 @@ createEmulatorCmd.action(
     }
   ) => {
     try {
+      validateVirtualDeviceName(name);
       validateEmulatorOsVersionArg(opts.osVersion);
       const { manager } = await initEmulatorManager();
       const downloaded = await manager.listDownloadedImageOsVersions();

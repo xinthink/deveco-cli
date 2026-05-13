@@ -237,6 +237,21 @@ export class EmulatorManager {
     osVersion: string;
     force?: boolean;
   }): Promise<void> {
+    const emulators = await this.listEmulators();
+    const nameKey = normalizeListNameKey(opts.name);
+    const existing = emulators.find(
+      (e) => normalizeListNameKey(e.name) === nameKey
+    );
+    if (existing) {
+      if (opts.force) {
+        await this.deleteVirtualDevice(existing.name);
+      } else {
+        throw new Error(
+          `Emulator "${opts.name}" already exists. Use --force to overwrite.`
+        );
+      }
+    }
+
     const args = [
       '-create',
       opts.name,
@@ -245,12 +260,10 @@ export class EmulatorManager {
       '-osVersion',
       opts.osVersion,
     ];
-    if (opts.force) {
-      args.push('-force');
-    }
     await this.runEmulatorChecked(args, {
       extraReject: [
         /Device create fail/i,
+        /already exists/i,
         /Invalid OS version/i,
         /cannot be empty/i,
       ],
@@ -266,6 +279,32 @@ export class EmulatorManager {
           })
           .join('\n'),
     });
+
+    const created = await this.waitForEmulatorPresenceByList(nameKey);
+    if (!created) {
+      throw new Error(
+        `Emulator "${opts.name}" was reported as created, but it did not appear in the emulator list within the timeout.`
+      );
+    }
+  }
+
+  private async waitForEmulatorPresenceByList(
+    nameKey: string,
+    timeoutMs = 10000,
+    intervalMs = 500
+  ): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const emulators = await this.listEmulators();
+      const found = emulators.some(
+        (e) => normalizeListNameKey(e.name) === nameKey
+      );
+      if (found) {
+        return true;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
+    }
+    return false;
   }
 
   public async deleteVirtualDevice(userInputName: string): Promise<string> {
