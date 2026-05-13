@@ -43,12 +43,6 @@ function assertWithin(parent: string, child: string): void {
 }
 
 /**
- * 下载缓存
- * 避免同一 skill 重复下载
- */
-const downloadCache = new Map<string, Buffer>();
-
-/**
  * 下载 Skill 的 zip 文件
  * 通过 API 下载指定 skill 的 zip 压缩包
  * @param skillName - skill 的英文名称
@@ -56,29 +50,12 @@ const downloadCache = new Map<string, Buffer>();
  * @throws 如果下载失败或 skill 不存在
  */
 export async function downloadSkill(skillName: string): Promise<Buffer> {
-  // 检查缓存
-  const cached = downloadCache.get(skillName);
-  if (cached) {
-    return cached;
-  }
-
   // 构建 API URL
   const url = `${SkillsApiConstants.SKILL_INSTALL_API_BASE}/${skillName}/install?format=zip`;
   // 使用 httpClient.getBinary 下载
   const buffer = await httpClient.getBinary(url);
 
-  // 存入缓存
-  downloadCache.set(skillName, buffer);
-
   return buffer;
-}
-
-/**
- * 清理下载缓存
- * 在所有安装完成后调用，释放内存
- */
-export function clearDownloadCache(): void {
-  downloadCache.clear();
 }
 
 /**

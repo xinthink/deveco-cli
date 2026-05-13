@@ -43,7 +43,7 @@ src/
 │   ├── emulator-types.ts            # `EmulatorInfo` + `normalizeListNameKey`
 │   ├── emulator-list-parse.ts       # Parses `emulator -list -details` (JSON / text)
 │   ├── emulator-start-strategies.ts # Builds `-start` / `-hvd` argv candidates + retries
-│   └── emulator-manager.ts          # listEmulators / startEmulator / stopEmulator
+│   └── emulator-manager.ts          # list/start/stop + image + create/delete virtual device
 ├── utils/
 │   ├── project.ts            # Project discovery + JSON5 build-profile parsing
 │   ├── tool-provider.ts      # Locate DevEco Studio + resolve toolchain paths
@@ -70,9 +70,9 @@ SKILL_TEMP.md                 # Edit this; SKILL.md is regenerated from it on bu
 - **`commands/create.ts`** — Scaffolds a new application project. Requires `--app-name` (1–200 chars, letter-start, letters/digits/underscores only). `--project-path` defaults to `./<app-name>`; errors if directory exists. Path normalization: backslashes → forward slashes; consecutive slashes reduced to single. Deep paths auto-created with `mkdir -p` semantics. Validates `--bundle-name` (7–128 chars, ≥3 dot-separated segments, no consecutive dots). `--api-level` validated to `17`–`23` or auto-detected; defaults to `23` if DevEco Studio not found. Delegates file copy + config rendering to `utils/template-provider.ts`.
 - **`commands/build.ts`** — Pipeline `ohpm install --all → hvigor --sync → hvigor assemble*`. Auto-detects the entry module, resolves transitive HSP deps, and propagates `@target` suffixes. With `--product <name>` only, builds the whole-product `.app`; otherwise builds per-module `.hap` / `.hsp` / `.har`.
 - **`commands/run.ts`** — Auto-selects the runnable module (`entry`/`feature`/`shared`) and the device (name substring or exact serial), installs HSP deps then the main `.hap` via `hdc install -r`, and `aa start`s the ability (defaults to `mainElement` from `module.json5`).
-- **`commands/device.ts`** — `--list` / `--info` / `--install` (multi-package, dep-first) / `--uninstall`, all via `hdc`. Multi-device hosts must pass `-t <serial>`.
-- **`commands/emulator.ts`** — Thin CLI layer for `list` / `start <names...>` / `stop <name>`. `list` merges `EmulatorManager.listEmulators()` with `hdc list targets` (via `utils/emulator-hdc-targets.ts`) to attach a `[serial]` to running instances. `start` accepts multiple names (quote those with spaces) and runs them in parallel via `Promise.allSettled`; success is reported only once `hdc list targets` shows the instance (matched via `ohos.qemu.hvd.name`).
-- **`service/emulator-manager.ts`** — `EmulatorManager` orchestrates `listEmulators` / `startEmulator` / `stopEmulator`. Delegates list parsing to `service/emulator-list-parse.ts` and start strategy selection to `service/emulator-start-strategies.ts`; uses `utils/emulator-spawn.ts` for the actual detached spawn (incl. Windows shell quoting fallback).
+- **`commands/device.ts`** — `list` / `view` device discovery via `hdc`. Multi-device hosts must pass `-t <serial>`.
+- **`commands/emulator.ts`** — CLI for local emulator `list` / `start` / `stop` / `create` / `delete` plus system-image helpers: `image download|remove|list`.
+- **`service/emulator-manager.ts`** — `EmulatorManager` orchestrates list/start/stop + system-image install/uninstall/list + create/delete local virtual devices. List parsing: `service/emulator-list-parse.ts`; start strategies: `service/emulator-start-strategies.ts`; detached spawn: `utils/emulator-spawn.ts`.
 - **`service/emulator-service.ts`** — Used by the `device` discovery flow to enumerate connected devices and installed emulators. This is separate from `commands/emulator.ts`, which implements the `deveco emulator` subcommand.
 - **`commands/log.ts`** — Thin shell over `HilogAdapter`: `--crash` switches to crash dump; otherwise common hilog with `--level` / `--bundle-name` / `--keyword` filters.
 - **`commands/knowledge.ts`** — Login-gated. Requires `--prompt <question>` and supports `--format md|markdown|json` (default `md`); `json` output is a JSON array of ranked answer chunks.
@@ -107,7 +107,7 @@ SKILL_TEMP.md                 # Edit this; SKILL.md is regenerated from it on bu
 - **Modules**: ES Modules (`"type": "module"`); internal imports must use `.js` even though sources are `.ts`
 - **Build**: `tsup` (single minified `dist/cli.js`, with `npm_package_version` / `npm_package_name` injected at build time)
 - **CLI framework**: Commander.js
-- **Runtime deps**: `commander`, `execa`, `axios`, `json5`, `regedit`, `fs-extra`, `adm-zip`, `natural` + `string-similarity-js` (knowledge ranking), `colorette`, `ora`
+- **Runtime deps**: `commander`, `execa`, `axios`, `json5`, `regedit`, `fs-extra`, `adm-zip`, `string-similarity-js` (knowledge ranking), `colorette`, `ora`
 - **Dev tooling**: `eslint`, `typescript-eslint`, `prettier`, `tsx`, `tsup`, `generate-license-file`
 
 ## CLI Conventions

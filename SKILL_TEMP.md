@@ -79,6 +79,11 @@ Manage local emulator instances created in DevEco Studio.
 - With `hdc` available, success is reported only after the instance appears in `hdc list targets` (matched by `ohos.qemu.hvd.name`); without `hdc`, success is reported after spawn.
 - If multiple names are given and any fails, the command exits non-zero (others may still have started).
 - `stop <name>` stops one instance; quote multi-word names the same way as `start`.
+- `image list` defaults to listing only downloaded system images.
+- `image list --all` lists all system images, same as calling `emulator -imageList` without `-downloaded`.
+- `image download|remove` manages system images (long-running; streams tool output).
+- `create <name>` creates a local emulator instance. `--os-version` must match a downloaded image label from `deveco emulator image list` (quote it if it contains spaces/parentheses).
+- `delete <name>` deletes a local emulator instance.
 
 Examples:
 - `deveco emulator list`
@@ -86,23 +91,24 @@ Examples:
 - `deveco emulator start "Mate 70 Pro" HarmonyOS_Phone`  # quoted + unquoted
 - `deveco emulator start "Mate 70 Pro" "Mate 60"`  # multiple
 - `deveco emulator stop "Mate 70 Pro"`
+- `deveco emulator image list`
+- `deveco emulator image list --all`
+- `deveco emulator image download --device-type Phone --os-version "HarmonyOS 6.0.1(21)"`
+- `deveco emulator image remove --device-type Phone --os-version "HarmonyOS 6.0.1(21)"`
+- `deveco emulator create "My Phone" --device-type Phone --os-version "HarmonyOS 6.0.1(21)"`
+- `deveco emulator delete "My Phone"`
 
 ### `deveco device`
 
-List / inspect / install / uninstall on connected devices and emulators.
+List / inspect connected devices and emulators.
 
-- `list` / `info` for device discovery.
+- `list` / `view` for device discovery.
 - `-t, --target <serial>` selects a device on multi-device hosts (otherwise the command prints all serials and exits).
-- `install <paths...>` accepts multiple package paths — pass dependency `.hsp` first, then the main `.hap` / `.app`.
-- `-b <bundle> -a <ability>` after `install` launches the app on success.
-- `uninstall <bundleName>` removes the app.
 
 Examples:
 - `deveco device list`
-- `deveco device info`
-- `deveco device install ./feature.hsp ./entry.hap`
-- `deveco device install ./entry.hap -b com.example.app -a EntryAbility`
-- `deveco device uninstall com.example.app -t 127.0.0.1:5555`
+- `deveco device view`
+- `deveco device view -t 127.0.0.1:5555`
 
 ### `deveco run`
 
