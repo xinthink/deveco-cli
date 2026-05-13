@@ -20,7 +20,7 @@ const knowledgeCommand = new Command('knowledge')
   )
   .requiredOption(
     '--prompt <question>',
-    'Search terms, e.g. --prompt context有什么用?'
+    'Search terms, e.g. --prompt "What is the use of context?"'
   )
   .option('--format <fmt>', 'Output format: md, markdown, json', 'md')
   .action(async (opts: KnowledgeCliOptions) => {
