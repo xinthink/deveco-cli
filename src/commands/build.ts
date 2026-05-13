@@ -240,4 +240,29 @@ const buildCommand = new Command('build')
     }
   });
 
+buildCommand
+  .command('clean')
+  .description('Clean the HarmonyOS project build outputs')
+  .action(async () => {
+    try {
+      const currentDir = process.cwd();
+      const project = Project.discover(currentDir);
+
+      const toolProvider = await ToolProvider.new();
+
+      const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
+      console.log('\n[1/1] Running hvigor clean...');
+      try {
+        await hvigorAdapter.clean();
+      } catch (error) {
+        logAdapterFailureAndThrow('hvigor clean', error);
+      }
+
+      console.log('\n' + green('Clean completed successfully!'));
+    } catch (error) {
+      console.error(red((error as Error).message));
+      process.exit(1);
+    }
+  });
+
 export default buildCommand;
