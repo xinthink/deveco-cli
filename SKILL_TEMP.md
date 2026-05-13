@@ -102,7 +102,8 @@ Examples:
 
 List / inspect connected devices and emulators.
 
-- `list` / `view` for device discovery.
+- `list` enumerates real devices and emulators in one view: each entry is tagged `(device)` or `(emulator)`, with `[serial]` for connected entries and `[not connected]` for installed-but-not-running emulators. Real device names come from `const.product.name`; running emulator names come from `ohos.qemu.hvd.name`; offline emulator names come from `emulator -list -details`.
+- `info` shows detailed device information.
 - `-t, --target <serial>` selects a device on multi-device hosts (otherwise the command prints all serials and exits).
 
 Examples:
