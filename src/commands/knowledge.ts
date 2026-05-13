@@ -22,11 +22,7 @@ const knowledgeCommand = new Command('knowledge')
     '--prompt <question>',
     'Search terms, e.g. --prompt context有什么用?'
   )
-  .option(
-    '--format <fmt>',
-    'Output format: md, markdown, json',
-    'md'
-  )
+  .option('--format <fmt>', 'Output format: md, markdown, json', 'md')
   .action(async (opts: KnowledgeCliOptions) => {
     if (!(await loginService.isLoggedIn())) {
       console.error(red('Please login first'));
@@ -34,7 +30,9 @@ const knowledgeCommand = new Command('knowledge')
     }
     const validFormats: OutputFormat[] = ['md', 'markdown', 'json'];
     if (!validFormats.includes(opts.format)) {
-      console.error(red(`Invalid format "${opts.format}". Allowed: md, markdown, json`));
+      console.error(
+        red(`Invalid format "${opts.format}". Allowed: md, markdown, json`)
+      );
       process.exit(1);
     }
     try {
@@ -44,8 +42,9 @@ const knowledgeCommand = new Command('knowledge')
         process.exit(1);
       }
 
-      const result =
-        await Knowledge.getInstance().getBigSearchResponse(opts.prompt);
+      const result = await Knowledge.getInstance().getBigSearchResponse(
+        opts.prompt
+      );
       if (!result.ok) {
         process.exit(1);
       }

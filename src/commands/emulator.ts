@@ -3,13 +3,24 @@
  * SPDX-License-Identifier: MIT
  */
 import { Command } from 'commander';
-import { tryGetHdcShellParam } from '../utils/hdc-param.js';
+import { tryGetHdcShellParams } from '../utils/hdc-param.js';
 import { green, cyan, red, yellow, gray } from 'colorette';
+import ora, { type Ora } from 'ora';
+import { exitWithListCommandError } from '../utils/ora-fail.js';
 import type { EmulatorInfo } from '../service/emulator-types.js';
 import { normalizeListNameKey } from '../service/emulator-types.js';
 import { EmulatorManager } from '../service/emulator-manager.js';
 import { ToolProvider } from '../utils/tool-provider.js';
-import { fetchEmulatorSerials } from '../utils/emulator-hdc-targets.js';
+import {
+  fetchEmulatorSerials,
+  fetchRunningEmulatorHvds,
+} from '../utils/emulator-hdc-targets.js';
+
+const SERIAL_PARAM_KEYS = [
+  'ohos.qemu.hvd.name',
+  'const.product.name',
+  'const.product.model',
+];
 
 function printEmulatorDetail(
   emu: EmulatorInfo,
@@ -20,89 +31,91 @@ function printEmulatorDetail(
   console.log(`  ${emu.name} [${statusText}]`);
 }
 
-async function queryParamMatch(
+
+async function fetchSerialParamsBatched(
   hdcPath: string,
-  serial: string,
-  paramKey: string,
-  unmatchedNames: string[]
-): Promise<string | null> {
-  const value = await tryGetHdcShellParam(hdcPath, serial, paramKey);
-  if (!value) {
-    return null;
-  }
-  const matchIdx = unmatchedNames.indexOf(value);
-  return matchIdx !== -1 ? unmatchedNames[matchIdx] : null;
+  serials: string[]
+): Promise<Map<string, Map<string, string>>> {
+  const entries = await Promise.all(
+    serials.map(async (serial) => {
+      const params = await tryGetHdcShellParams(
+        hdcPath,
+        serial,
+        SERIAL_PARAM_KEYS
+      );
+      return [serial, params] as const;
+    })
+  );
+  return new Map(entries);
 }
 
-async function matchSerialToName(
-  hdcPath: string,
+async function fetchEmulatorListSnapshot(hdcPath: string): Promise<{
+  serials: string[];
+  params: Map<string, Map<string, string>>;
+}> {
+  const serials = await fetchEmulatorSerials(hdcPath);
+  const params = await fetchSerialParamsBatched(hdcPath, serials);
+  return { serials, params };
+}
+
+function tryMatchProductSerial(
   serial: string,
+  params: Map<string, string> | undefined,
   unmatchedNames: string[],
-  serialMap: Map<string, string>,
-  unmatchedSerials: string[]
-): Promise<boolean> {
-  const paramKeys = ['const.product.name', 'const.product.model'];
-  for (const paramKey of paramKeys) {
-    const matchedName = await queryParamMatch(
-      hdcPath,
-      serial,
-      paramKey,
-      unmatchedNames
-    );
-    if (!matchedName) {
+  unmatchedSerials: string[],
+  productSerialMap: Map<string, string>
+): void {
+  if (!params) {
+    return;
+  }
+  for (const key of ['const.product.name', 'const.product.model']) {
+    const value = params.get(key);
+    if (!value) {
       continue;
     }
-
-    unmatchedNames.splice(unmatchedNames.indexOf(matchedName), 1);
-    serialMap.set(matchedName, serial);
-    const serialIdx = unmatchedSerials.indexOf(serial);
-    if (serialIdx !== -1) {
-      unmatchedSerials.splice(serialIdx, 1);
+    const idx = unmatchedNames.indexOf(value);
+    if (idx === -1) {
+      continue;
     }
-    return true;
+    unmatchedNames.splice(idx, 1);
+    productSerialMap.set(value, serial);
+    const sIdx = unmatchedSerials.indexOf(serial);
+    if (sIdx !== -1) {
+      unmatchedSerials.splice(sIdx, 1);
+    }
+    return;
   }
-  return false;
 }
 
-/** One pass over local emulator serials: HVD map + product-name map for list UI. */
-async function buildEmulatorHdcSerialMaps(
-  hdcPath: string,
+/** Pure-function map builder over already-fetched params. */
+function buildEmulatorMapsFromParams(
+  serials: string[],
+  serialParams: Map<string, Map<string, string>>,
   runningEmulatorNames: string[]
-): Promise<{
+): {
   productSerialMap: Map<string, string>;
   hvdSerialMap: Map<string, string>;
-}> {
-  const hvdSerialMap = new Map<string, string>();
+} {
   const productSerialMap = new Map<string, string>();
-  const serials = await fetchEmulatorSerials(hdcPath);
-  if (serials.length === 0) {
-    return { productSerialMap, hvdSerialMap };
-  }
-
+  const hvdSerialMap = new Map<string, string>();
   const unmatchedSerials = [...serials];
   const unmatchedNames = [...runningEmulatorNames];
-
   for (const serial of serials) {
-    const hvd = await tryGetHdcShellParam(
-      hdcPath,
-      serial,
-      'ohos.qemu.hvd.name'
-    );
+    const params = serialParams.get(serial);
+    const hvd = params?.get('ohos.qemu.hvd.name');
     if (hvd) {
       hvdSerialMap.set(hvd, serial);
     }
-
     if (runningEmulatorNames.length > 0) {
-      await matchSerialToName(
-        hdcPath,
+      tryMatchProductSerial(
         serial,
+        params,
         unmatchedNames,
-        productSerialMap,
-        unmatchedSerials
+        unmatchedSerials,
+        productSerialMap
       );
     }
   }
-
   for (
     let i = 0;
     i < unmatchedNames.length && i < unmatchedSerials.length;
@@ -114,11 +127,19 @@ async function buildEmulatorHdcSerialMaps(
   return { productSerialMap, hvdSerialMap };
 }
 
-async function listAction(emulatorManager: EmulatorManager, hdcPath: string) {
+async function listAction(
+  emulatorManager: EmulatorManager,
+  hdcPath: string,
+  spinner?: Ora
+) {
   try {
-    const emulators = await emulatorManager.listEmulators();
+    const [emulators, hdcSnapshot] = await Promise.all([
+      emulatorManager.listEmulators(),
+      fetchEmulatorListSnapshot(hdcPath),
+    ]);
 
     if (emulators.length === 0) {
+      spinner?.stop();
       console.log(yellow('  No emulator instances found.'));
       console.log(gray('  You can create an emulator in DevEco Studio.'));
       console.log('');
@@ -129,12 +150,13 @@ async function listAction(emulatorManager: EmulatorManager, hdcPath: string) {
       .filter((e) => e.isRunning)
       .map((e) => e.name);
 
-    let productSerialMap = new Map<string, string>();
-    let hvdSerialMap = new Map<string, string>();
-    const maps = await buildEmulatorHdcSerialMaps(hdcPath, runningNames);
-    productSerialMap = maps.productSerialMap;
-    hvdSerialMap = maps.hvdSerialMap;
+    const { productSerialMap, hvdSerialMap } = buildEmulatorMapsFromParams(
+      hdcSnapshot.serials,
+      hdcSnapshot.params,
+      runningNames
+    );
 
+    spinner?.stop();
     for (const emu of emulators) {
       const serial =
         productSerialMap.get(emu.name) ?? hvdSerialMap.get(emu.name);
@@ -144,8 +166,10 @@ async function listAction(emulatorManager: EmulatorManager, hdcPath: string) {
     }
     console.log('');
   } catch (error) {
-    console.error(red(`Failed to list emulators: ${(error as Error).message}`));
-    process.exit(1);
+    exitWithListCommandError(
+      spinner,
+      `Failed to list emulators: ${(error as Error).message}`
+    );
   }
 }
 
@@ -169,18 +193,8 @@ async function isEmulatorPresentByHdcName(
   name: string
 ): Promise<boolean> {
   const targetKey = normalizeListNameKey(name);
-  const serials = await fetchEmulatorSerials(hdcPath);
-  for (const serial of serials) {
-    const hvd = await tryGetHdcShellParam(
-      hdcPath,
-      serial,
-      'ohos.qemu.hvd.name'
-    );
-    if (hvd && normalizeListNameKey(hvd) === targetKey) {
-      return true;
-    }
-  }
-  return false;
+  const hvds = await fetchRunningEmulatorHvds(hdcPath);
+  return hvds.some((hvd) => normalizeListNameKey(hvd) === targetKey);
 }
 
 /**
@@ -314,7 +328,11 @@ emulatorCommand
   .description('List all emulator instances')
   .action(async () => {
     const { manager, toolProvider } = await initEmulatorManager();
-    await listAction(manager, toolProvider.hdcPath);
+    const spinner = ora({
+      text: 'Listing emulators…',
+      color: 'cyan',
+    }).start();
+    await listAction(manager, toolProvider.hdcPath, spinner);
   });
 
 emulatorCommand
