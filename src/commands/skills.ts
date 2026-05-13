@@ -6,6 +6,7 @@
 import { Command } from 'commander';
 import fs from 'fs';
 import { green, red, cyan, yellow, dim } from 'colorette';
+import { SpinnerHelper } from '../utils/spinner-helper.js';
 import {
   fetchHmosTagId,
   fetchAllSkills,
@@ -16,7 +17,6 @@ import {
   downloadSkill,
   installSkillToAgentWithBuffer,
   installSkillToProject,
-  clearDownloadCache,
   removeSkillFromAgent,
   removeSkillFromProject,
 } from '../skills/installer';
@@ -89,9 +89,9 @@ async function installSingleSkill(
 }
 
 /**
- * 处理 add 子命令
+ * 验证 add 命令的参数
  */
-async function handleAddCommand(options: AddOptions): Promise<void> {
+function validateAddOptions(options: AddOptions): void {
   // 1. 参数验证：--all 和 --skill 不能同时指定
   if (options.all && options.skill) {
     throw new Error('--all and --skill cannot be specified together');
@@ -106,32 +106,54 @@ async function handleAddCommand(options: AddOptions): Promise<void> {
   if (options.project && !fs.existsSync(options.project)) {
     throw new Error(`Directory "${options.project}" not found`);
   }
+}
 
-  // 4. 获取技能名称列表
-  const skillNames = await getSkillNames(options);
-
-  // 5. 获取 agent 列表
+/**
+ * 获取安装目标（skill 名称列表和 agent 列表）
+ */
+async function getInstallationTargets(options: AddOptions): Promise<{
+  skillNames: string[];
+  agents: string[];
+}> {
+  // 1. 获取 agent 列表
   let agents: string[] = [];
   if (options.agent) {
     agents = await parseAgentList(options.agent);
   } else if (!options.project) {
     agents = await getAllExistingAgents();
   }
+  // 2. 获取技能名称列表
+  const skillNames = await getSkillNames(options);
+  return { skillNames, agents };
+}
 
-  // 6. 循环安装
+/**
+ * 批量安装技能
+ */
+async function installSkills(
+  skillNames: string[],
+  agents: string[],
+  options: AddOptions,
+  spinner: SpinnerHelper
+): Promise<SkillOperationResult[]> {
   const results: SkillOperationResult[] = [];
+  const total = skillNames.length;
 
-  for (const skillName of skillNames) {
-    // 先下载 skill（带缓存，避免重复下载）
+  for (let i = 0; i < skillNames.length; i++) {
+    const skillName = skillNames[i];
+    const progress = total > 1 ? ` (${i + 1}/${total})` : '';
+    // 下载skill压缩包
+    spinner.start(`Installing ${skillName}${progress}...`);
     let zipBuffer: Buffer;
     try {
       zipBuffer = await downloadSkill(skillName);
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : 'unknown error';
+      spinner.fail();
       console.log(red(`${skillName}: Download failed - ${errorMsg}`));
+      results.push({ success: false });
       continue;
     }
-
     // 安装技能
     const installResults = await installSingleSkill(
       skillName,
@@ -142,8 +164,28 @@ async function handleAddCommand(options: AddOptions): Promise<void> {
     results.push(...installResults);
   }
 
-  // 7. 汇总输出
-  summarizeOperationResults(results);
+  return results;
+}
+
+/**
+ * 处理 add 子命令
+ */
+async function handleAddCommand(options: AddOptions): Promise<void> {
+  const spinner = new SpinnerHelper();
+  try {
+    spinner.start(`Installing skill...`);
+    validateAddOptions(options);
+
+    const { skillNames, agents } = await getInstallationTargets(options);
+
+    const results = await installSkills(skillNames, agents, options, spinner);
+
+    spinner.stop();
+    summarizeOperationResults(results);
+  } catch (error: unknown) {
+    spinner.stop();
+    throw error;
+  }
 }
 
 /**
@@ -153,20 +195,32 @@ async function handleRemoveCommand(
   skillName: string,
   options: RemoveOptions
 ): Promise<void> {
-  // 1. 目录存在性检查
-  if (options.project && !fs.existsSync(options.project)) {
-    throw new Error(`Project directory "${options.project}" not found`);
+  const spinner = new SpinnerHelper();
+  try {
+    spinner.start('Removing skill...');
+    // 1. 目录存在性检查
+    if (options.project && !fs.existsSync(options.project)) {
+      throw new Error(`Project directory "${options.project}" not found`);
+    }
+    // 2. 获取 agent 列表
+    let agents: string[] = [];
+    if (options.agent) {
+      agents = await parseAgentList(options.agent);
+    } else if (!options.project) {
+      agents = await getAllExistingAgents();
+    }
+    // 3. 移除
+    const results: SkillOperationResult[] = await removeSkill(options, skillName, agents);
+    // 4. 汇总输出
+    spinner.stop();
+    summarizeOperationResults(results);
+  } catch (error: unknown) {
+    spinner.stop();
+    throw error;
   }
+}
 
-  // 2. 获取 agent 列表
-  let agents: string[] = [];
-  if (options.agent) {
-    agents = await parseAgentList(options.agent);
-  } else if (!options.project) {
-    agents = await getAllExistingAgents();
-  }
-
-  // 3. 循环移除
+async function removeSkill(options: RemoveOptions, skillName: string, agents: string[]) {
   const results: SkillOperationResult[] = [];
 
   if (options.project) {
@@ -180,9 +234,7 @@ async function handleRemoveCommand(
       results.push(result);
     }
   }
-
-  // 4. 汇总输出
-  summarizeOperationResults(results);
+  return results;
 }
 
 // 创建主命令
@@ -197,7 +249,9 @@ skillsCommand
     'Show detailed information including description and installation status'
   )
   .action(async (options: { long?: boolean }) => {
+    const spinner = new SpinnerHelper();
     try {
+      spinner.start('Fetching skills...');
       const tagId = await fetchHmosTagId();
 
       // 获取所有技能
@@ -205,9 +259,11 @@ skillsCommand
 
       // 处理空结果
       if (skills.length === 0) {
+        spinner.stop();
         console.log(yellow('No skills available'));
         return;
       }
+      spinner.succeed(`Fetched ${skills.length} skills`);
 
       // 输出技能列表
       for (const skill of skills) {
@@ -226,6 +282,7 @@ skillsCommand
         }
       }
     } catch (error: unknown) {
+      spinner.stop();
       console.error(red((error as Error).message));
       process.exit(1);
     }
@@ -236,7 +293,9 @@ skillsCommand
   .command('find <keyword>')
   .description('Search skills by keyword')
   .action(async (keyword: string) => {
+    const spinner = new SpinnerHelper();
     try {
+      spinner.start('Searching skills...');
       const tagId = await fetchHmosTagId();
 
       // 搜索技能
@@ -245,8 +304,11 @@ skillsCommand
       // 处理空结果
       if (skills.length === 0) {
         console.log(yellow(`No skills found matching '${keyword}'`));
+        spinner.stop();
         return;
       }
+
+      spinner.succeed(`Found ${skills.length} skills`);
 
       // 输出搜索结果
       for (const skill of skills) {
@@ -255,6 +317,7 @@ skillsCommand
         console.log();
       }
     } catch (error: unknown) {
+      spinner.stop();
       console.error(red((error as Error).message));
       process.exit(1);
     }
@@ -281,8 +344,6 @@ skillsCommand
     } catch (error: unknown) {
       console.error(red((error as Error).message));
       process.exit(1);
-    } finally {
-      clearDownloadCache();
     }
   });
 
