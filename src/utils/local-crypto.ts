@@ -37,7 +37,7 @@ const rootKeyIds = CryptoConstants.KEK_VERSIONS;
 // 隔离存储
 const configPath = path.join(homedir(), '.config', AppConfig.APP_NAME);
 const keyDirPath = path.join(homedir(), '.local', 'share', AppConfig.APP_NAME, 'keys');
-const wrappedDekPath = path.join(configPath, 'token.dek');
+const wrappedDekPath = path.join(configPath, AppConfig.KEY_FILE_NAME);
 
 function getRootKeyPath(keyId: string): string {
   return path.join(keyDirPath, `${keyId}.bin`);
