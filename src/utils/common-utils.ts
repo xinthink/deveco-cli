@@ -147,10 +147,18 @@ export class CommonUtils {
     lowerBound: Date | null,
     upperBound: Date | null
   ): boolean {
-    if (lowerBound && timestamp < lowerBound) {
+    const timestampMs = timestamp.getTime();
+    const lowerBoundMs = lowerBound
+      ? Math.floor(lowerBound.getTime() / 1000) * 1000
+      : null;
+    const upperBoundMs = upperBound
+      ? Math.floor(upperBound.getTime() / 1000) * 1000 + 999
+      : null;
+
+    if (lowerBoundMs !== null && timestampMs < lowerBoundMs) {
       return false;
     }
-    if (upperBound && timestamp > upperBound) {
+    if (upperBoundMs !== null && timestampMs > upperBoundMs) {
       return false;
     }
     return true;
