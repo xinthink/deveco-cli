@@ -6,6 +6,7 @@
 import { stringSimilarity } from 'string-similarity-js';
 import { debugLog } from './logger.js';
 import { loginService } from '../auth/login-service.js';
+import { KnowledgeConfig } from '../config/constants';
 
 /** 截断响应体，避免错误信息过长污染终端。 */
 function truncateForError(text: string, max = 500): string {
@@ -290,7 +291,6 @@ export function parseBigSearchResponse(data: unknown): BigSearchResponse {
   return data as BigSearchResponse;
 }
 
-const KNOWLEDGE_URL = 'https://cn.devecostudio.huawei.com/codeGenie/bigSearch';
 export class Knowledge {
   /**
    * 混合相似度阈值（绝对值），∈ (0,1]。
@@ -341,7 +341,7 @@ export class Knowledge {
     );
     let response: Response;
     try {
-      response = await fetch(KNOWLEDGE_URL, {
+      response = await fetch(KnowledgeConfig.KNOWLEDGE_URL, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
