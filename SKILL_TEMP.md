@@ -76,8 +76,6 @@ Manage local emulator instances created in DevEco Studio.
 
 - `list` shows each emulator with `[serial]` (running) or `[stopped]`.
 - `start <names...>` starts one or more instances in parallel; quote names with spaces (e.g. `"Mate 70 Pro"`).
-- With `hdc` available, success is reported only after the instance appears in `hdc list targets` (matched by `ohos.qemu.hvd.name`); without `hdc`, success is reported after spawn.
-- If multiple names are given and any fails, the command exits non-zero (others may still have started).
 - `stop <name>` stops one instance; quote multi-word names the same way as `start`.
 - `image list` defaults to listing only downloaded system images.
 - `image list --all` lists all system images, same as calling `emulator -imageList` without `-downloaded`.
@@ -102,8 +100,8 @@ Examples:
 
 List / inspect connected devices and emulators.
 
-- `list` enumerates real devices and emulators in one view: each entry is tagged `(device)` or `(emulator)`, with `[serial]` for connected entries and `[not connected]` for installed-but-not-running emulators. Real device names come from `const.product.name`; running emulator names come from `ohos.qemu.hvd.name`; offline emulator names come from `emulator -list -details`.
-- `info` shows detailed device information.
+- `list` for device discovery.
+- `view` shows detailed device information.
 - `-t, --target <serial>` selects a device on multi-device hosts (otherwise the command prints all serials and exits).
 
 Examples:

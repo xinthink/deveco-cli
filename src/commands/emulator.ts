@@ -407,7 +407,7 @@ const EMULATOR_IMAGE_DEVICE_TYPES = [
   'TV',
 ] as const;
 
-function deviceTypeOption(required: boolean) {
+function deviceTypeOption(required: boolean): Option {
   const opt = new Option(
     '--device-type <type>',
     'Emulator device type'
