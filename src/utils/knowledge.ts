@@ -350,7 +350,8 @@ export class Knowledge {
     } catch (err) {
       if ((err as { name?: string })?.name === 'AbortError') {
         throw new Error(
-          `Knowledge search request timed out after ${KNOWLEDGE_FETCH_TIMEOUT_MS}ms`
+          `Knowledge search request timed out after ${KNOWLEDGE_FETCH_TIMEOUT_MS}ms`,
+          { cause: err }
         );
       }
       throw err;

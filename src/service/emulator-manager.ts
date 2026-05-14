@@ -324,7 +324,9 @@ export class EmulatorManager {
     ) {
       try {
         await this.executeEmulator(['-stop', listName]);
-      } catch {}
+      } catch {
+        // Ignore stop failure; proceed to delete the emulator anyway.
+      }
     }
 
     await this.runEmulatorChecked(['-delete', listName, '-force'], {

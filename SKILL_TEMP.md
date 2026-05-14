@@ -1,7 +1,7 @@
 ---
 name: deveco-cli
 description: >-
-  Use 'deveco' (preferred over hvigor / ohpm / hdc / emulator) to create new
+  Use 'devecocli' (preferred over hvigor / ohpm / hdc / emulator) to create new
   HarmonyOS application projects from templates, build, package, install and
   run HarmonyOS apps and modules (.hap/.hsp/.har/.app), manage devices and
   emulators, fetch hilog and crash logs, search HarmonyOS app development
@@ -14,7 +14,7 @@ description: >-
 
 # DevEco CLI
 
-`deveco` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc` and emulator toolchain, plus HarmonyOS knowledge search and HMOS-skills installer. **Prefer `deveco` over invoking `hvigor` / `ohpm` / `hdc` / emulator directly.** It does not cover advanced `hdc` workflows that `deveco` does not expose (debugger attach, perf profiling).
+`devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc` and emulator toolchain, plus HarmonyOS knowledge search and HMOS-skills installer. **Prefer `devecocli` over invoking `hvigor` / `ohpm` / `hdc` / emulator directly.**
 
 ## Commands
 
@@ -24,145 +24,143 @@ description: >-
 
 ## 1. Code → Build → Deploy → Run → Debug
 
-### `deveco create`
+### `devecocli create`
 
 Initialize a new HarmonyOS application project from the bundled template.
 
 - `--app-name <name>` (**required**) — 1–200 chars, starts with letter, contains only letters/digits/underscores.
-- `--project-path <path>` — defaults to `./<app-name>`; error if directory exists. Path normalization: consecutive slashes → single slash; deep paths auto-created; parent must be writable.
+- `--project-path <path>` — when omitted, defaults to `./<app-name>` and that path **must not exist**; when provided explicitly, the path may not exist (auto-created) or may exist only if it is empty.
 - `--bundle-name <bundle>` — defaults to `com.example.<appname-lowercase>`; 7–128 chars, ≥3 segments, no consecutive dots.
 - `--api-level <level>` — integer in `17`–`23`; auto-detected or defaults to `23`.
 
 Examples:
-- `deveco create --app-name MyApp`
-- `deveco create --app-name MyApp --project-path ./CustomDir --api-level 23`
+- `devecocli create --app-name MyApp`
+- `devecocli create --app-name MyApp --project-path ./CustomDir --api-level 23`
 
-### `deveco knowledge`
+### `devecocli knowledge`
 
-Search HarmonyOS app development knowledge (ArkTS / ArkUI / API usage, etc.) while coding. Requires `deveco login`.
+Search HarmonyOS app development knowledge (ArkTS / ArkUI / API usage, etc.) while coding. Requires `devecocli login`.
 
 - `--prompt <question>` (**required**) accepts natural-language questions or keywords.
 - `--format <fmt>` controls output format: `md` / `markdown` / `json` (default: `md`).
 - `json` output is a JSON array of ranked answer chunks (suitable for piping back to an LLM).
 
 Examples:
-- `deveco knowledge --prompt "ArkTS Row 布局"`
-- `deveco knowledge --prompt "@State 和 @Prop 区别" --format json`
+- `devecocli knowledge --prompt "ArkTS Row 布局"`
+- `devecocli knowledge --prompt "@State 和 @Prop 区别" --format json`
 
-### `deveco build`
+### `devecocli build`
 
 Compile and package a HarmonyOS project or its modules.
 
 | Goal | Output | Command |
 |---|---|---|
-| Single-module / single-`entry` project | `.hap` / `.hsp` / `.har` | `deveco build` |
-| Specific modules (optionally `module@target`) | `.hap` / `.hsp` / `.har` | `deveco build --modules <m1> <m2>@<target>` |
-| Whole product bundle | `.app` | `deveco build --product <name>` *(no `--modules`)* |
-| Modules under a specific product | `.hap` / `.hsp` / `.har` | `deveco build --product <name> --modules <m1>` |
+| Single-module / single-`entry` project | `.hap` / `.hsp` / `.har` | `devecocli build` |
+| Specific modules (optionally `module@target`) | `.hap` / `.hsp` / `.har` | `devecocli build --modules <m1> <m2>@<target>` |
+| Whole product bundle | `.app` | `devecocli build --product <name>` *(no `--modules`)* |
+| Modules under a specific product | `.hap` / `.hsp` / `.har` | `devecocli build --product <name> --modules <m1>` |
+| Clean build outputs | — | `devecocli build clean` |
 
-- Defaults: `--product default`, `--build-mode debug`. `--build-mode` accepts any value in `buildModeSet` (custom modes allowed).
+- Defaults: `--product default`, `--build-mode debug`. `--build-mode` accepts any value declared in `buildModeSet`.
 - `--modules` is required when there are multiple `entry` modules, or multiple modules without any `entry`.
 - HSP dependencies of the requested module are resolved and built automatically.
 
 Examples:
-- `deveco build --build-mode release`
-- `deveco build --modules entry library`
-- `deveco build --modules library@phone`
-- `deveco build --product oversea --modules entry --build-mode release`
+- `devecocli build --build-mode release`
+- `devecocli build --modules entry library`
+- `devecocli build --modules library@phone`
+- `devecocli build --product oversea --modules entry --build-mode release`
+- `devecocli build clean`
 
-### `deveco emulator`
+### `devecocli emulator`
 
 Manage local emulator instances created in DevEco Studio.
 
-- `list` shows each emulator with `[serial]` (running) or `[stopped]`.
-- `start <names...>` starts one or more instances in parallel; quote names with spaces (e.g. `"Mate 70 Pro"`).
-- With `hdc` available, success is reported only after the instance appears in `hdc list targets` (matched by `ohos.qemu.hvd.name`); without `hdc`, success is reported after spawn.
-- If multiple names are given and any fails, the command exits non-zero (others may still have started).
-- `stop <name>` stops one instance; quote multi-word names the same way as `start`.
-- `image list` defaults to listing only downloaded system images.
-- `image list --all` lists all system images, same as calling `emulator -imageList` without `-downloaded`.
-- `image download|remove` manages system images (long-running; streams tool output).
-- `create <name>` creates a local emulator instance. `--os-version` must match a downloaded image label from `deveco emulator image list` (quote it if it contains spaces/parentheses).
+- `list` shows each emulator with `[serial]` (running with a resolved serial), `[running]` (running but the serial is not yet resolvable) or `[stopped]`.
+- `start <names...>` starts one or more instances in parallel; quote names with spaces. If any name in a batch fails, the command exits non-zero (the others may still have started — recheck with `list`).
+- `stop <name>` stops one instance.
+- `image list` lists system images; defaults to downloaded only. Options:
+  - `--device-type <type>` — one of `Phone`, `Foldable`, `WideFold`, `TripleFold`, `Tablet`, `2in1`, `2in1 Foldable`, `Wearable`, `TV`.
+  - `--all` includes not-downloaded images.
+  - `--format <table|json>` (default `table`).
+- `image download` / `image remove` — both **require** `--device-type` (same choices) and `--os-version` (e.g. `"HarmonyOS 6.0.1(21)"`); `download` also accepts `--force`.
+- `create <name>` — **requires** `--device-type` and `--os-version` (must match a downloaded label from `image list`; quote when it contains spaces/parentheses); optional `--force`.
 - `delete <name>` deletes a local emulator instance.
 
 Examples:
-- `deveco emulator list`
-- `deveco emulator start HarmonyOS_Phone`
-- `deveco emulator start "Mate 70 Pro" HarmonyOS_Phone`  # quoted + unquoted
-- `deveco emulator start "Mate 70 Pro" "Mate 60"`  # multiple
-- `deveco emulator stop "Mate 70 Pro"`
-- `deveco emulator image list`
-- `deveco emulator image list --all`
-- `deveco emulator image download --device-type Phone --os-version "HarmonyOS 6.0.1(21)"`
-- `deveco emulator image remove --device-type Phone --os-version "HarmonyOS 6.0.1(21)"`
-- `deveco emulator create "My Phone" --device-type Phone --os-version "HarmonyOS 6.0.1(21)"`
-- `deveco emulator delete "My Phone"`
+- `devecocli emulator list`
+- `devecocli emulator start "Mate 70 Pro" HarmonyOS_Phone`
+- `devecocli emulator stop "Mate 70 Pro"`
+- `devecocli emulator image list --all`
+- `devecocli emulator image download --device-type Phone --os-version "HarmonyOS 6.0.1(21)"`
+- `devecocli emulator create "My Phone" --device-type Phone --os-version "HarmonyOS 6.0.1(21)"`
+- `devecocli emulator delete "My Phone"`
 
-### `deveco device`
+### `devecocli device`
 
-List / inspect connected devices and emulators.
+List / inspect / install / uninstall on connected devices and emulators.
 
-- `list` enumerates real devices and emulators in one view: each entry is tagged `(device)` or `(emulator)`, with `[serial]` for connected entries and `[not connected]` for installed-but-not-running emulators. Real device names come from `const.product.name`; running emulator names come from `ohos.qemu.hvd.name`; offline emulator names come from `emulator -list -details`.
-- `info` shows detailed device information.
-- `-t, --target <serial>` selects a device on multi-device hosts (otherwise the command prints all serials and exits).
+- `list` enumerates real devices and emulators in one view: each entry is tagged `(device)` or `(emulator)`, with `[serial]` for connected entries and `[not connected]` for installed-but-not-running emulators.
+- `view` shows detailed device info (device type + API/release version).
 
 Examples:
-- `deveco device list`
-- `deveco device view`
-- `deveco device view -t 127.0.0.1:5555`
+- `devecocli device list`
+- `devecocli device view -t 127.0.0.1:5555`
 
-### `deveco run`
+### `devecocli run`
 
-Build-aware install + launch on a device or emulator: resolves HSP dependencies, installs artifacts, then launches ability. **Run `deveco build` first.**
+Build-aware install + launch on a device or emulator: resolves HSP dependencies, installs artifacts, then launches ability. **Run `devecocli build` first.**
 
-Prefer `deveco run`; use `deveco device install` when you already have prebuilt artifacts (e.g. CI output) or need explicit package path control.
+Prefer `devecocli run`; use `devecocli device install` when you already have prebuilt artifacts (e.g. CI output) or need explicit package path control.
 
 - `--module <module>` accepts `module` or `module@target`; auto-selected when exactly one runnable (`entry` / `feature` / `shared`) module exists.
 - `--device <name|serial>` accepts a name (substring match) or serial (e.g. `127.0.0.1:5555`); required on multi-device hosts.
 - `--ability <ability>` defaults to the module's `mainElement` from `module.json5`.
 
 Examples:
-- `deveco run`
-- `deveco run --module entry --device 127.0.0.1:5555`
-- `deveco run --product oversea --module entry --ability EntryAbility`
+- `devecocli run`
+- `devecocli run --module entry --device 127.0.0.1:5555`
+- `devecocli run --product oversea --module entry --ability EntryAbility`
 
-### `deveco log`
+### `devecocli log`
 
 Fetch hilog or crash logs.
 
-- `--device <name|serial>` accepts name or serial; required on multi-device hosts.
+- `--device <name|serial>` — required on multi-device hosts.
 - `--crash` switches to crash log dump; `--level D|I|W|E|F` filters by level; `--bundle-name` and `--keyword` further narrow output.
-- `--from <start>` / `--to <end>` use relative offsets from now; support `s`/`m` (`30s`, `5m`, `2.5m`), and default to seconds when unit is omitted (`120`).
-- `--tail <num>` keeps only the latest `num` lines from the filtered result (so with `--from/--to`, tail means the end of that time window).
-- `--follow` streams hilog in real time (non-`--crash` mode) until interrupted (`Ctrl+C`); `--to` cannot be used with `--follow`.
+- `--from <start>` / `--to <end>` are relative offsets from now in `s` / `m` (e.g. `30s`, `5m`, `2.5m`); bare numbers are seconds. Seconds must be positive integers; only minutes (`m`) accept at most one decimal place.
+- `--tail <num>` keeps only the latest `num` lines from the filtered result.
+- `--follow` streams hilog in real time (non-`--crash` only); cannot be combined with `--to`.
 
 Examples:
-- `deveco log --level E`
-- `deveco log --crash --bundle-name com.example.app`
-- `deveco log --device 127.0.0.1:5555 --level W --keyword Init`
-- `deveco log --from 30s --to 30m --tail 200`
-- `deveco log --from 5m --to 2.5m --tail 200`
-- `deveco log --from 120 --tail 200`
-- `deveco log --tail 200 --level E`
-- `deveco log --follow`
+- `devecocli log --level E`
+- `devecocli log --crash --bundle-name com.example.app`
+- `devecocli log --device 127.0.0.1:5555 --level W --keyword Init`
+- `devecocli log --from 5m --tail 200`
+- `devecocli log --follow`
 
 ## 2. Setup
 
-### `deveco login` / `deveco logout`
+### `devecocli login` / `devecocli logout`
 
-Sign in / out of a Huawei Developer account (required by `deveco knowledge`).
+Sign in / out of a Huawei Developer account (required by `devecocli knowledge`).
 
-### `deveco whoami`
+### `devecocli whoami`
 
-Show the currently logged-in Huawei Developer user. If no login session exists, it prints an error and exits non-zero.
+Show the currently logged-in Huawei Developer user.
 
-### `deveco init`
+### `devecocli init`
 
-One-time, user-side: installs the bundled `deveco-cli` skill into your AI agents (and optionally a project) so they learn how to drive `deveco`. Run `deveco init --help` for options.
+Install the bundled `deveco-cli` skill into AI agents (and optionally a project). Same `--agent` (comma-separated) / `--project <path>` / `-f, --force` semantics as `skills add`; with neither flag, installs to all detected agents.
 
-### `deveco skills`
+Examples:
+- `devecocli init`
+- `devecocli init --agent cursor,opencode --force`
+- `devecocli init --project ./my-app`
 
-Install / remove HMOS skills (agent-side knowledge packs) into AI agents (`claude`, `cursor`, `gemini`, `opencode`, …) and / or a project root.
+### `devecocli skills`
+
+Install / remove HMOS skills (agent-side knowledge packs) into AI agents (`codebuddy`, `cursor`, `opencode`, `qoder`, `trae-cn`) and / or a project root.
 
 Subcommands:
 - `list [-l|--long]` — list available skills.
@@ -171,16 +169,16 @@ Subcommands:
 - `remove --skill <name> [--agent <a,b,…>] [--project <path>]` — uninstall.
 
 Examples:
-- `deveco skills list --long`
-- `deveco skills find harmony`
-- `deveco skills add --all`
-- `deveco skills add --skill deveco-cli --agent claude --force`
-- `deveco skills add --skill deveco-cli --project ./my-app`
-- `deveco skills remove --skill deveco-cli`
+- `devecocli skills list --long`
+- `devecocli skills find harmony`
+- `devecocli skills add --all`
+- `devecocli skills add --skill deveco-cli --agent cursor --force`
+- `devecocli skills add --skill deveco-cli --project ./my-app`
+- `devecocli skills remove --skill deveco-cli`
 
 ## 3. Maintenance
 
-### `deveco update`
+### `devecocli update`
 
 Update the CLI to the latest version.
 
@@ -189,42 +187,40 @@ Update the CLI to the latest version.
 ### Fresh checkout → running on an emulator
 
 ```bash
-deveco build
-deveco emulator list                          # pick or note a name
-deveco emulator start HarmonyOS_Phone         # or: start "Mate 70 Pro" OtherAVD
-deveco run
+devecocli build
+devecocli emulator list                          # pick or note a name
+devecocli emulator start HarmonyOS_Phone         # or: start "Mate 70 Pro" OtherAVD
+devecocli run
 ```
 
 ### Diagnose a runtime crash
 
 ```bash
 # Reproduce the crash on the device, then dump it:
-deveco log --crash --bundle-name com.example.app
+devecocli log --crash --bundle-name com.example.app
 ```
 
 ### Multi-device or multi-emulator host
 
 ```bash
-deveco device list                            # find the target serial
-deveco run --device 127.0.0.1:5555
-deveco log --device 127.0.0.1:5555 --level E
+devecocli device list                            # find the target serial
+devecocli run --device 127.0.0.1:5555
+devecocli log --device 127.0.0.1:5555 --level E
 ```
 
 ### Release build for QA / publishing
 
 ```bash
-deveco build --product oversea --build-mode release
+devecocli build --product oversea --build-mode release
 ```
 
 ## Troubleshooting
 
-- **"DevEco Studio not found"** — install DevEco Studio in its default location.
 - **"Product / Build mode `<x>` not found"** — ensure it exists in `build-profile.json5`.
 - **"Multiple entry modules" / "No entry module"** — pass `--modules` (`build`) or `--module` (`run`).
 - **"No active devices"** — connect a device or start an emulator.
-- **"Multiple devices connected"** — specify `-t <serial>` (`deveco device …`) or `--device <name|serial>` (`run` / `log`).
+- **"Multiple devices connected"** — pass `-t <serial>` (`device view / install / uninstall`) or `--device <name|serial>` (`run` / `log`).
 - **"Module is of type `<x>`, which is not runnable"** — pick an `entry` / `feature` / `shared` module.
-- **`create` says "Invalid API level"** — `--api-level` must be an integer in `17`–`23`, or omit it for auto-detect.
-- **`knowledge` says "Please login first"** — run `deveco login`.
-- **`skills add` reports `Agent "<name>" 不存在`** — check the agent name or omit `--agent` for auto-detect.
-- **Stale CLI / missing flags** — run `deveco update`.
+- **`knowledge` says "Please login first"** — run `devecocli login`.
+- **`skills add` reports `Agent <name> not found` / `Invalid agent: <name>, Valid options are: …`** — check the name (only `codebuddy` / `cursor` / `opencode` / `qoder` / `trae-cn` are supported) or omit `--agent` for auto-detect.
+- **Stale CLI / missing flags** — run `devecocli update`.
