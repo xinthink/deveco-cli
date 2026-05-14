@@ -50,9 +50,18 @@ const rawArgs = process.argv.slice(2);
 if (rawArgs.length >= 2 && rawArgs[rawArgs.length - 1] === 'help') {
   process.argv = [...process.argv.slice(0, -1), '--help'];
 }
-if (!process.env.DEVECO_CLI_SKIP_VERSION_CHECK) {
+const TOOLCHAIN_FREE_COMMANDS = new Set(['update', 'logout', 'whoami']);
+
+// Use `preAction` (not `preSubcommand`) so `-h` / `--help` on any subcommand
+program.hook('preAction', async (_thisCommand, actionCommand) => {
+  if (process.env.DEVECO_CLI_SKIP_VERSION_CHECK) return;
+  let topLevel = actionCommand;
+  while (topLevel.parent && topLevel.parent !== program) {
+    topLevel = topLevel.parent;
+  }
+  if (TOOLCHAIN_FREE_COMMANDS.has(topLevel.name())) return;
   await ToolProvider.checkVersion();
-}
+});
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(err);
