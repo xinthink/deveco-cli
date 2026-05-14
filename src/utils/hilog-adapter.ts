@@ -9,6 +9,7 @@ import { EmulatorService } from '../service/emulator-service.js';
 import { cyan, red, yellow } from 'colorette';
 import { spawn } from 'child_process';
 import { CommonUtils } from './common-utils.js';
+import { debugLog } from './logger.js';
 
 export class HilogAdapter {
   private toolProvider: ToolProvider;
@@ -34,7 +35,7 @@ export class HilogAdapter {
         (d) => d.deviceId === deviceArg || d.name.includes(deviceArg)
       );
       if (found) {
-        console.log(cyan(`Using device: ${found.name} (${found.deviceId})`));
+        debugLog(cyan(`Using device: ${found.name} (${found.deviceId})`));
         return found.deviceId;
       }
       const list = connectedDevices
@@ -47,7 +48,7 @@ export class HilogAdapter {
 
     if (connectedDevices.length === 1) {
       const device = connectedDevices[0];
-      console.log(cyan(`Using device: ${device.name} (${device.deviceId})`));
+      debugLog(cyan(`Using device: ${device.name} (${device.deviceId})`));
       return device.deviceId;
     }
 
@@ -146,7 +147,7 @@ export class HilogAdapter {
     deviceId: string,
     bundleName: string
   ): Promise<string | null> {
-    console.log(`Trying to get PID for bundle: ${bundleName}`);
+    debugLog(`Trying to get PID for bundle: ${bundleName}`);
     CommonUtils.assertBundleName(bundleName);
 
     // 执行命令: hdc -t <device_id> shell pidof <bundle_name>
@@ -165,7 +166,7 @@ export class HilogAdapter {
       // pidof 可能返回多个 PID，用空格分隔，取第一个
       const firstPid = pidStr.split(/\s+/)[0] || pidStr;
 
-      console.log(`Found PID for ${bundleName}: ${firstPid}`);
+      debugLog(`Found PID for ${bundleName}: ${firstPid}`);
       return firstPid;
     }
 
@@ -184,7 +185,7 @@ export class HilogAdapter {
     deviceId: string,
     size: string
   ): Promise<void> {
-    console.log(`Setting hilog buffer size to: ${size}`);
+    debugLog(`Setting hilog buffer size to: ${size}`);
     const result = await runCommand(hdcPath, [
       '-t',
       deviceId,
@@ -327,7 +328,7 @@ export class HilogAdapter {
       options,
       pid
     );
-    console.log(`Ready to execute hilog command: ${command} ${args.join(' ')}`);
+    debugLog(`Ready to execute hilog command: ${command} ${args.join(' ')}`);
 
     const result = await runCommand(command, args);
     if (result.exitCode !== 0 && result.stderr) {
@@ -357,7 +358,7 @@ export class HilogAdapter {
       options,
       pid
     );
-    console.log(
+    debugLog(
       `Ready to execute hilog command which contain follow and tail: ${command} ${args.join(' ')}`
     );
     await this.followHilog(command, args);
@@ -400,7 +401,7 @@ export class HilogAdapter {
    * @throws 如果获取失败则抛出错误
    */
   async getCrashLog(deviceId: string, bundleName?: string): Promise<string> {
-    console.log(`Fetching crash logs from device: ${deviceId}`);
+    debugLog(`Fetching crash logs from device: ${deviceId}`);
     const hdcPath = this.toolProvider.hdcPath;
 
     // 1. 列出崩溃日志文件
@@ -458,7 +459,7 @@ export class HilogAdapter {
       `-p Faultlogger`,
     ];
 
-    console.log(`Executing command: ${hdcPath} ${listArgs.join(' ')}`);
+    debugLog(`Executing command: ${hdcPath} ${listArgs.join(' ')}`);
 
     // 执行命令
     const result = await runCommand(hdcPath, listArgs);
@@ -470,7 +471,7 @@ export class HilogAdapter {
       );
     }
 
-    console.log(`Crash logs list output:\n${result.stdout}`);
+    debugLog(`Crash logs list output:\n${result.stdout}`);
 
     // 解析输出，提取文件名
     const filenames: string[] = result.stdout
@@ -509,7 +510,7 @@ export class HilogAdapter {
     deviceId: string,
     filename: string
   ): Promise<string> {
-    console.log(`Fetching latest crash log file: ${filename}`);
+    debugLog(`Fetching latest crash log file: ${filename}`);
 
     const fetchArgs = [
       '-t',
@@ -522,7 +523,7 @@ export class HilogAdapter {
       `-p Faultlogger -f ${filename}`,
     ];
 
-    console.log(`Executing command: ${hdcPath} ${fetchArgs.join(' ')}`);
+    debugLog(`Executing command: ${hdcPath} ${fetchArgs.join(' ')}`);
 
     const result = await runCommand(hdcPath, fetchArgs);
 
