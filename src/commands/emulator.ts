@@ -22,6 +22,15 @@ const SERIAL_PARAM_KEYS = [
   'const.product.model',
 ];
 
+function validateVirtualDeviceName(name: string): void {
+  const n = name.trim();
+  if (!n || !/^[A-Za-z0-9_ ]+$/.test(n)) {
+    throw new Error(
+      'The virtual device name can only contain letters, spaces, numbers, and underscores (_).'
+    );
+  }
+}
+
 function validateEmulatorOsVersionArg(version: string): void {
   const v = version.trim();
   if (!v) {
@@ -341,10 +350,16 @@ async function stopAction(
   name: string
 ) {
   console.log(cyan(`Stopping emulator "${name}"...`));
+  let outcome: 'stopped' | 'already-stopped';
   try {
-    await emulatorManager.stopEmulator(name);
+    outcome = await emulatorManager.stopEmulator(name);
   } catch (error) {
     handleError('stop', name, error);
+  }
+
+  if (outcome === 'already-stopped') {
+    console.log(yellow(`Emulator "${name}" is already stopped.`));
+    return;
   }
 
   const confirmed = await waitForEmulatorHdcState(hdcPath, name, false);
@@ -724,6 +739,7 @@ createEmulatorCmd.action(
     }
   ) => {
     try {
+      validateVirtualDeviceName(name);
       validateEmulatorOsVersionArg(opts.osVersion);
       const { manager } = await initEmulatorManager();
       const downloaded = await manager.listDownloadedImageOsVersions();

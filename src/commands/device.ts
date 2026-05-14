@@ -39,6 +39,24 @@ class DeviceManager {
     this.hdcPath = hdcPath;
   }
 
+  private escapeRegExp(text: string): string {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private stripBrandPrefix(name: string, brand?: string): string {
+    const trimmedName = name.trim();
+    const trimmedBrand = brand?.trim();
+    if (!trimmedName || !trimmedBrand) {
+      return trimmedName;
+    }
+    const prefix = new RegExp(
+      `^${this.escapeRegExp(trimmedBrand)}(\\s+|[-_]+)?`,
+      'i'
+    );
+    const stripped = trimmedName.replace(prefix, '').trim();
+    return stripped || trimmedName;
+  }
+
   public static from(toolProvider: ToolProvider): DeviceManager {
     return new DeviceManager(toolProvider.hdcPath);
   }
@@ -86,25 +104,77 @@ class DeviceManager {
       const nameStr = params.get('const.product.name') ?? '';
       const displayName =
         modelStr && modelStr !== 'emulator' ? modelStr : nameStr || modelStr;
-      if (brandStr && displayName) {
-        return `${brandStr} ${displayName}`;
-      }
-      return displayName || brandStr || serial;
+      const shouldStripBrand =
+        Boolean(brandStr) && Boolean(modelStr) && modelStr !== 'emulator';
+      const cleanedName = shouldStripBrand
+        ? this.stripBrandPrefix(displayName, brandStr)
+        : displayName.trim();
+      return cleanedName || serial;
     } catch {
       return serial;
     }
   }
 
+  public async getDeviceName(serial: string): Promise<string> {
+    try {
+      const hvd = await this.executeHdc([
+        '-t',
+        serial,
+        'shell',
+        'param',
+        'get',
+        'ohos.qemu.hvd.name',
+      ]);
+      const hvdStr = hvd.stdout.trim();
+      if (
+        hvdStr &&
+        !hvdStr.includes('fail!') &&
+        !hvdStr.includes('not found')
+      ) {
+        return hvdStr;
+      }
+    } catch {
+      // Ignore
+    }
+    return this.getDeviceModel(serial);
+  }
+
   public async getDeviceInfo(
     devices: DeviceInfo[],
-    deviceSerial?: string
+    deviceSelector?: string
   ): Promise<DeviceInfo | null> {
     if (devices.length === 0) {
       return null;
     }
 
-    if (deviceSerial) {
-      return devices.find((d) => d.serial === deviceSerial) || null;
+    if (deviceSelector) {
+      const bySerial = devices.find((d) => d.serial === deviceSelector);
+      if (bySerial) {
+        return bySerial;
+      }
+
+      const needle = deviceSelector.toLowerCase();
+      const matches: { device: DeviceInfo; name: string }[] = [];
+      for (const d of devices) {
+        const name = await this.getDeviceName(d.serial);
+        if (name.toLowerCase().includes(needle)) {
+          matches.push({ device: d, name });
+        }
+      }
+
+      if (matches.length === 1) {
+        return matches[0].device;
+      }
+      if (matches.length > 1) {
+        throw new Error(
+          `Multiple devices match "${deviceSelector}". Please use a serial instead:\n` +
+            matches.map((m) => `  - ${m.name} (${m.device.serial})`).join('\n')
+        );
+      }
+
+      throw new Error(
+        `Device "${deviceSelector}" not found. Use \`deveco device list\` to see available targets.`
+      );
     }
 
     return devices[0];
@@ -245,27 +315,34 @@ async function checkMultiDevice(
     red('Multiple devices connected. Please specify a device with:')
   );
   for (const device of devices) {
-    const modelName = await deviceManager.getDeviceModel(device.serial);
-    console.error(gray(`  ${commandHint} -t ${device.serial}  # ${modelName}`));
+    const deviceName = await deviceManager.getDeviceName(device.serial);
+    console.error(
+      gray(`  ${commandHint} -t ${device.serial}  # ${deviceName}`)
+    );
   }
   process.exit(1);
 }
 
-async function viewAction(deviceManager: DeviceManager, deviceSerial?: string) {
+async function viewAction(
+  deviceManager: DeviceManager,
+  deviceSelector?: string
+) {
   try {
-    if (!deviceSerial) {
+    if (!deviceSelector) {
       await checkMultiDevice(deviceManager, 'deveco device view');
     }
 
     const devices = await deviceManager.listDevices();
-    const info = await deviceManager.getDeviceInfo(devices, deviceSerial);
+    const info = await deviceManager.getDeviceInfo(devices, deviceSelector);
     if (!info) {
       console.log(yellow('No connected device found.'));
       process.exit(1);
     }
 
     const detail = await deviceManager.getDeviceDetail(info.serial);
+    const deviceName = await deviceManager.getDeviceName(info.serial);
     console.log(`  Serial:      ${info.serial}`);
+    console.log(`  Device Name: ${deviceName}`);
     console.log(
       `  Status:      ${info.status === 'device' ? 'connected' : info.status}`
     );
@@ -386,7 +463,7 @@ deviceCommand
 deviceCommand
   .command('view')
   .description('Show detailed device information')
-  .option('-t, --target <serial>', 'Target device serial number')
+  .option('-t, --target <serialOrName>', 'Target device serial or device name')
   .action(async (options: { target?: string }) => {
     const { manager } = await initDeviceManager();
     await infoAction(manager, options.target);
