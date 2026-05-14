@@ -96,6 +96,16 @@ function normalizeProjectPath(projectPath: string): string {
 }
 
 function validateProjectPath(projectPath: string): void {
+  if (projectPath.length === 0) {
+    throw new Error('Project path cannot be empty');
+  }
+
+  if (projectPath.length > 120) {
+    throw new Error(
+      `Project path cannot exceed 120 characters (current: ${projectPath.length})`
+    );
+  }
+
   const platform = os.platform();
 
   const rawValidRegex =
@@ -264,6 +274,7 @@ const createCommand = new Command('create')
       }
 
       const projectPath = resolveProjectPath(appName, options.projectPath);
+      validateProjectPath(projectPath);
 
       console.log(cyan('Initializing project...'));
       console.log(`Project path: ${projectPath}`);
