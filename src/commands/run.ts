@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { Command } from 'commander';
-import { cyan, green, red } from 'colorette';
+import { green, red } from 'colorette';
 import { Project } from '../utils/project.js';
 import { ToolProvider } from '../utils/tool-provider.js';
 import { HdcAdapter } from '../utils/hdc-adapter.js';
@@ -13,6 +13,7 @@ interface RunOptions {
   device?: string;
   product?: string;
   ability?: string;
+  uninstall?: boolean;
 }
 
 async function selectDevice(
@@ -113,6 +114,7 @@ const runCommand = new Command('run')
   .option('--device <device>', 'Target device name or serial')
   .option('--product <product>', 'Product name (default: default)')
   .option('--ability <ability>', 'Ability name to launch')
+  .option('--uninstall', 'Uninstall existing app before installation')
   .action(async (options: RunOptions) => {
     try {
       const currentDir = process.cwd();
@@ -149,18 +151,20 @@ const runCommand = new Command('run')
       );
       const bundleName = project.getBundleName();
 
-      console.log(
-        cyan(`\nInstalling artifacts to device ${targetDeviceId}...`)
-      );
+      if (options.uninstall) {
+         console.log(`Uninstalling ${bundleName}...`);
+         const uninstalled = await hdcAdapter.uninstallApp(targetDeviceId, bundleName);
+         if (!uninstalled) {
+           console.log(`App ${bundleName} is not installed, skipping uninstall.`);
+         }
+       }
+
+      console.log(`\nInstalling artifacts to device ${targetDeviceId}...`);
       await hdcAdapter.installApp(targetDeviceId, artifactsToInstall);
 
       const mainAbility = project.getMainAbility(moduleName, options.ability);
-      console.log(cyan(`Launching ${bundleName}/${mainAbility}...`));
-      let launchResult = await hdcAdapter.launchApp(
-        targetDeviceId,
-        bundleName,
-        mainAbility
-      );
+      console.log(`Launching ${bundleName}/${mainAbility}...`);
+      const launchResult = await hdcAdapter.launchApp(targetDeviceId, bundleName, mainAbility);
       console.log(green(`\nApplication '${bundleName}': ${launchResult}`));
     } catch (error) {
       console.error(red((error as Error).message));
