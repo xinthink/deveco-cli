@@ -16,3 +16,8 @@ export { TimeConstants, NetworkConstants } from './network';
 
 // Skills 相关常量
 export { SkillsApiConstants, AGENT_SKILLS_CONFIG } from './skills';
+
+// Knowledge相关常量配置
+export const KnowledgeConfig = {
+  KNOWLEDGE_URL: 'https://cn.devecostudio.huawei.com/codeGenie/bigSearch'
+};
