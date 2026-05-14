@@ -47,13 +47,16 @@ export const ApiEndpoints = {
 
 export const CryptoConstants = {
   /** 加密算法 */
-  ALGORITHM: 'aes-128-gcm',
+  ALGORITHM: 'aes-256-gcm',
 
-  /** 密钥长度（字节） */
-  KEY_LENGTH: 16,
+  /** KEK/DEK 密钥长度（字节） */
+  KEY_LENGTH: 32,
 
   /** IV 长度（字节） */
   IV_LENGTH: 12,
+
+  /** KEK 版本列表 */
+  KEK_VERSIONS: ['kek-v1', 'kek-v2', 'kek-v3'] as const,
 } as const;
 
 /**

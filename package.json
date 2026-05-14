@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "deveco": "./dist/cli.js"
+    "devecocli": "./dist/cli.js"
   },
   "files": [
     "dist",

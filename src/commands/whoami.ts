@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { Command } from 'commander';
-import { green, red, cyan } from 'colorette';
+import { red, cyan } from 'colorette';
 import { loginService } from '../auth/login-service';
 
 const whoamiCommand = new Command('whoami')
@@ -13,7 +13,7 @@ const whoamiCommand = new Command('whoami')
       // 检查是否已登录
       const isLoggedIn = await loginService.isLoggedIn();
       if (!isLoggedIn) {
-        console.error(red('Not logged in. Run `deveco login` first.'));
+        console.error(red('Not logged in. Run `devecocli login` first.'));
         process.exit(1);
       }
 
