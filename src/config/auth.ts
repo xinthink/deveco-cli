@@ -9,7 +9,7 @@ import { TimeConstants } from './network';
  */
 export const AppConfig = {
   /** 应用 ID */
-  APP_ID: '1007',
+  APP_ID: '1009',
 
   /** 配置目录名称 */
   CONFIG_DIR_NAME: '.config',
@@ -21,7 +21,7 @@ export const AppConfig = {
   TOKEN_FILE_NAME: 'token.enc',
 
   /** 密钥文件名 */
-  KEY_FILE_NAME: '.token_key',
+  KEY_FILE_NAME: 'token.dek',
 
   /** API 版本号 */
   API_VERSION: '1.0.0',
@@ -38,9 +38,9 @@ export const ApiEndpoints = {
 
   JWT_TOKEN_CHECK_PATH: 'authrouter/auth/api/jwToken/check',
 
-  LOGIN_SUCCESS_PATH: 'console/DevEcoIDE/loginSuccess',
+  LOGIN_SUCCESS_PATH: 'console/DevEcoCLI/loginSuccess',
 
-  LOGIN_FAILED_PATH: 'console/DevEcoIDE/loginFailed',
+  LOGIN_FAILED_PATH: 'console/DevEcoCLI/loginFailed',
 
   LOGOUT_PATH: 'authrouter/auth/api/logout',
 } as const;
