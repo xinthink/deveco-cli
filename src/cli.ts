@@ -25,7 +25,7 @@ import initCommand from './commands/init.js';
 import { ToolProvider } from './utils/tool-provider.js';
 
 program
-  .name('deveco')
+  .name('devecocli')
   .description('HarmonyOS application development command line tool')
   .version(process.env.npm_package_version || '0.1.0');
 
@@ -43,7 +43,7 @@ program.addCommand(logCommand);
 program.addCommand(createCommand);
 program.addCommand(initCommand);
 
-// Allow `deveco <command> help` as an alias for `deveco <command> --help`.
+// Allow `devecocli <command> help` as an alias for `devecocli <command> --help`.
 // Commander only supports this automatically for commands that have sub-commands,
 // so we normalise it here for leaf commands (build, run, log, etc.) as well.
 const rawArgs = process.argv.slice(2);

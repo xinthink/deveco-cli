@@ -171,7 +171,7 @@ class DeviceManager {
       }
 
       throw new Error(
-        `Device "${deviceSelector}" not found. Use \`deveco device list\` to see available targets.`
+        `Device "${deviceSelector}" not found. Use \`devecocli device list\` to see available targets.`
       );
     }
 
@@ -327,7 +327,7 @@ async function viewAction(
 ) {
   try {
     if (!deviceSelector) {
-      await checkMultiDevice(deviceManager, 'deveco device view');
+      await checkMultiDevice(deviceManager, 'devecocli device view');
     }
 
     const devices = await deviceManager.listDevices();
