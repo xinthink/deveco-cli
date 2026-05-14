@@ -43,6 +43,18 @@ function assertWithin(parent: string, child: string): void {
 }
 
 /**
+ * 解析路径为绝对路径
+ * 支持相对路径（基于 process.cwd()）和绝对路径
+ * @param pathToResolve - 待解析的路径（相对或绝对）
+ * @returns 解析后的绝对路径
+ */
+export function resolvePath(pathToResolve: string): string {
+  return path.isAbsolute(pathToResolve)
+    ? pathToResolve
+    : path.resolve(process.cwd(), pathToResolve);
+}
+
+/**
  * 下载 Skill 的 zip 文件
  * 通过 API 下载指定 skill 的 zip 压缩包
  * @param skillName - skill 的英文名称
@@ -77,7 +89,11 @@ export async function extractSkill(
   const entries = zip.getEntries();
 
   // 确保目标目录存在
-  await fsp.mkdir(targetDir, { recursive: true });
+  try {
+    await fsp.stat(targetDir);
+  } catch {
+    await fsp.mkdir(targetDir, { recursive: true });
+  }
 
   // 解压到 {targetDir}/{skillName}/ 目录
   const extractPath = path.join(targetDir, skillName);
@@ -136,10 +152,10 @@ function getAgentSkillsDir(agentName: string): string {
 }
 
 /**
- * 获取项目的 skills 目录路径
+ * 获取项目下指定 agent 的 skills 目录路径
  */
-function getProjectSkillsDir(projectPath: string): string {
-  return path.join(projectPath, 'skills');
+function getProjectAgentSkillsDir(projectPath: string, agentName: string): string {
+  return path.join(projectPath, '.' + agentName, 'skills');
 }
 
 /**
@@ -173,7 +189,7 @@ async function prepareSkillDirectory(
 }
 
 /**
- * 执行技能安装
+ * 执行技能安装（从 zip buffer）
  */
 async function performSkillInstall(
   zipBuffer: Buffer,
@@ -184,6 +200,22 @@ async function performSkillInstall(
   console.log(
     `Skill ${skillName} installed to ${path.join(skillsDir, skillName)}`
   );
+}
+
+/**
+ * 把单个本地文件作为 skill 内容写入目标目录
+ * 落盘路径：{skillsDir}/{skillName}/{basename(sourceFile)}
+ */
+async function performLocalSkillInstall(
+  sourceFile: string,
+  skillsDir: string,
+  skillName: string
+): Promise<void> {
+  const skillDir = path.join(skillsDir, skillName);
+  await fsp.mkdir(skillDir, { recursive: true });
+  const target = path.join(skillDir, path.basename(sourceFile));
+  await fsp.copyFile(sourceFile, target);
+  console.log(`Skill ${skillName} installed to ${target}`);
 }
 
 /**
@@ -198,33 +230,35 @@ function handleOperationError(
 }
 
 /**
- * 使用已下载的 Buffer 安装技能到指定 agent
- * 避免重复下载，配合 downloadSkill 缓存使用
+ * 统一的安装执行器
  * @param skillName - 技能英文名称
- * @param agentName - agent 名称
- * @param zipBuffer - 已下载的 zip Buffer
- * @param force - 是否强制重新安装（如果已存在则删除旧目录）
+ * @param getSkillsDir - 获取 skills 目录路径的函数
+ * @param performInstall - 执行安装的函数
+ * @param force - 是否强制重新安装
+ * @param ensureSkillsDir - 是否需要确保 skillsDir 存在（用于项目 agent 场景）
  * @returns 安装结果
  */
-export async function installSkillToAgentWithBuffer(
+async function executeInstall(
   skillName: string,
-  agentName: string,
-  zipBuffer: Buffer,
-  force: boolean = false
+  getSkillsDir: () => string | Promise<string>,
+  performInstall: (skillsDir: string) => Promise<void>,
+  force: boolean,
+  ensureSkillsDir: boolean = false
 ): Promise<SkillOperationResult> {
   try {
-    const skillsDir = getAgentSkillsDir(agentName);
-    const { shouldSkip } = await prepareSkillDirectory(
-      skillsDir,
-      skillName,
-      force
-    );
+    const skillsDir = await getSkillsDir();
+
+    if (ensureSkillsDir) {
+      await fsp.mkdir(skillsDir, { recursive: true });
+    }
+
+    const { shouldSkip } = await prepareSkillDirectory(skillsDir, skillName, force);
 
     if (shouldSkip) {
       return { success: true, skipped: true };
     }
 
-    await performSkillInstall(zipBuffer, skillsDir, skillName);
+    await performInstall(skillsDir);
     return { success: true };
   } catch (error: unknown) {
     return handleOperationError(error, 'Installation failed');
@@ -232,59 +266,19 @@ export async function installSkillToAgentWithBuffer(
 }
 
 /**
- * 安装技能到指定项目目录
+ * 统一的移除执行器
  * @param skillName - 技能英文名称
- * @param zipBuffer - 已下载的 zip Buffer
- * @param projectPath - 项目根目录路径
- * @param force - 是否强制重新安装（如果已存在则删除旧目录）
- * @returns 安装结果
- */
-export async function installSkillToProject(
-  skillName: string,
-  zipBuffer: Buffer,
-  projectPath: string,
-  force: boolean = false
-): Promise<SkillOperationResult> {
-  try {
-    const skillsDir = getProjectSkillsDir(projectPath);
-    await fsp.mkdir(skillsDir, { recursive: true });
-
-    const { shouldSkip } = await prepareSkillDirectory(
-      skillsDir,
-      skillName,
-      force
-    );
-
-    if (shouldSkip) {
-      return { success: true, skipped: true };
-    }
-
-    await performSkillInstall(zipBuffer, skillsDir, skillName);
-    return { success: true };
-  } catch (error: unknown) {
-    return handleOperationError(error, 'Installation failed');
-  }
-}
-
-/**
- * 从指定 agent 移除技能
- * 删除技能目录，如果不存在则跳过
- * @param skillName - 技能英文名称
- * @param agentName - agent 名称
+ * @param getSkillsDir - 获取 skills 目录路径的函数
  * @returns 移除结果
  */
-export async function removeSkillFromAgent(
+async function executeRemove(
   skillName: string,
-  agentName: string
+  getSkillsDir: () => string | Promise<string>
 ): Promise<SkillOperationResult> {
   try {
-    // 验证 skill 名称安全性
     assertSafeSkillName(skillName);
 
-    const agentConfig =
-      AGENT_SKILLS_CONFIG[agentName as keyof typeof AGENT_SKILLS_CONFIG];
-
-    const skillsDir = path.join(homedir(), agentConfig.path);
+    const skillsDir = await getSkillsDir();
     const skillDir = path.join(skillsDir, skillName);
 
     try {
@@ -300,6 +294,190 @@ export async function removeSkillFromAgent(
   } catch (error: unknown) {
     return handleOperationError(error, 'Removal failed');
   }
+}
+
+/**
+ * 使用已下载的 Buffer 安装技能到指定 agent
+ * @param skillName - 技能英文名称
+ * @param agentName - agent 名称
+ * @param zipBuffer - 已下载的 zip Buffer
+ * @param force - 是否强制重新安装（如果已存在则删除旧目录）
+ * @returns 安装结果
+ */
+export async function installSkillToAgentWithBuffer(
+  skillName: string,
+  agentName: string,
+  zipBuffer: Buffer,
+  force: boolean = false
+): Promise<SkillOperationResult> {
+  return executeInstall(
+    skillName,
+    () => getAgentSkillsDir(agentName),
+    (skillsDir) => performSkillInstall(zipBuffer, skillsDir, skillName),
+    force
+  );
+}
+
+/**
+ * 安装技能到指定项目目录
+ * @param skillName - 技能英文名称
+ * @param zipBuffer - 已下载的 zip Buffer
+ * @param customPath - 目录路径
+ * @param force - 是否强制重新安装（如果已存在则删除旧目录）
+ * @returns 安装结果
+ */
+export async function installSkillToPath(
+  skillName: string,
+  zipBuffer: Buffer,
+  customPath: string,
+  force: boolean = false
+): Promise<SkillOperationResult> {
+  return executeInstall(
+    skillName,
+    () => customPath,
+    (skillsDir) => performSkillInstall(zipBuffer, skillsDir, skillName),
+    force
+  );
+}
+
+/**
+ * 安装技能到项目下指定 agent 目录
+ * @param skillName - 技能英文名称
+ * @param zipBuffer - 已下载的 zip Buffer
+ * @param projectPath - 项目根目录路径
+ * @param agentName - agent 名称
+ * @param force - 是否强制重新安装（如果已存在则删除旧目录）
+ * @returns 安装结果
+ */
+export async function installSkillToProjectAgent(
+  skillName: string,
+  zipBuffer: Buffer,
+  projectPath: string,
+  agentName: string,
+  force: boolean = false
+): Promise<SkillOperationResult> {
+  return executeInstall(
+    skillName,
+    () => getProjectAgentSkillsDir(projectPath, agentName),
+    (skillsDir) => performSkillInstall(zipBuffer, skillsDir, skillName),
+    force,
+    true // 确保项目 agent skills 目录存在
+  );
+}
+
+/**
+ * 把本地 skill 文件安装到指定 agent
+ * 与 installSkillToAgentWithBuffer 同语义，但不解压 zip，仅复制单个文件
+ * @param skillName - 技能英文名称（同时作为子目录名）
+ * @param sourceFile - 本地源文件绝对路径（如 SKILL.md）
+ * @param agentName - agent 名称
+ * @param force - 是否强制覆盖
+ */
+export async function installLocalSkillToAgent(
+  skillName: string,
+  sourceFile: string,
+  agentName: string,
+  force: boolean = false
+): Promise<SkillOperationResult> {
+  return executeInstall(
+    skillName,
+    () => getAgentSkillsDir(agentName),
+    (skillsDir) => performLocalSkillInstall(sourceFile, skillsDir, skillName),
+    force
+  );
+}
+
+/**
+ * 把本地 skill 文件安装到项目下指定 agent 目录
+ * 与 installSkillToProjectAgent 同语义，但不解压 zip，仅复制单个文件
+ * @param skillName - 技能英文名称（同时作为子目录名）
+ * @param sourceFile - 本地源文件绝对路径（如 SKILL.md）
+ * @param projectPath - 项目根目录路径
+ * @param agentName - agent 名称
+ * @param force - 是否强制覆盖
+ */
+export async function installLocalSkillToProjectAgent(
+  skillName: string,
+  sourceFile: string,
+  projectPath: string,
+  agentName: string,
+  force: boolean = false
+): Promise<SkillOperationResult> {
+  return executeInstall(
+    skillName,
+    () => getProjectAgentSkillsDir(projectPath, agentName),
+    (skillsDir) => performLocalSkillInstall(sourceFile, skillsDir, skillName),
+    force,
+    true // 确保项目 agent skills 目录存在
+  );
+}
+
+/**
+ * 把本地 skill 文件安装到指定自定义路径
+ * 与 installSkillToPath 同语义，但不解压 zip，仅复制单个文件
+ * @param skillName - 技能英文名称（同时作为子目录名）
+ * @param sourceFile - 本地源文件绝对路径（如 SKILL.md）
+ * @param customPath - 目标目录路径
+ * @param force - 是否强制覆盖
+ */
+export async function installLocalSkillToPath(
+  skillName: string,
+  sourceFile: string,
+  customPath: string,
+  force: boolean = false
+): Promise<SkillOperationResult> {
+  return executeInstall(
+    skillName,
+    () => customPath,
+    (skillsDir) => performLocalSkillInstall(sourceFile, skillsDir, skillName),
+    force
+  );
+}
+
+/**
+ * 从指定 agent 移除技能
+ * 删除技能目录，如果不存在则跳过
+ * @param skillName - 技能英文名称
+ * @param agentName - agent 名称
+ * @returns 移除结果
+ */
+export async function removeSkillFromAgent(
+  skillName: string,
+  agentName: string
+): Promise<SkillOperationResult> {
+  return executeRemove(skillName, () => getAgentSkillsDir(agentName));
+}
+
+/**
+ * 从指定项目目录移除技能
+ * 删除技能目录，如果不存在则跳过
+ * @param skillName - 技能英文名称
+ * @param customPath - 项目根目录路径
+ * @returns 移除结果
+ */
+export async function removeSkillFromPath(
+  skillName: string,
+  customPath: string
+): Promise<SkillOperationResult> {
+  return executeRemove(skillName, () => customPath);
+}
+
+/**
+ * 从项目下指定 agent 目录移除技能
+ * 删除技能目录，如果不存在则跳过
+ * @param skillName - 技能英文名称
+ * @param projectPath - 项目根目录路径
+ * @param agentName - agent 名称
+ * @returns 移除结果
+ */
+export async function removeSkillFromProjectAgent(
+  skillName: string,
+  projectPath: string,
+  agentName: string
+): Promise<SkillOperationResult> {
+  return executeRemove(skillName, () =>
+    getProjectAgentSkillsDir(projectPath, agentName)
+  );
 }
 
 /**
@@ -329,120 +507,4 @@ export function resolveBundledSkillMdPath(): string {
   throw new Error(
     'SKILL.md not found in deveco-cli package; please reinstall deveco-cli.'
   );
-}
-
-/**
- * 把单个本地文件作为 skill 内容写入目标目录
- * 落盘路径：{skillsDir}/{skillName}/{basename(sourceFile)}
- */
-async function performLocalSkillInstall(
-  sourceFile: string,
-  skillsDir: string,
-  skillName: string
-): Promise<void> {
-  const skillDir = path.join(skillsDir, skillName);
-  await fsp.mkdir(skillDir, { recursive: true });
-  const target = path.join(skillDir, path.basename(sourceFile));
-  await fsp.copyFile(sourceFile, target);
-  console.log(`Skill ${skillName} installed to ${target}`);
-}
-
-/**
- * 把本地 skill 文件安装到指定 agent
- * 与 installSkillToAgentWithBuffer 同语义，但不解压 zip，仅复制单个文件
- * @param skillName - 技能英文名称（同时作为子目录名）
- * @param sourceFile - 本地源文件绝对路径（如 SKILL.md）
- * @param agentName - agent 名称
- * @param force - 是否强制覆盖
- */
-export async function installLocalSkillToAgent(
-  skillName: string,
-  sourceFile: string,
-  agentName: string,
-  force: boolean = false
-): Promise<SkillOperationResult> {
-  try {
-    const skillsDir = getAgentSkillsDir(agentName);
-    const { shouldSkip } = await prepareSkillDirectory(
-      skillsDir,
-      skillName,
-      force
-    );
-
-    if (shouldSkip) {
-      return { success: true, skipped: true };
-    }
-
-    await performLocalSkillInstall(sourceFile, skillsDir, skillName);
-    return { success: true };
-  } catch (error: unknown) {
-    return handleOperationError(error);
-  }
-}
-
-/**
- * 把本地 skill 文件安装到指定项目目录
- * 与 installSkillToProject 同语义，但不解压 zip，仅复制单个文件
- */
-export async function installLocalSkillToProject(
-  skillName: string,
-  sourceFile: string,
-  projectPath: string,
-  force: boolean = false
-): Promise<SkillOperationResult> {
-  try {
-    const skillsDir = getProjectSkillsDir(projectPath);
-    await fsp.mkdir(skillsDir, { recursive: true });
-
-    const { shouldSkip } = await prepareSkillDirectory(
-      skillsDir,
-      skillName,
-      force
-    );
-
-    if (shouldSkip) {
-      return { success: true, skipped: true };
-    }
-
-    await performLocalSkillInstall(sourceFile, skillsDir, skillName);
-    return { success: true };
-  } catch (error: unknown) {
-    return handleOperationError(error);
-  }
-}
-
-/**
- * 从指定项目目录移除技能
- * 删除技能目录，如果不存在则跳过
- * @param skillName - 技能英文名称
- * @param projectPath - 项目根目录路径
- * @returns 移除结果
- */
-export async function removeSkillFromProject(
-  skillName: string,
-  projectPath: string
-): Promise<SkillOperationResult> {
-  try {
-    // 验证 skill 名称安全性
-    assertSafeSkillName(skillName);
-
-    // 构建 skills 目录路径
-    const skillsDir = getProjectSkillsDir(projectPath);
-    const skillDir = path.join(skillsDir, skillName);
-
-    // 如果 skill 目录不存在，返回 skipped
-    try {
-      await fsp.access(skillDir);
-    } catch {
-      console.log(`Skill ${skillName} does not exist in ${skillsDir}`);
-      return { success: true, skipped: true };
-    }
-
-    // 删除 skill 目录
-    await fsp.rm(skillDir, { recursive: true, force: true });
-    console.log(`Skill ${skillName} removed from ${skillDir}`);
-    return { success: true };
-  } catch (error: unknown) {
-    return handleOperationError(error, 'Removal failed');
-  }
 }

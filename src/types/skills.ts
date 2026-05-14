@@ -210,22 +210,38 @@ export interface SkillOperationResult {
   error?: string;
 }
 
+/**
+ * 安装目标（封装 agents、projectAgents 和 customPath）
+ */
+export interface InstallationTargets {
+  /** 全局 agent 列表 */
+  agents: string[];
+  /** 项目级 agent 列表 */
+  projectAgents: Array<{ project: string; agent: string }>;
+  /** 自定义路径 */
+  customPath?: string;
+}
+
 export interface AddOptions {
   readonly all?: boolean;
   readonly agent?: string;
   readonly skill?: string;
   readonly force?: boolean;
   readonly project?: string;
+  readonly path?: string;
 }
 
 export interface RemoveOptions {
   readonly skill?: string;
   readonly agent?: string;
   readonly project?: string;
+  readonly path?: string;
 }
 
 export interface InitOptions {
   readonly agent?: string;
   readonly project?: string;
+  /** Target directory path for skill installation (mutually exclusive with --project and --agent) */
+  readonly path?: string;
   readonly force?: boolean;
 }
