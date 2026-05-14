@@ -12,7 +12,7 @@ import {
 import { EmulatorManager } from '../service/emulator-manager.js';
 import type { EmulatorInfo } from '../service/emulator-types.js';
 import { isLocalEmulatorSerial } from '../utils/emulator-hdc-targets.js';
-import { green, cyan, red, yellow, gray } from 'colorette';
+import { red, yellow, gray } from 'colorette';
 import ora, { type Ora } from 'ora';
 import { exitWithListCommandError } from '../utils/ora-fail.js';
 
@@ -359,72 +359,6 @@ async function viewAction(
   }
 }
 
-async function startAppAfterInstall(
-  deviceManager: DeviceManager,
-  bundleName: string,
-  ability: string,
-  deviceSerial?: string
-) {
-  await new Promise((resolve) => setTimeout(resolve, 2000));
-  console.log(cyan(`Starting app: ${bundleName}/${ability}`));
-  await deviceManager.startApp(bundleName, ability, deviceSerial);
-  console.log(green('App started successfully!'));
-}
-
-async function installAction(
-  deviceManager: DeviceManager,
-  packagePaths: string[],
-  deviceSerial?: string,
-  bundleName?: string,
-  ability?: string
-) {
-  try {
-    if (!deviceSerial) {
-      await checkMultiDevice(
-        deviceManager,
-        `devecocli device install ${packagePaths.join(' ')}`
-      );
-    }
-
-    await deviceManager.installApp(packagePaths, deviceSerial);
-    console.log(green('App installed successfully!'));
-
-    if (bundleName && ability) {
-      await startAppAfterInstall(
-        deviceManager,
-        bundleName,
-        ability,
-        deviceSerial
-      );
-    }
-  } catch (error) {
-    console.error(red(`Failed to install app: ${(error as Error).message}`));
-    process.exit(1);
-  }
-}
-
-async function uninstallAction(
-  deviceManager: DeviceManager,
-  bundleName: string,
-  deviceSerial?: string
-) {
-  try {
-    if (!deviceSerial) {
-      await checkMultiDevice(
-        deviceManager,
-        `devecocli device uninstall ${bundleName}`
-      );
-    }
-
-    console.log(cyan(`Uninstalling app: ${bundleName}`));
-    await deviceManager.uninstallApp(bundleName, deviceSerial);
-    console.log(green('App uninstalled successfully!'));
-  } catch (error) {
-    console.error(red(`Failed to uninstall app: ${(error as Error).message}`));
-    process.exit(1);
-  }
-}
-
 async function initDeviceManager(): Promise<{
   manager: DeviceManager;
   toolProvider: ToolProvider;
@@ -464,44 +398,7 @@ deviceCommand
   .option('-t, --target <serialOrName>', 'Target device serial or device name')
   .action(async (options: { target?: string }) => {
     const { manager } = await initDeviceManager();
-    await infoAction(manager, options.target);
-  });
-
-deviceCommand
-  .command('install <packagePaths...>')
-  .description('Install one or more packages (.hap / .hsp)')
-  .option('-t, --target <serial>', 'Target device serial number')
-  .option(
-    '-b, --bundle-name <name>',
-    'Bundle name for launching the app after install'
-  )
-  .option(
-    '-a, --ability <abilityName>',
-    'Ability name for launching the app after install'
-  )
-  .action(
-    async (
-      packagePaths: string[],
-      options: { target?: string; bundleName?: string; ability?: string }
-    ) => {
-      const { manager } = await initDeviceManager();
-      await installAction(
-        manager,
-        packagePaths,
-        options.target,
-        options.bundleName,
-        options.ability
-      );
-    }
-  );
-
-deviceCommand
-  .command('uninstall <bundleName>')
-  .description('Uninstall an application by bundle name')
-  .option('-t, --target <serial>', 'Target device serial number')
-  .action(async (bundleName: string, options: { target?: string }) => {
-    const { manager } = await initDeviceManager();
-    await uninstallAction(manager, bundleName, options.target);
+    await viewAction(manager, options.target);
   });
 
 export default deviceCommand;
