@@ -4,7 +4,6 @@
  */
 
 import { Command } from 'commander';
-import fs from 'fs';
 import { green, red, cyan, yellow, dim } from 'colorette';
 import { SpinnerHelper } from '../utils/spinner-helper.js';
 import {
@@ -15,20 +14,26 @@ import {
 } from '../skills/api';
 import {
   downloadSkill,
+  installSkillToPath,
   installSkillToAgentWithBuffer,
-  installSkillToProject,
+  installSkillToProjectAgent,
   removeSkillFromAgent,
-  removeSkillFromProject,
+  removeSkillFromPath,
+  removeSkillFromProjectAgent,
 } from '../skills/installer';
 import {
   parseAgentList,
   getAllExistingAgents,
   summarizeOperationResults,
+  validatePathMutex,
+  validateDirectoryPath,
+  resolveInstallationTargets,
 } from '../skills/agents';
 import {
   AddOptions,
   RemoveOptions,
   SkillOperationResult,
+  InstallationTargets,
 } from '../types/skills';
 
 /**
@@ -58,29 +63,37 @@ async function getSkillNames(options: AddOptions): Promise<string[]> {
 async function installSingleSkill(
   skillName: string,
   zipBuffer: Buffer,
-  agents: string[],
-  options: AddOptions
+  targets: InstallationTargets,
+  force: boolean
 ): Promise<SkillOperationResult[]> {
   const results: SkillOperationResult[] = [];
 
-  // 批量安装到项目（如果指定）
-  if (options.project) {
-    const result = await installSkillToProject(
-      skillName,
-      zipBuffer,
-      options.project,
-      options.force
-    );
+  // 安装到自定义路径（如果有）
+  if (targets.customPath) {
+    const result = await installSkillToPath(skillName, zipBuffer, targets.customPath, force);
     results.push(result);
+    return results;
   }
 
   // 批量安装到多个 agent（如果有）
-  for (const agentName of agents) {
+  for (const agentName of targets.agents) {
     const result = await installSkillToAgentWithBuffer(
       skillName,
       agentName,
       zipBuffer,
-      options.force
+      force
+    );
+    results.push(result);
+  }
+
+  // 批量安装到 projectAgents（如果有）
+  for (const { project, agent } of targets.projectAgents) {
+    const result = await installSkillToProjectAgent(
+      skillName,
+      zipBuffer,
+      project,
+      agent,
+      force
     );
     results.push(result);
   }
@@ -90,8 +103,12 @@ async function installSingleSkill(
 
 /**
  * 验证 add 命令的参数
+ * @returns 解析后的路径
  */
-function validateAddOptions(options: AddOptions): void {
+function validateAddOptions(options: AddOptions): {
+  resolvedPath: string | undefined;
+  resolvedProject: string | undefined;
+} {
   // 1. 参数验证：--all 和 --skill 不能同时指定
   if (options.all && options.skill) {
     throw new Error('--all and --skill cannot be specified together');
@@ -102,29 +119,42 @@ function validateAddOptions(options: AddOptions): void {
     throw new Error('Must specify --all or --skill');
   }
 
-  // 3. 目录存在性检查
-  if (options.project && !fs.existsSync(options.project)) {
-    throw new Error(`Directory "${options.project}" not found`);
+  // 3. 互斥验证并解析路径
+  const { resolvedPath, resolvedProject } = validatePathMutex(
+    options.path,
+    options.project,
+    options.agent
+  );
+
+  // 4. 目录存在性检查
+  if (resolvedProject) {
+    validateDirectoryPath(resolvedProject, 'Project directory');
   }
+  if (resolvedPath) {
+    validateDirectoryPath(resolvedPath, 'Directory');
+  }
+
+  return { resolvedPath, resolvedProject };
 }
 
 /**
- * 获取安装目标（skill 名称列表和 agent 列表）
+ * 获取安装目标（skill 名称列表和安装目标）
  */
-async function getInstallationTargets(options: AddOptions): Promise<{
+async function getInstallationTargets(
+  options: AddOptions,
+  resolvedPath: string | undefined,
+  resolvedProject: string | undefined
+): Promise<{
   skillNames: string[];
-  agents: string[];
+  targets: InstallationTargets;
 }> {
-  // 1. 获取 agent 列表
-  let agents: string[] = [];
-  if (options.agent) {
-    agents = await parseAgentList(options.agent);
-  } else if (!options.project) {
-    agents = await getAllExistingAgents();
-  }
-  // 2. 获取技能名称列表
+  const targets = await resolveInstallationTargets(
+    options,
+    resolvedPath,
+    resolvedProject
+  );
   const skillNames = await getSkillNames(options);
-  return { skillNames, agents };
+  return { skillNames, targets };
 }
 
 /**
@@ -132,8 +162,8 @@ async function getInstallationTargets(options: AddOptions): Promise<{
  */
 async function installSkills(
   skillNames: string[],
-  agents: string[],
-  options: AddOptions,
+  targets: InstallationTargets,
+  force: boolean,
   spinner: SpinnerHelper
 ): Promise<SkillOperationResult[]> {
   const results: SkillOperationResult[] = [];
@@ -142,7 +172,6 @@ async function installSkills(
   for (let i = 0; i < skillNames.length; i++) {
     const skillName = skillNames[i];
     const progress = total > 1 ? ` (${i + 1}/${total})` : '';
-    // 下载skill压缩包
     spinner.start(`Installing ${skillName}${progress}...`);
     let zipBuffer: Buffer;
     try {
@@ -154,13 +183,7 @@ async function installSkills(
       results.push({ success: false });
       continue;
     }
-    // 安装技能
-    const installResults = await installSingleSkill(
-      skillName,
-      zipBuffer,
-      agents,
-      options
-    );
+    const installResults = await installSingleSkill(skillName, zipBuffer, targets, force);
     results.push(...installResults);
   }
 
@@ -174,11 +197,20 @@ async function handleAddCommand(options: AddOptions): Promise<void> {
   const spinner = new SpinnerHelper();
   try {
     spinner.start(`Installing skill...`);
-    validateAddOptions(options);
+    const { resolvedPath, resolvedProject } = validateAddOptions(options);
 
-    const { skillNames, agents } = await getInstallationTargets(options);
+    const { skillNames, targets } = await getInstallationTargets(
+      options,
+      resolvedPath,
+      resolvedProject
+    );
 
-    const results = await installSkills(skillNames, agents, options, spinner);
+    const results = await installSkills(
+      skillNames,
+      targets,
+      options.force || false,
+      spinner
+    );
 
     spinner.stop();
     summarizeOperationResults(results);
@@ -186,6 +218,28 @@ async function handleAddCommand(options: AddOptions): Promise<void> {
     spinner.stop();
     throw error;
   }
+}
+
+/**
+ * 验证 remove 命令的参数
+ * @returns 解析后的路径
+ */
+function validateRemoveOptions(options: RemoveOptions): {
+  resolvedPath: string | undefined;
+  resolvedProject: string | undefined;
+} {
+  const { resolvedPath, resolvedProject } = validatePathMutex(
+    options.path,
+    options.project,
+    options.agent
+  );
+  if (resolvedProject) {
+    validateDirectoryPath(resolvedProject, 'Project directory');
+  }
+  if (resolvedPath) {
+    validateDirectoryPath(resolvedPath, 'Directory');
+  }
+  return { resolvedPath, resolvedProject };
 }
 
 /**
@@ -198,20 +252,13 @@ async function handleRemoveCommand(
   const spinner = new SpinnerHelper();
   try {
     spinner.start('Removing skill...');
-    // 1. 目录存在性检查
-    if (options.project && !fs.existsSync(options.project)) {
-      throw new Error(`Project directory "${options.project}" not found`);
-    }
-    // 2. 获取 agent 列表
-    let agents: string[] = [];
-    if (options.agent) {
-      agents = await parseAgentList(options.agent);
-    } else if (!options.project) {
-      agents = await getAllExistingAgents();
-    }
-    // 3. 移除
-    const results: SkillOperationResult[] = await removeSkill(options, skillName, agents);
-    // 4. 汇总输出
+    const { resolvedPath, resolvedProject } = validateRemoveOptions(options);
+    const results = await removeSkill(
+      options,
+      skillName,
+      resolvedPath,
+      resolvedProject
+    );
     spinner.stop();
     summarizeOperationResults(results);
   } catch (error: unknown) {
@@ -220,21 +267,78 @@ async function handleRemoveCommand(
   }
 }
 
-async function removeSkill(options: RemoveOptions, skillName: string, agents: string[]) {
-  const results: SkillOperationResult[] = [];
+/**
+ * 验证 agents 列表不为空
+ */
+function validateAgentsNotEmpty(agents: string[], hint: string = ''): void {
+  if (agents.length === 0) {
+    throw new Error(
+      `No agents found. Please install an AI agent (cursor, opencode, etc.) ${hint}`
+    );
+  }
+}
 
-  if (options.project) {
-    const result = await removeSkillFromProject(skillName, options.project);
+/**
+ * 批量移除技能从多个目标
+ */
+async function removeSkillFromTargets(
+  skillName: string,
+  targets: Array<{ type: 'agent' | 'projectAgent'; agent: string; project?: string }>
+): Promise<SkillOperationResult[]> {
+  const results: SkillOperationResult[] = [];
+  for (const target of targets) {
+    const result =
+      target.type === 'agent'
+        ? await removeSkillFromAgent(skillName, target.agent)
+        : await removeSkillFromProjectAgent(skillName, target.project!, target.agent);
     results.push(result);
   }
-
-  if (agents.length > 0) {
-    for (const agentName of agents) {
-      const result = await removeSkillFromAgent(skillName, agentName);
-      results.push(result);
-    }
-  }
   return results;
+}
+
+async function removeSkill(
+  options: RemoveOptions,
+  skillName: string,
+  resolvedPath: string | undefined,
+  resolvedProject: string | undefined
+): Promise<SkillOperationResult[]> {
+  // Case 1: --path alone
+  if (resolvedPath) {
+    const result = await removeSkillFromPath(skillName, resolvedPath);
+    return [result];
+  }
+  // Case 2: --project + --agent
+  if (resolvedProject && options.agent) {
+    const agents = await parseAgentList(options.agent);
+    const targets = agents.map((a) => ({
+      type: 'projectAgent' as const,
+      agent: a,
+      project: resolvedProject,
+    }));
+    return removeSkillFromTargets(skillName, targets);
+  }
+  // Case 3: --project alone
+  if (resolvedProject) {
+    const agents = await getAllExistingAgents();
+    validateAgentsNotEmpty(agents);
+    const targets = agents.map((a) => ({
+      type: 'projectAgent' as const,
+      agent: a,
+      project: resolvedProject,
+    }));
+    return removeSkillFromTargets(skillName, targets);
+  }
+  // Case 4: --agent alone
+  if (options.agent) {
+    const agents = await parseAgentList(options.agent);
+    const targets = agents.map((a) => ({ type: 'agent' as const, agent: a }));
+    return removeSkillFromTargets(skillName, targets);
+  }
+  // Case 5: No flags
+  const agents = await getAllExistingAgents();
+  validateAgentsNotEmpty(agents, 'or use --path for a custom location.');
+  const targets = agents.map((a) => ({ type: 'agent' as const, agent: a }));
+  return removeSkillFromTargets(skillName, targets);
 }
 
 // 创建主命令
@@ -330,13 +434,17 @@ skillsCommand
   .option('--all', 'Install all available skills')
   .option(
     '--agent <agents>',
-    'Target agents, comma-separated (e.g. codebuddy,opencode); installs to all available agents if omitted'
+    'Target agents, comma-separated (e.g. opencode,trae-cn,cursor,qoder,codebuddy); installs to all available agents if omitted'
   )
   .option('--skill <skill-name>', 'Name of the skill to install')
   .option('-f, --force', 'Overwrite an existing skill installation')
   .option(
     '--project <path>',
     'Project root directory to install the skill into'
+  )
+  .option(
+    '--path <path>',
+    'Path to install the skill directly (cannot be used with --project or --agent)'
   )
   .action(async (options: AddOptions) => {
     try {
@@ -354,9 +462,10 @@ skillsCommand
   .requiredOption('--skill <skill-name>', 'Name of the skill to remove')
   .option(
     '--agent <agents>',
-    'Target agents, comma-separated (e.g. codebuddy,opencode); removes from all available agents if omitted'
+    'Target agents, comma-separated (e.g. opencode,trae-cn,cursor,qoder,codebuddy); removes from all available agents if omitted'
   )
   .option('--project <path>', 'Project root directory to remove the skill from')
+  .option('--path <path>', 'Path to remove the skill from')
   .action(async (options: RemoveOptions) => {
     try {
       await handleRemoveCommand(options.skill!, options);
