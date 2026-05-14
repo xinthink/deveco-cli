@@ -7,6 +7,7 @@ import { ToolProvider } from '../utils/tool-provider.js';
 import { HilogAdapter } from '../utils/hilog-adapter.js';
 import { CommonUtils } from '../utils/common-utils.js';
 import { cyan, red } from 'colorette';
+import { debugLog } from '../utils/logger.js';
 
 interface LogOptions {
   device?: string;
@@ -38,6 +39,14 @@ function parseDuration(value: string, fieldName: string): number {
   }
 }
 
+function validateLogTimeRange(options: LogOptions): void {
+  if (options.to && options.follow) {
+    throw new Error('--to cannot be used with --follow');
+  }
+
+  CommonUtils.assertRelativeTimeRange(options.from, options.to);
+}
+
 const logCommand = new Command('log')
   .description('Obtain device application logs')
   .configureOutput({
@@ -66,12 +75,9 @@ const logCommand = new Command('log')
 
 async function handleLogCommand(options: LogOptions) {
   try {
+    validateLogTimeRange(options);
     const fromSeconds = options.from;
     const toSeconds = options.to;
-
-    if (toSeconds && options.follow) {
-      throw new Error('--to cannot be used with --follow');
-    }
 
     const toolProvider = await ToolProvider.new();
     const service = new HilogAdapter(toolProvider);
@@ -81,9 +87,9 @@ async function handleLogCommand(options: LogOptions) {
       process.exit(1);
     }
 
-    console.log(cyan(`deviceId: ${deviceId}`));
-    console.log(cyan(`type: ${options.crash ? 'Crash logs' : 'Common logs'}`));
-    console.log(cyan('Obtaining logs ...'));
+    debugLog(cyan(`deviceId: ${deviceId}`));
+    debugLog(cyan(`type: ${options.crash ? 'Crash logs' : 'Common logs'}`));
+    debugLog(cyan('Obtaining logs ...'));
 
     let logs = options.crash
       ? await service.getCrashLog(deviceId, options.bundleName)

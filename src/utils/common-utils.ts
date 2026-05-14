@@ -57,6 +57,21 @@ export class CommonUtils {
     return Math.round(minuteValue * 60);
   }
 
+  static assertRelativeTimeRange(
+    fromSeconds?: number,
+    toSeconds?: number
+  ): void {
+    if (
+      fromSeconds !== undefined &&
+      toSeconds !== undefined &&
+      fromSeconds < toSeconds
+    ) {
+      throw new Error(
+        '--from must be greater than or equal to --to when both are provided (e.g. --from 30s --to 10s)'
+      );
+    }
+  }
+
   static filterLogsByRelativeWindow(
     logs: string,
     fromSeconds?: number,
@@ -199,7 +214,7 @@ export class CommonUtils {
 
   static assertCrashFilename(name: string): void {
     // 匹配faultLog名称，比如 jscrash-com.example.myapplication-20020059-20260512170652
-    const crashFilenameRegExp = /^\w+\-.+\d+\-\d+$/;
+    const crashFilenameRegExp = /^\w+-.+\d+-\d+$/;
     if (!crashFilenameRegExp.test(name)) {
       throw new Error(`Invalid crash log filename: ${JSON.stringify(name)}`);
     }
