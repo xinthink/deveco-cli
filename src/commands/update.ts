@@ -10,19 +10,50 @@ function getPackageName(): string {
   return process.env.npm_package_name || 'deveco-cli';
 }
 
+function getCurrentVersion(): string {
+  return process.env.npm_package_version || '0.0.1';
+}
+
 const updateCommand = new Command('update')
   .description('Update deveco-cli to the latest version')
   .action(async () => {
     const packageName = getPackageName();
-    console.log(cyan(`Updating ${packageName} to the latest version...`));
+    const currentVersion = getCurrentVersion();
+
+    console.log(cyan(`Checking for updates...`));
 
     try {
+      // Get the latest version from npm registry
+      const { stdout: latestVersion } = await execa('npm', [
+        'view',
+        packageName,
+        'version',
+      ]);
+      const latest = latestVersion.trim();
+
+      if (latest === currentVersion) {
+        console.log(
+          green(
+            `\n${packageName} is already up to date (version ${currentVersion})`
+          )
+        );
+        return;
+      }
+
+      console.log(
+        cyan(`\nNew version found: ${latest} (current: ${currentVersion})`)
+      );
+      console.log(cyan(`Updating ${packageName}...`));
+
       // Execute npm install -g <package-name>@latest
       await execa('npm', ['install', '-g', `${packageName}@latest`], {
         stdio: 'inherit',
       });
 
-      console.log('\n' + green(`${packageName} updated successfully!`));
+      console.log(
+        '\n' +
+          green(`${packageName} updated successfully to version ${latest}!`)
+      );
     } catch (error) {
       const e = error as Error;
       console.error(red(`Failed to update ${packageName}`));

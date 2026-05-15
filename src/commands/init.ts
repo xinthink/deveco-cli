@@ -21,37 +21,13 @@ import { InitOptions, SkillOperationResult } from '../types/skills';
 
 const DEVECO_CLI_SKILL_NAME = 'deveco-cli';
 
-/**
- * 把 deveco-cli 自带的 SKILL.md 复制到各 AI agent / 项目的 skills 目录
- */
-async function handleInitCommand(options: InitOptions): Promise<void> {
-  // 1. 互斥验证并解析路径
-  const { resolvedPath, resolvedProject } = validatePathMutex(
-    options.path,
-    options.project,
-    options.agent
-  );
-
-  // 2. 目录存在性检查
-  if (resolvedProject) {
-    validateDirectoryPath(resolvedProject, 'Project directory');
-  }
-  if (resolvedPath) {
-    validateDirectoryPath(resolvedPath, 'Directory');
-  }
-
-  const sourceFile = resolveBundledSkillMdPath();
-
-  // 3. 解析安装目标
-  const targets = await resolveInstallationTargets(
-    options,
-    resolvedPath,
-    resolvedProject
-  );
-
+async function executeInstallations(
+  targets: Awaited<ReturnType<typeof resolveInstallationTargets>>,
+  sourceFile: string,
+  options: InitOptions
+): Promise<SkillOperationResult[]> {
   const results: SkillOperationResult[] = [];
 
-  // 4. 安装到自定义路径（如果有）
   if (targets.customPath) {
     const result = await installLocalSkillToPath(
       DEVECO_CLI_SKILL_NAME,
@@ -60,11 +36,9 @@ async function handleInitCommand(options: InitOptions): Promise<void> {
       options.force
     );
     results.push(result);
-    summarizeOperationResults(results);
-    return;
+    return results;
   }
 
-  // 5. 安装到项目级 agents（如果有）
   for (const { project, agent } of targets.projectAgents) {
     const result = await installLocalSkillToProjectAgent(
       DEVECO_CLI_SKILL_NAME,
@@ -76,7 +50,6 @@ async function handleInitCommand(options: InitOptions): Promise<void> {
     results.push(result);
   }
 
-  // 6. 安装到全局 agents（如果有）
   for (const agentName of targets.agents) {
     const result = await installLocalSkillToAgent(
       DEVECO_CLI_SKILL_NAME,
@@ -87,6 +60,34 @@ async function handleInitCommand(options: InitOptions): Promise<void> {
     results.push(result);
   }
 
+  return results;
+}
+
+/**
+ * 把 deveco-cli 自带的 SKILL.md 复制到各 AI agent / 项目的 skills 目录
+ */
+async function handleInitCommand(options: InitOptions): Promise<void> {
+  const { resolvedPath, resolvedProject } = validatePathMutex(
+    options.path,
+    options.project,
+    options.agent
+  );
+
+  if (resolvedProject) {
+    validateDirectoryPath(resolvedProject, 'Project directory');
+  }
+  if (resolvedPath) {
+    validateDirectoryPath(resolvedPath, 'Directory');
+  }
+
+  const sourceFile = resolveBundledSkillMdPath();
+  const targets = await resolveInstallationTargets(
+    options,
+    resolvedPath,
+    resolvedProject
+  );
+
+  const results = await executeInstallations(targets, sourceFile, options);
   summarizeOperationResults(results);
 }
 

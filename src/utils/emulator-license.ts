@@ -92,7 +92,9 @@ export function resolveEmuConfigPathFromMajorMinor(majorMinor: string): string {
   if (process.platform === 'win32') {
     const local = process.env.LOCALAPPDATA;
     if (!local) {
-      throw new Error('LOCALAPPDATA is not set; cannot resolve .emu_config path.');
+      throw new Error(
+        'LOCALAPPDATA is not set; cannot resolve .emu_config path.'
+      );
     }
     return path.join(local, 'Huawei', dirName, '.emu_config');
   }
@@ -107,8 +109,7 @@ export function resolveEmuConfigPathFromMajorMinor(majorMinor: string): string {
     );
   }
   const cacheRoot =
-    process.env.XDG_CACHE_HOME?.trim() ||
-    path.join(os.homedir(), '.cache');
+    process.env.XDG_CACHE_HOME?.trim() || path.join(os.homedir(), '.cache');
   return path.join(cacheRoot, 'Huawei', dirName, '.emu_config');
 }
 
@@ -189,7 +190,9 @@ function parseEmuConfigEntryFromLine(
   return undefined;
 }
 
-function parseEmuConfigLineEntries(raw: string): Record<string, EmuConfigEntry> {
+function parseEmuConfigLineEntries(
+  raw: string
+): Record<string, EmuConfigEntry> {
   const out: Record<string, EmuConfigEntry> = {};
   for (const line of raw.split(/\r?\n/)) {
     const parsed = parseEmuConfigEntryFromLine(line);
@@ -419,9 +422,7 @@ async function resolveEmuConfigPathForWrites(
   );
   const majorMinor = parseEmulatorMajorMinorFromVersionText(versionText);
   if (!majorMinor) {
-    throw new Error(
-      `Cannot parse Emulator major.minor from:\n${versionText}`
-    );
+    throw new Error(`Cannot parse Emulator major.minor from:\n${versionText}`);
   }
   return resolveEmuConfigPathFromMajorMinor(majorMinor);
 }
@@ -465,9 +466,7 @@ async function writeBothAgreementsLineOriented(
   const keyRes = [
     {
       k: service,
-      re: new RegExp(
-        `^\\s*${escapeKeyForEmuConfigLineKey(service)}\\s*[:=]`
-      ),
+      re: new RegExp(`^\\s*${escapeKeyForEmuConfigLineKey(service)}\\s*[:=]`),
     },
     {
       k: sdk,
