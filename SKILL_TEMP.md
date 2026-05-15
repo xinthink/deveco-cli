@@ -42,12 +42,14 @@ Examples:
 Search HarmonyOS app development knowledge (ArkTS / ArkUI / API usage, etc.) while coding. Requires `devecocli login`.
 
 - `--prompt <question>` (**required**) accepts natural-language questions or keywords.
-- `--format <fmt>` controls output format: `md` / `markdown` / `json` (default: `md`).
+- `--format <fmt>` controls output format: `md` / `json` (default: `md`).
 - `json` output is a JSON array of ranked answer chunks (suitable for piping back to an LLM).
 
 Examples:
 - `devecocli knowledge --prompt "ArkTS Row 布局"`
 - `devecocli knowledge --prompt "@State 和 @Prop 区别" --format json`
+
+**When to call**: invoke only when you are uncertain about something; treat the returned content as reference, not authoritative.
 
 ### `devecocli build`
 
@@ -114,16 +116,19 @@ Examples:
 
 Build-aware install + launch on a device or emulator: resolves HSP dependencies, installs artifacts, then launches ability. **Run `devecocli build` first.**
 
-Prefer `devecocli run`; use `devecocli device install` when you already have prebuilt artifacts (e.g. CI output) or need explicit package path control.
+
 
 - `--module <module>` accepts `module` or `module@target`; auto-selected when exactly one runnable (`entry` / `feature` / `shared`) module exists.
-- `--device <name|serial>` accepts a name (substring match) or serial (e.g. `127.0.0.1:5555`); required on multi-device hosts.
+- `--device <name|serial>` accepts a name (substring match) or serial (e.g. `127.0.0.1:5555`); auto-selected when only one device is connected, required on multi-device hosts.
+- `--product <product>` selects the product variant; defaults to `default`.
 - `--ability <ability>` defaults to the module's `mainElement` from `module.json5`.
+- `--uninstall` uninstalls the existing app (by `bundleName` from `app.json5`) before installing the new artifacts; use when the signing key has changed or when you hit `install sign info inconsistent` (see Troubleshooting).
 
 Examples:
 - `devecocli run`
 - `devecocli run --module entry --device 127.0.0.1:5555`
 - `devecocli run --product oversea --module entry --ability EntryAbility`
+- `devecocli run --uninstall`
 
 ### `devecocli log`
 
@@ -225,6 +230,7 @@ devecocli build --product oversea --build-mode release
 - **"No active devices"** — connect a device or start an emulator.
 - **"Multiple devices connected"** — pass `-t <serial>` (`device view / install / uninstall`) or `--device <name|serial>` (`run` / `log`).
 - **"Module is of type `<x>`, which is not runnable"** — pick an `entry` / `feature` / `shared` module.
+- **`Install Failed: error:install sign info inconsistent`** — the app's signing key differs from the previously installed version. Uninstall the old install first, then reinstall: simplest is `devecocli run --uninstall`.
 - **`knowledge` says "Please login first"** — run `devecocli login`.
 - **`skills add` reports `Agent <name> not found` / `Invalid agent: <name>, Valid options are: …`** — check the name (only `codebuddy` / `cursor` / `opencode` / `qoder` / `trae-cn` are supported) or omit `--agent` for auto-detect.
 - **Stale CLI / missing flags** — run `devecocli update`.
