@@ -49,6 +49,21 @@ export class EmulatorManager {
     return parseEmulatorListOutput(stdout);
   }
 
+  public async getDeviceTypeByName(): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    try {
+      const list = await this.listEmulators();
+      for (const e of list) {
+        if (e.name && e.deviceType) {
+          map.set(normalizeListNameKey(e.name), e.deviceType);
+        }
+      }
+    } catch {
+      // Fall back to an empty map; callers treat that as "no override".
+    }
+    return map;
+  }
+
   public async startEmulator(
     name: string
   ): Promise<'started' | 'already-running'> {

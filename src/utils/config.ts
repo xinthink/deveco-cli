@@ -16,10 +16,3 @@ export interface HilogOptions {
   fromSeconds?: number;
   toSeconds?: number;
 }
-
-export interface DeviceInfo {
-  deviceId: string;
-  isEmulator: boolean;
-  name: string;
-  isConnected: boolean;
-}

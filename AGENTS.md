@@ -48,7 +48,7 @@ src/
 │   ├── installer.ts                 # Download / extract / remove skill packages
 │   └── agents.ts                    # parseAgentList / getAllExistingAgents / summarizeOperationResults
 ├── service/                  # Domain helpers
-│   ├── emulator-service.ts          # Used by `device` flow (devices + emulators discovery)
+│   ├── device-manager.ts            # Connected-device discovery + name / device-type lookup
 │   ├── emulator-types.ts            # `EmulatorInfo` + `normalizeListNameKey`
 │   ├── emulator-list-parse.ts       # Parses `emulator -list -details` (JSON / text)
 │   ├── emulator-start-strategies.ts # Builds `-start` / `-hvd` argv candidates + retries
@@ -66,6 +66,7 @@ src/
 │   ├── common-utils.ts             # Shared validators (bundle / level / crash / duration / tail)
 │   ├── spinner-helper.ts           # Stateful ora wrapper (start / stop / succeed / fail)
 │   ├── ora-fail.ts                 # `exitWithListCommandError` helper
+│   ├── text-table.ts               # Fixed-width table renderer used by `list` commands
 │   ├── http-client.ts  jwt.ts  browser.ts  cmd.ts  config.ts  region.ts
 │   └── logger.ts                   # debugLog (gated by DEVECO_CLI_DEBUG)
 ├── config/                   # constants (AGENT_SKILLS_CONFIG), auth, network, skills
@@ -83,10 +84,10 @@ SKILL_TEMP.md                 # Edit this; SKILL.md is regenerated from it on bu
 - **`commands/create.ts`** — Scaffolds a new application project. Requires `--app-name` (1–200 chars, letter-start, letters/digits/underscores only). `--project-path` defaults to `./<app-name>` (the auto path must not exist; an explicit `--project-path` may point at an existing directory only if it is empty). Path normalization: backslashes → forward slashes (Windows); consecutive slashes reduced to single. Deep paths auto-created with `mkdir -p` semantics; the closest existing parent must be writable. Validates `--bundle-name` (7–128 chars, ≥3 dot-separated segments, no consecutive dots). `--api-level` validated to `17`–`23` or auto-detected; defaults to `23` if DevEco Studio not found. Delegates file copy + config rendering to `utils/template-provider.ts`.
 - **`commands/build.ts`** — Default action: pipeline `ohpm install --all → hvigor --sync → hvigor assemble*`. Auto-detects the entry module, resolves transitive HSP deps, and propagates `@target` suffixes. With `--product <name>` only, builds the whole-product `.app`; otherwise builds per-module `.hap` / `.hsp` / `.har`. Subcommand `build clean` runs `hvigor clean` to remove build outputs.
 - **`commands/run.ts`** — Auto-selects the runnable module (`entry`/`feature`/`shared`) and the device (name substring or exact serial), then installs HSP deps + the main `.hap` via `HdcAdapter.installApp` (which `hdc file send`s the artifacts to a temp dir and runs `hdc shell bm install -p`), and launches the ability (defaults to `mainElement` from `module.json5`).
-- **`commands/device.ts`** — Subcommands: `list` (devices + emulators in one view), `view` (detailed info), `install <packagePaths...>` (one or more `.hap`/`.hsp`; optional `-b/--bundle-name` + `-a/--ability` to launch after install), `uninstall <bundleName>`. Multi-device hosts must pass `-t <serial>` to `view` / `install` / `uninstall`.
-- **`commands/emulator.ts`** — CLI for local emulator `list` / `start` / `stop` / `create` / `delete` plus system-image helpers under `image`: `download` / `remove` / `list`. `image download` / `image remove` / `create` all require `--device-type` (one of `Phone`, `Foldable`, `WideFold`, `TripleFold`, `Tablet`, `2in1`, `2in1 Foldable`, `Wearable`, `TV`) and `--os-version`; `image list` accepts `--device-type`, `--all` (downloaded + not downloaded), and `--format table|json`.
+- **`commands/device.ts`** — Subcommands: `list` (currently active real devices and running emulators, each annotated with its device type), `view` (detailed info), `install <packagePaths...>` (one or more `.hap`/`.hsp`; optional `-b/--bundle-name` + `-a/--ability` to launch after install), `uninstall <bundleName>`. Multi-device hosts must pass `-t <serial>` to `view` / `install` / `uninstall`. Use `devecocli emulator list` to see installed-but-stopped emulators.
+- **`commands/emulator.ts`** — CLI for local emulator `list` / `start` / `stop` / `create` / `delete` plus system-image helpers under `image`: `download` / `remove` / `list`. `list` shows every instance with its status, serial and device type (running rows surfaced first). `image download` / `image remove` / `create` all require `--device-type` (one of `Phone`, `Foldable`, `WideFold`, `TripleFold`, `Tablet`, `2in1`, `2in1 Foldable`, `Wearable`, `TV`) and `--os-version`; `image list` accepts `--device-type`, `--all` (downloaded + not downloaded), and `--format table|json`.
 - **`service/emulator-manager.ts`** — `EmulatorManager` orchestrates list/start/stop + system-image install/uninstall/list + create/delete local virtual devices. List parsing: `service/emulator-list-parse.ts`; start strategies: `service/emulator-start-strategies.ts`; detached spawn: `utils/emulator-spawn.ts`.
-- **`service/emulator-service.ts`** — Used by the `device` discovery flow to enumerate connected devices and installed emulators. This is separate from `commands/emulator.ts`, which implements the `devecocli emulator` subcommand.
+- **`service/device-manager.ts`** — `DeviceManager` is the single entry point for connected-target discovery (real devices + running emulators) and friendly-name / device-type lookup. Consumed by `commands/device.ts` and `utils/hilog-adapter.ts`.
 - **`commands/log.ts`** — Thin shell over `HilogAdapter`: `--crash` switches to crash dump; otherwise common hilog with `--level` / `--bundle-name` / `--keyword` filters. `--from <s|m>` / `--to <s|m>` carve a relative time window (default unit is seconds), `--tail <n>` keeps the latest N lines of the filtered output, and `--follow` streams in real time (incompatible with `--to`).
 - **`commands/knowledge.ts`** — Login-gated. Requires `--prompt <question>` and supports `--format md|markdown|json` (default `md`); `json` output is a JSON array of ranked answer chunks.
 - **`commands/whoami.ts`** — Login status helper. Prints the current Huawei Developer username from the persisted token session, or exits non-zero when not logged in.
@@ -103,6 +104,8 @@ SKILL_TEMP.md                 # Edit this; SKILL.md is regenerated from it on bu
 - **`utils/{ohpm,hvigor}-adapter.ts`** — Spawn the bundled `node` against `pm-cli.js` / `hvigorw.js` with the right env (`PATH` prepended with the bundled JBR `bin`, `DEVECO_SDK_HOME` set).
 - **`utils/hdc-adapter.ts`** — Wraps the bundled `hdc` for device discovery, file-push install (`file send` + `bm install -p`), and ability launch.
 - **`utils/hilog-adapter.ts`** — Reuses `hdc shell hilog` (and `hdc shell hilog -x` for crashes) to fetch logs and post-filters them via `common-utils.ts`.
+- **`utils/hdc-param.ts`** — Wraps `hdc shell param get` (single + batched). Returns clean values to callers, transparently swallowing hdc's failure / "channel-still-establishing" chatter (with retry).
+- **`utils/text-table.ts`** — Fixed-width table renderer shared by `device list`, `emulator list` and `emulator image list`.
 - **`utils/common-utils.ts`** — Shared validators (bundle name, hilog level, crash filename) and parsers (positive integer, duration `s`/`m`, time-window log filter, tail).
 - **`utils/spinner-helper.ts` / `utils/ora-fail.ts`** — Small ora helpers for stateful spinner reuse and uniform "list command failed" exits.
 - **`utils/logger.ts`** — `debugLog` only prints when `DEVECO_CLI_DEBUG=1`; useful for inspecting the raw command lines being spawned.
