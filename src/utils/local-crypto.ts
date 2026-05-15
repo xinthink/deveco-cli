@@ -36,7 +36,13 @@ const rootKeyIds = CryptoConstants.KEK_VERSIONS;
 
 // 隔离存储
 const configPath = path.join(homedir(), '.config', AppConfig.APP_NAME);
-const keyDirPath = path.join(homedir(), '.local', 'share', AppConfig.APP_NAME, 'keys');
+const keyDirPath = path.join(
+  homedir(),
+  '.local',
+  'share',
+  AppConfig.APP_NAME,
+  'keys'
+);
 const wrappedDekPath = path.join(configPath, AppConfig.KEY_FILE_NAME);
 
 function getRootKeyPath(keyId: string): string {
@@ -97,7 +103,11 @@ function unwrapDek(wrapped: WrappedDekData): Buffer {
   const iv = Buffer.from(wrapped.iv, 'base64');
   const authTag = Buffer.from(wrapped.authTag, 'base64');
   const encryptedDek = Buffer.from(wrapped.encryptedDek, 'base64');
-  const decipher = crypto.createDecipheriv(algorithm, kek, iv) as crypto.DecipherGCM;
+  const decipher = crypto.createDecipheriv(
+    algorithm,
+    kek,
+    iv
+  ) as crypto.DecipherGCM;
   decipher.setAuthTag(authTag);
   return Buffer.concat([decipher.update(encryptedDek), decipher.final()]);
 }
@@ -109,19 +119,25 @@ function ensureWrappedDek(): void {
   }
   const dek = crypto.randomBytes(dekLength);
   const wrapped = wrapDekWithKek(dek, rootKeyIds[0]);
-  fs.writeFileSync(wrappedDekPath, JSON.stringify(wrapped, null, 2), { mode: 0o600 });
+  fs.writeFileSync(wrappedDekPath, JSON.stringify(wrapped, null, 2), {
+    mode: 0o600,
+  });
 }
 
 function loadDek(): Buffer {
   ensureWrappedDek();
-  const wrapped = JSON.parse(fs.readFileSync(wrappedDekPath, 'utf8')) as WrappedDekData;
+  const wrapped = JSON.parse(
+    fs.readFileSync(wrappedDekPath, 'utf8')
+  ) as WrappedDekData;
   const dek = unwrapDek(wrapped);
   if (dek.length === dekLength) {
     return dek;
   }
   const next = crypto.randomBytes(dekLength);
   const nextWrapped = wrapDekWithKek(next, rootKeyIds[0]);
-  fs.writeFileSync(wrappedDekPath, JSON.stringify(nextWrapped, null, 2), { mode: 0o600 });
+  fs.writeFileSync(wrappedDekPath, JSON.stringify(nextWrapped, null, 2), {
+    mode: 0o600,
+  });
   return next;
 }
 
@@ -130,7 +146,9 @@ function rebuildKeyMaterials(): void {
   for (const keyId of rootKeyIds) {
     const filePath = getRootKeyPath(keyId);
     if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, crypto.randomBytes(kekLength), { mode: 0o600 });
+      fs.writeFileSync(filePath, crypto.randomBytes(kekLength), {
+        mode: 0o600,
+      });
     }
   }
   if (fs.existsSync(wrappedDekPath)) {
@@ -138,14 +156,19 @@ function rebuildKeyMaterials(): void {
   }
   const dek = crypto.randomBytes(dekLength);
   const wrapped = wrapDekWithKek(dek, rootKeyIds[0]);
-  fs.writeFileSync(wrappedDekPath, JSON.stringify(wrapped, null, 2), { mode: 0o600 });
+  fs.writeFileSync(wrappedDekPath, JSON.stringify(wrapped, null, 2), {
+    mode: 0o600,
+  });
 }
 
 export function encryptForLocalStorage(plaintext: string): EncryptedBlob {
   const dek = loadDek();
   const iv = crypto.randomBytes(ivLength);
   const cipher = crypto.createCipheriv(algorithm, dek, iv) as crypto.CipherGCM;
-  const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const ciphertext = Buffer.concat([
+    cipher.update(plaintext, 'utf8'),
+    cipher.final(),
+  ]);
   const authTag = cipher.getAuthTag();
   return {
     version: 1,
@@ -163,9 +186,16 @@ export function decryptForLocalStorage(blob: EncryptedBlob): string {
     const iv = Buffer.from(blob.iv, 'base64');
     const authTag = Buffer.from(blob.authTag, 'base64');
     const ciphertext = Buffer.from(blob.ciphertext, 'base64');
-    const decipher = crypto.createDecipheriv(algorithm, dek, iv) as crypto.DecipherGCM;
+    const decipher = crypto.createDecipheriv(
+      algorithm,
+      dek,
+      iv
+    ) as crypto.DecipherGCM;
     decipher.setAuthTag(authTag);
-    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+    return Buffer.concat([
+      decipher.update(ciphertext),
+      decipher.final(),
+    ]).toString('utf8');
   } catch {
     rebuildKeyMaterials();
     throw new Error('Failed to decrypt local ciphertext');

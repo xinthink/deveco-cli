@@ -105,6 +105,37 @@ function resolveArtifacts(
   return artifactsToInstall;
 }
 
+async function performDeployment(
+  hdcAdapter: HdcAdapter,
+  targetDeviceId: string,
+  bundleName: string,
+  artifactsToInstall: string[],
+  mainAbility: string,
+  uninstall: boolean
+): Promise<void> {
+  if (uninstall) {
+    console.log(`Uninstalling ${bundleName}...`);
+    const uninstalled = await hdcAdapter.uninstallApp(
+      targetDeviceId,
+      bundleName
+    );
+    if (!uninstalled) {
+      console.log(`App ${bundleName} is not installed, skipping uninstall.`);
+    }
+  }
+
+  console.log(`\nInstalling artifacts to device ${targetDeviceId}...`);
+  await hdcAdapter.installApp(targetDeviceId, artifactsToInstall);
+
+  console.log(`Launching ${bundleName}/${mainAbility}...`);
+  const launchResult = await hdcAdapter.launchApp(
+    targetDeviceId,
+    bundleName,
+    mainAbility
+  );
+  console.log(green(`\nApplication '${bundleName}': ${launchResult}`));
+}
+
 const runCommand = new Command('run')
   .description('Build and run the project on a connected device')
   .option(
@@ -150,22 +181,16 @@ const runCommand = new Command('run')
         productName
       );
       const bundleName = project.getBundleName();
-
-      if (options.uninstall) {
-         console.log(`Uninstalling ${bundleName}...`);
-         const uninstalled = await hdcAdapter.uninstallApp(targetDeviceId, bundleName);
-         if (!uninstalled) {
-           console.log(`App ${bundleName} is not installed, skipping uninstall.`);
-         }
-       }
-
-      console.log(`\nInstalling artifacts to device ${targetDeviceId}...`);
-      await hdcAdapter.installApp(targetDeviceId, artifactsToInstall);
-
       const mainAbility = project.getMainAbility(moduleName, options.ability);
-      console.log(`Launching ${bundleName}/${mainAbility}...`);
-      const launchResult = await hdcAdapter.launchApp(targetDeviceId, bundleName, mainAbility);
-      console.log(green(`\nApplication '${bundleName}': ${launchResult}`));
+
+      await performDeployment(
+        hdcAdapter,
+        targetDeviceId,
+        bundleName,
+        artifactsToInstall,
+        mainAbility,
+        !!options.uninstall
+      );
     } catch (error) {
       console.error(red((error as Error).message));
       process.exit(1);

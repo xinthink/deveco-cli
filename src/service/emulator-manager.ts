@@ -231,26 +231,37 @@ export class EmulatorManager {
     }
   }
 
+  private async checkExistingVirtualDevice(
+    name: string,
+    force?: boolean
+  ): Promise<string> {
+    const emulators = await this.listEmulators();
+    const nameKey = normalizeListNameKey(name);
+    const existing = emulators.find(
+      (e) => normalizeListNameKey(e.name) === nameKey
+    );
+    if (existing) {
+      if (force) {
+        await this.deleteVirtualDevice(existing.name);
+      } else {
+        throw new Error(
+          `Emulator "${name}" already exists. Use --force to overwrite.`
+        );
+      }
+    }
+    return nameKey;
+  }
+
   public async createVirtualDevice(opts: {
     name: string;
     deviceType: string;
     osVersion: string;
     force?: boolean;
   }): Promise<void> {
-    const emulators = await this.listEmulators();
-    const nameKey = normalizeListNameKey(opts.name);
-    const existing = emulators.find(
-      (e) => normalizeListNameKey(e.name) === nameKey
+    const nameKey = await this.checkExistingVirtualDevice(
+      opts.name,
+      opts.force
     );
-    if (existing) {
-      if (opts.force) {
-        await this.deleteVirtualDevice(existing.name);
-      } else {
-        throw new Error(
-          `Emulator "${opts.name}" already exists. Use --force to overwrite.`
-        );
-      }
-    }
 
     const args = [
       '-create',

@@ -33,7 +33,9 @@ const loginCommand = new Command('login')
       if (isLoggedIn) {
         const userInfo = await loginService.getUserInfo();
         if (userInfo) {
-          console.log(yellow(`Already logged in, User Name:${userInfo.userName}`));
+          console.log(
+            yellow(`Already logged in, User Name:${userInfo.userName}`)
+          );
           return;
         }
       }

@@ -154,7 +154,10 @@ function getAgentSkillsDir(agentName: string): string {
 /**
  * 获取项目下指定 agent 的 skills 目录路径
  */
-function getProjectAgentSkillsDir(projectPath: string, agentName: string): string {
+function getProjectAgentSkillsDir(
+  projectPath: string,
+  agentName: string
+): string {
   return path.join(projectPath, '.' + agentName, 'skills');
 }
 
@@ -252,7 +255,11 @@ async function executeInstall(
       await fsp.mkdir(skillsDir, { recursive: true });
     }
 
-    const { shouldSkip } = await prepareSkillDirectory(skillsDir, skillName, force);
+    const { shouldSkip } = await prepareSkillDirectory(
+      skillsDir,
+      skillName,
+      force
+    );
 
     if (shouldSkip) {
       return { success: true, skipped: true };

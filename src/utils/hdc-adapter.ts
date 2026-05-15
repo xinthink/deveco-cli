@@ -107,7 +107,10 @@ export class HdcAdapter {
     return 'Unknown Device';
   }
 
-  public async uninstallApp(target: string, bundleName: string): Promise<boolean> {
+  public async uninstallApp(
+    target: string,
+    bundleName: string
+  ): Promise<boolean> {
     const stdout = await this.runHdc(
       ['-t', target, 'shell', 'bm', 'uninstall', '-n', bundleName],
       false
@@ -160,8 +163,8 @@ export class HdcAdapter {
         remoteDir,
       ]);
       if (!installRes.includes('install bundle successfully.')) {
-          throw new Error(installRes);
-       }
+        throw new Error(installRes);
+      }
     } finally {
       // 4. Remove the temporary directory
       await this.runHdc(['-t', target, 'shell', 'rm', '-rf', remoteDir], false);

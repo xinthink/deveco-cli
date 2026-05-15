@@ -70,7 +70,12 @@ async function installSingleSkill(
 
   // 安装到自定义路径（如果有）
   if (targets.customPath) {
-    const result = await installSkillToPath(skillName, zipBuffer, targets.customPath, force);
+    const result = await installSkillToPath(
+      skillName,
+      zipBuffer,
+      targets.customPath,
+      force
+    );
     results.push(result);
     return results;
   }
@@ -183,7 +188,12 @@ async function installSkills(
       results.push({ success: false });
       continue;
     }
-    const installResults = await installSingleSkill(skillName, zipBuffer, targets, force);
+    const installResults = await installSingleSkill(
+      skillName,
+      zipBuffer,
+      targets,
+      force
+    );
     results.push(...installResults);
   }
 
@@ -283,14 +293,22 @@ function validateAgentsNotEmpty(agents: string[], hint: string = ''): void {
  */
 async function removeSkillFromTargets(
   skillName: string,
-  targets: Array<{ type: 'agent' | 'projectAgent'; agent: string; project?: string }>
+  targets: Array<{
+    type: 'agent' | 'projectAgent';
+    agent: string;
+    project?: string;
+  }>
 ): Promise<SkillOperationResult[]> {
   const results: SkillOperationResult[] = [];
   for (const target of targets) {
     const result =
       target.type === 'agent'
         ? await removeSkillFromAgent(skillName, target.agent)
-        : await removeSkillFromProjectAgent(skillName, target.project!, target.agent);
+        : await removeSkillFromProjectAgent(
+            skillName,
+            target.project!,
+            target.agent
+          );
     results.push(result);
   }
   return results;

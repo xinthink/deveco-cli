@@ -104,7 +104,6 @@ function printEmulatorDetail(
   console.log(`  ${emu.name} [${statusText}]`);
 }
 
-
 async function fetchSerialParamsBatched(
   hdcPath: string,
   serials: string[]
@@ -424,10 +423,7 @@ function deviceTypeOption(required: boolean): Option {
 
 type ImageListFormat = 'table' | 'json';
 
-function getRecordValue(
-  obj: Record<string, unknown>,
-  keys: string[]
-): unknown {
+function getRecordValue(obj: Record<string, unknown>, keys: string[]): unknown {
   for (const k of keys) {
     if (k in obj) {
       return obj[k];
@@ -663,25 +659,20 @@ imageCommand
   .description('Remove a downloaded system image')
   .addOption(deviceTypeOption(true))
   .requiredOption('--os-version <version>', 'Same format as for download')
-  .action(
-    async (opts: {
-      deviceType: string;
-      osVersion: string;
-    }) => {
-      const { manager } = await initEmulatorManager();
-      try {
-        await manager.uninstallEmulatorImage({
-          deviceType: opts.deviceType,
-          osVersion: opts.osVersion,
-        });
-      } catch (error) {
-        console.error(
-          red(`Failed to remove system image: ${(error as Error).message}`)
-        );
-        process.exit(1);
-      }
+  .action(async (opts: { deviceType: string; osVersion: string }) => {
+    const { manager } = await initEmulatorManager();
+    try {
+      await manager.uninstallEmulatorImage({
+        deviceType: opts.deviceType,
+        osVersion: opts.osVersion,
+      });
+    } catch (error) {
+      console.error(
+        red(`Failed to remove system image: ${(error as Error).message}`)
+      );
+      process.exit(1);
     }
-  );
+  });
 
 imageCommand
   .command('list')
