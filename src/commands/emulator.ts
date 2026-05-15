@@ -15,6 +15,13 @@ import {
   fetchEmulatorSerials,
   fetchRunningEmulatorHvds,
 } from '../utils/emulator-hdc-targets.js';
+import {
+  EmulatorLicenseBlockedError,
+  ensureEmulatorSdkAgreementForImageDownload,
+  ensureEmulatorServiceAgreementConfig,
+  runEmulatorLicenseAccept,
+  runEmulatorLicenseView,
+} from '../utils/emulator-license.js';
 
 const SERIAL_PARAM_KEYS = [
   'ohos.qemu.hvd.name',
@@ -461,6 +468,9 @@ const IMAGE_LIST_TABLE_HEADERS = [
   'Downloaded',
 ] as const;
 
+const EMULATOR_IMAGE_LIST_EMPTY_HINT =
+  'No matching system images found. Try `devecocli emulator image list --all`, then download an image via `devecocli emulator image download ...`.';
+
 function parseJsonArrayOrNull(text: string): unknown[] | null {
   try {
     const data = JSON.parse(text) as unknown;
@@ -517,6 +527,22 @@ function buildImageListTableRows(
     });
   }
   return rows;
+}
+
+/** True when stdout is empty, JSON `[]`, or a JSON array with no renderable image rows. */
+function isEmulatorImageListOutputEffectivelyEmpty(stdout: string): boolean {
+  const text = stdout.trim();
+  if (!text) {
+    return true;
+  }
+  const data = parseJsonArrayOrNull(text);
+  if (data === null) {
+    return false;
+  }
+  if (data.length === 0) {
+    return true;
+  }
+  return buildImageListTableRows(data, true).length === 0;
 }
 
 function computeTableWidths(
@@ -578,23 +604,49 @@ const imageCommand = new Command('image').description(
 imageCommand
   .command('download')
   .description('Download a system image')
-  .addOption(deviceTypeOption(true))
-  .requiredOption(
+  .addOption(deviceTypeOption(false))
+  .option(
     '--os-version <version>',
-    'e.g. HarmonyOS 5.1.1(19) or HarmonyOS 6.0.1(21)'
+    'e.g. HarmonyOS 5.1.1(19) or HarmonyOS 6.0.1(21) (required)'
   )
   .option('--force', 'Overwrite an existing image')
   .action(
     async (opts: {
-      deviceType: string;
-      osVersion: string;
+      deviceType?: string;
+      osVersion?: string;
       force?: boolean;
     }) => {
-      const { manager } = await initEmulatorManager();
+      const { manager, toolProvider } = await initEmulatorManager();
+      try {
+        await ensureEmulatorSdkAgreementForImageDownload(
+          toolProvider.emulatorPath,
+          toolProvider.sdkPath
+        );
+      } catch (error) {
+        if (error instanceof EmulatorLicenseBlockedError) {
+          console.error(red(error.message));
+          process.exit(1);
+        }
+        throw error;
+      }
+
+      if (!opts.deviceType?.trim()) {
+        console.error(
+          red("error: required option '--device-type <type>' not specified")
+        );
+        process.exit(1);
+      }
+      if (!opts.osVersion?.trim()) {
+        console.error(
+          red("error: required option '--os-version <version>' not specified")
+        );
+        process.exit(1);
+      }
+
       try {
         await manager.installEmulatorImage({
-          deviceType: opts.deviceType,
-          osVersion: opts.osVersion,
+          deviceType: opts.deviceType.trim(),
+          osVersion: opts.osVersion.trim(),
           force: opts.force === true,
         });
       } catch (error) {
@@ -659,6 +711,10 @@ imageCommand
           deviceType: opts.deviceType,
           downloaded,
         });
+        if (isEmulatorImageListOutputEffectivelyEmpty(out)) {
+          console.log(yellow(EMULATOR_IMAGE_LIST_EMPTY_HINT));
+          return;
+        }
         if (opts.format === 'json') {
           console.log(out.trimEnd());
           return;
@@ -676,6 +732,36 @@ imageCommand
 
 emulatorCommand.addCommand(imageCommand);
 
+const licenseCommand = new Command('license').description(
+  'HarmonyOS local emulator license'
+);
+
+licenseCommand
+  .command('view')
+  .description('review the agreement text (read-only)')
+  .action(async () => {
+    const { toolProvider } = await initEmulatorManager();
+    const code = await runEmulatorLicenseView(
+      toolProvider.emulatorPath,
+      toolProvider.sdkPath
+    );
+    process.exit(code);
+  });
+
+licenseCommand
+  .command('accept')
+  .description('review and accept the agreements')
+  .action(async () => {
+    const { toolProvider } = await initEmulatorManager();
+    const code = await runEmulatorLicenseAccept(
+      toolProvider.emulatorPath,
+      toolProvider.sdkPath
+    );
+    process.exit(code);
+  });
+
+emulatorCommand.addCommand(licenseCommand);
+
 emulatorCommand
   .command('list')
   .description('List all emulator instances')
@@ -689,10 +775,26 @@ emulatorCommand
   });
 
 emulatorCommand
-  .command('start <names...>')
+  .command('start [names...]')
   .description('Start one or more emulator instances')
   .action(async (names: string[]) => {
     const { manager, toolProvider } = await initEmulatorManager();
+    try {
+      await ensureEmulatorServiceAgreementConfig(
+        toolProvider.emulatorPath,
+        toolProvider.sdkPath
+      );
+    } catch (e) {
+      if (e instanceof EmulatorLicenseBlockedError) {
+        console.error(red(e.message));
+        process.exit(1);
+      }
+      throw e;
+    }
+    if (!names?.length) {
+      console.error(red("error: missing required argument 'names'"));
+      process.exit(1);
+    }
     await startAction(manager, toolProvider.hdcPath, names);
   });
 
