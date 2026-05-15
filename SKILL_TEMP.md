@@ -77,7 +77,7 @@ Examples:
 Manage local emulator instances created in DevEco Studio.
 
 - `list` shows each emulator with `[serial]` (running with a resolved serial), `[running]` (running but the serial is not yet resolvable) or `[stopped]`.
-- `start <names...>` starts one or more instances in parallel; quote names with spaces. If any name in a batch fails, the command exits non-zero (the others may still have started — recheck with `list`).
+- `start [names...]` starts one or more instances in parallel; quote names with spaces, the command exits non-zero (the others may still have started — recheck with `list`).
 - `stop <name>` stops one instance.
 - `image list` lists system images; defaults to downloaded only. Options:
   - `--device-type <type>` — one of `Phone`, `Foldable`, `WideFold`, `TripleFold`, `Tablet`, `2in1`, `2in1 Foldable`, `Wearable`, `TV`.
@@ -86,9 +86,12 @@ Manage local emulator instances created in DevEco Studio.
 - `image download` / `image remove` — both **require** `--device-type` (same choices) and `--os-version` (e.g. `"HarmonyOS 6.0.1(21)"`); `download` also accepts `--force`.
 - `create <name>` — **requires** `--device-type` and `--os-version` (must match a downloaded label from `image list`; quote when it contains spaces/parentheses); optional `--force`.
 - `delete <name>` deletes a local emulator instance.
+- `license view` prints the agreement text (read-only).
+- `license accept` prompts `Please read carefully and confirm whether agree to the above agreement? (y/N):`. Choose `y/yes` to accept; otherwise it is treated as declined.
 
 Examples:
 - `devecocli emulator list`
+- `devecocli emulator license accept`
 - `devecocli emulator start "Mate 70 Pro" HarmonyOS_Phone`
 - `devecocli emulator stop "Mate 70 Pro"`
 - `devecocli emulator image list --all`
@@ -189,6 +192,7 @@ Update the CLI to the latest version.
 ```bash
 devecocli build
 devecocli emulator list                          # pick or note a name
+devecocli emulator license accept                # if blocked on agreement: confirm y/yes once
 devecocli emulator start HarmonyOS_Phone         # or: start "Mate 70 Pro" OtherAVD
 devecocli run
 ```
@@ -224,3 +228,4 @@ devecocli build --product oversea --build-mode release
 - **`knowledge` says "Please login first"** — run `devecocli login`.
 - **`skills add` reports `Agent <name> not found` / `Invalid agent: <name>, Valid options are: …`** — check the name (only `codebuddy` / `cursor` / `opencode` / `qoder` / `trae-cn` are supported) or omit `--agent` for auto-detect.
 - **Stale CLI / missing flags** — run `devecocli update`.
+- **"`devecocli emulator start` / `image download` is blocked on agreement"** — run `devecocli emulator license accept` (confirm with `y`/`yes` to write `agree` flags).

@@ -59,7 +59,7 @@ If the agent doesn't pick up the skill automatically, prompt it explicitly: *"Us
 | `devecocli build` | Build / package a project or modules into `.hap` / `.hsp` / `.har` / `.app`; `build clean` removes build outputs |
 | `devecocli run` | Install (with HSP deps) and launch on a device / emulator |
 | `devecocli device` | List / inspect connected devices and emulators; install / uninstall `.hap` / `.hsp` packages |
-| `devecocli emulator` | Manage local emulators: list / start / stop / create / delete, plus system images (`image download|remove|list`) |
+| `devecocli emulator` | Manage local emulators: list / start / stop / create / delete, system images (`image download|remove|list`), and license helpers (`license view` / `license accept`) |
 | `devecocli log` | Fetch hilog or crash logs (with level / bundle / keyword / from/to / tail / follow filters) |
 | `devecocli knowledge` | Search the HarmonyOS / ArkTS knowledge base (requires `devecocli login`) |
 | `devecocli whoami` | Show the currently logged-in Huawei Developer user |
