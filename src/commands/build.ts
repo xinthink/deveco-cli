@@ -8,6 +8,7 @@ import { Project } from '../utils/project.js';
 import { ToolProvider } from '../utils/tool-provider.js';
 import { HvigorAdapter } from '../utils/hvigor-adapter.js';
 import { OhpmAdapter } from '../utils/ohpm-adapter.js';
+import { withBuildLock } from '../utils/build-lock.js';
 
 interface BuildOptions {
   product?: string;
@@ -225,12 +226,21 @@ const buildCommand = new Command('build')
       const ohpmAdapter = new OhpmAdapter(toolProvider, project.rootDir);
       const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
 
-      await executeBuildSteps(
-        ohpmAdapter,
-        hvigorAdapter,
-        productName,
-        buildMode,
-        buildTarget
+      await withBuildLock(
+        project.rootDir,
+        async () =>
+          executeBuildSteps(
+            ohpmAdapter,
+            hvigorAdapter,
+            productName,
+            buildMode,
+            buildTarget
+          ),
+        () => {
+          console.log(
+            'Another build is already running for this project. Waiting for it to finish...'
+          );
+        }
       );
 
       console.log('\n' + green('Build completed successfully!'));
@@ -251,12 +261,29 @@ buildCommand
       const toolProvider = await ToolProvider.new();
 
       const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
-      console.log('\n[1/1] Running hvigor clean...');
-      try {
-        await hvigorAdapter.clean();
-      } catch (error) {
-        logAdapterFailureAndThrow('hvigor clean', error);
-      }
+      await withBuildLock(
+        project.rootDir,
+        async () => {
+          console.log('\n[1/2] Running hvigor clean...');
+          try {
+            await hvigorAdapter.clean();
+          } catch (error) {
+            logAdapterFailureAndThrow('hvigor clean', error);
+          }
+
+          console.log('\n[2/2] Running hvigor --stop-daemon...');
+          try {
+            await hvigorAdapter.stopDaemon();
+          } catch (error) {
+            logAdapterFailureAndThrow('hvigor --stop-daemon', error);
+          }
+        },
+        () => {
+          console.log(
+            'Another build is already running for this project. Waiting for it to finish...'
+          );
+        }
+      );
 
       console.log('\n' + green('Clean completed successfully!'));
     } catch (error) {
