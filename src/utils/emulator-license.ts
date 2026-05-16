@@ -24,9 +24,11 @@ export const HARMONYOS_SOFTWARE_SERVICE_AGREEMENT_KEY =
 const EMULATOR_LICENSE_BLOCKED_USER_MESSAGE = [
   'Emulator license agreements are not accepted yet.',
   '',
-  'Run one of:',
-  '  devecocli emulator license view     # review the agreement text (read-only)',
-  '  devecocli emulator license accept   # review and accept the agreements',
+  'Accept the agreements in an interactive terminal:',
+  '  devecocli emulator license accept',
+  '',
+  'To review the agreement text (read-only):',
+  '  devecocli emulator license view',
 ].join('\n');
 
 const EMULATOR_CLI_AGREEMENT_BLOCKED_USER_MESSAGE =
@@ -553,7 +555,7 @@ export async function runEmulatorLicenseAccept(
   console.log(body);
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     console.error(
-      'devecocli emulator license accept requires an interactive terminal (TTY).'
+      'devecocli emulator license accept requires an interactive terminal.'
     );
     return 1;
   }

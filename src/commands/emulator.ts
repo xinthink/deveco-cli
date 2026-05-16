@@ -214,7 +214,6 @@ async function listAction(
       spinner?.stop();
       console.log(yellow('  No emulator instances found.'));
       console.log(gray('  You can create an emulator in DevEco Studio.'));
-      console.log('');
       return;
     }
 
@@ -236,7 +235,6 @@ async function listAction(
         emu.isRunning === true || hvdSerialMap.has(emu.name);
       printEmulatorDetail(emu, serial, effectiveRunning);
     }
-    console.log('');
   } catch (error) {
     exitWithListCommandError(
       spinner,
@@ -344,7 +342,6 @@ async function startAction(
     }
   }
 
-  console.log('');
   if (anyFailed) {
     process.exit(1);
   }
