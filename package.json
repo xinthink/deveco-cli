@@ -1,6 +1,6 @@
 {
   "name": "deveco-cli",
-  "version": "0.0.1-beta.1",
+  "version": "0.0.1",
   "description": "HarmonyOS application development command line tool",
   "license": "MIT",
   "type": "module",
@@ -50,6 +50,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "adm-zip": "^0.5.17",
     "axios": "1.15.2",
+    "ui-verification-mcp": "latest",
     "colorette": "^2.0.20",
     "commander": "^14.0.3",
     "execa": "^9.6.1",

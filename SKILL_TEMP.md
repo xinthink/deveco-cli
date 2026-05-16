@@ -9,7 +9,8 @@ description: >-
   Use when the workspace has build-profile.json5 or oh-package.json5, the user
   wants to scaffold / initialize / create a new HarmonyOS project, or mentions
   DevEco, hvigor, ohpm, hdc, hap, hsp, har, emulator, hilog, ArkTS, ArkUI
-  knowledge or HMOS skills.
+  knowledge or HMOS skills. Also use when the user wants to test or verify UI
+  behavior / interactions on a connected HarmonyOS device.
 ---
 
 # DevEco CLI
@@ -154,6 +155,57 @@ Examples:
 - `devecocli log --from 5m --tail 200`
 - `devecocli log --follow`
 
+### `devecocli verify`
+
+Run UI intent verification on a connected HarmonyOS device: launches the app, executes UI operations, and verifies whether the described functionality works correctly. This is the standard tool for UI testing and issue reproduction.
+
+Limitations: only tap, swipe, long-press, and key actions are supported; judgment is screenshot-based and cannot evaluate animations or dynamic content.
+
+- `--test-plan <plan>` (**required**) — Natural-language test plan describing each step and its expected result. **Must be wrapped in single quotes** (`--test-plan '...'`) to prevent shell interpretation. Write a clear, specific plan based on the user's description. Example:
+  ```
+  1. 启动应用，预期：进入应用主界面，底部显示「书架」「发现」「订阅源」「我的」四个Tab
+  2. 点击「发现」Tab，预期：进入发现页面
+  3. 点击「订阅源」Tab，预期：进入订阅源页面
+  4. 点击「我的」Tab，预期：进入我的页面，显示用户信息及功能入口
+  5. 点击「书架」Tab，预期：返回书架页面
+  ```
+- `--bundle-name <name>` — Bundle name of the app to be tested; auto-detected from `AppScope/app.json5` when omitted.
+- `--no-fresh-start` — Skip relaunching the app before verification; omit to relaunch by default.
+
+Output JSON contains `success`, `reason` (failure cause), `successPart`, `failPart`, and `id` (unique task ID for log and screenshot retrieval).
+
+Usage guidance:
+- Write a test plan based on the user's description and call `devecocli verify --test-plan '...'`
+- If log analysis is needed, call `devecocli verify-log --id <id>` to retrieve the execution log
+- If screenshots are needed, call `devecocli verify-screenshot --id <id> --save-path <path>` to save step-by-step screenshots
+
+Examples:
+- `devecocli verify --test-plan '1. 启动应用，预期：进入应用主界面，底部显示「书架」「发现」「订阅源」「我的」四个Tab\n2. 点击「发现」Tab，预期：进入发现页面'`
+- `devecocli verify --test-plan '1. 启动应用，预期：进入应用主界面\n2. 点击「搜索」按钮，预期：弹出搜索框\n3. 输入关键词，预期：展示搜索结果' --bundle-name com.example.app`
+- `devecocli verify --test-plan '1. 点击「我的」Tab，预期：进入我的页面，显示用户信息及功能入口' --no-fresh-start`
+
+### `devecocli verify-log`
+
+Retrieve the execution log of a verification task by ID.
+
+- `--id <id>` (**required**) — Task ID from the `id` field in `verify` output.
+- `--search-keywords <keywords>` — Filter to lines containing the keyword; **wrap value in single quotes**.
+- `--max-log-size <n>` — Max characters to show (default `5000`; `-1` for unlimited).
+
+Examples:
+- `devecocli verify-log --id <id>`
+- `devecocli verify-log --id <id> --search-keywords 'error' --max-log-size -1`
+
+### `devecocli verify-screenshot`
+
+Save step-by-step screenshots from a verification task to a specified directory; returns a list of saved file paths.
+
+- `--id <id>` (**required**) — Task ID from the `id` field in `verify` output.
+- `--save-path <path>` (**required**) — Absolute path to the target directory (created automatically if it does not exist).
+
+Examples:
+- `devecocli verify-screenshot --id <id> --save-path 'C:\Users\user\Desktop\screenshots'`
+
 ## 2. Setup
 
 ### `devecocli login` / `devecocli logout` `[Outside sandbox]`
@@ -168,10 +220,13 @@ Show the currently logged-in Huawei Developer user.
 
 Install the bundled `deveco-cli` skill into AI agents (and optionally a project). Same `--agent` (comma-separated) / `--project <path>` / `-f, --force` semantics as `skills add`; with neither flag, installs to all detected agents.
 
+Also accepts `--ui-base-url <url>`, `--ui-model-name <name>`, `--ui-api-key <key>` to configure the vision model used by `devecocli verify`. Re-running with these flags overwrites existing config.
+
 Examples:
 - `devecocli init`
 - `devecocli init --agent cursor,opencode --force`
 - `devecocli init --project ./my-app`
+- `devecocli init --ui-base-url https://xxx --ui-model-name qwen3-vl-plus --ui-api-key <key>`
 
 ### `devecocli skills`
 

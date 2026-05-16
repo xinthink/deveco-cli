@@ -18,6 +18,7 @@ import {
   resolveInstallationTargets,
 } from '../skills/agents';
 import { InitOptions, SkillOperationResult } from '../types/skills';
+import { saveUiVerificationConfig } from '../utils/ui-verification-config.js';
 
 const DEVECO_CLI_SKILL_NAME = 'deveco-cli';
 
@@ -67,6 +68,14 @@ async function executeInstallations(
  * 把 deveco-cli 自带的 SKILL.md 复制到各 AI agent / 项目的 skills 目录
  */
 async function handleInitCommand(options: InitOptions): Promise<void> {
+  if (options.uiBaseUrl !== undefined || options.uiModelName !== undefined || options.uiApiKey !== undefined) {
+    saveUiVerificationConfig({
+      baseUrl: options.uiBaseUrl,
+      modelName: options.uiModelName,
+      apiKey: options.uiApiKey,
+    });
+  }
+
   const { resolvedPath, resolvedProject } = validatePathMutex(
     options.path,
     options.project,
@@ -106,6 +115,9 @@ const initCommand = new Command('init')
     'Path to install the skill directly (cannot be used with --project or --agent)'
   )
   .option('-f, --force', 'Overwrite an existing skill installation')
+  .option('--ui-base-url <url>', 'Base URL of the vision model (OpenAI-compatible)')
+  .option('--ui-model-name <name>', 'Vision model name (e.g. qwen3-vl-plus)')
+  .option('--ui-api-key <key>', 'API key for the vision model')
   .action(async (options: InitOptions) => {
     try {
       await handleInitCommand(options);

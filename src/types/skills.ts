@@ -244,4 +244,7 @@ export interface InitOptions {
   /** Target directory path for skill installation (mutually exclusive with --project and --agent) */
   readonly path?: string;
   readonly force?: boolean;
+  readonly uiBaseUrl?: string;
+  readonly uiModelName?: string;
+  readonly uiApiKey?: string;
 }
