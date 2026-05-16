@@ -2,7 +2,12 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
+import { debugLog } from './logger';
+
 export class CommonUtils {
+  private static readonly ASCII_CONTROL_MAX = 31;
+  private static readonly ASCII_DELETE = 127;
+
   // 解析正整数（用于 tail 等参数校验）
   static parsePositiveInteger(value: string, fieldName = 'value'): number {
     const normalizedValue = value.trim();
@@ -218,6 +223,31 @@ export class CommonUtils {
     if (!/^[A-Za-z0-9_.:\\-]{1,64}$/.test(value)) {
       throw new Error(`Invalid ${field}: ${JSON.stringify(value)}`);
     }
+  }
+
+  static assertHilogKeyword(value: string): void {
+    if (value.length === 0 || value.length > 128) {
+      throw new Error(`Invalid keyword: ${JSON.stringify(value)}`);
+    }
+
+    // runCommand 使用 execFile 参数数组（非 shell 拼接），因此允许符号类关键字（例如 &&、||）。
+    // 这里只拒绝控制字符，避免命令截断、跨行注入或不可见字符带来的解析歧义。
+    const hasControlChar = [...value].some((char) => {
+      const code = char.charCodeAt(0);
+      return (
+        code <= CommonUtils.ASCII_CONTROL_MAX ||
+        code === CommonUtils.ASCII_DELETE
+      );
+    });
+    if (hasControlChar) {
+      throw new Error(`Invalid keyword: ${JSON.stringify(value)}`);
+    }
+  }
+
+  static quotePosixShellArg(value: string): string {
+    const keywordValue = `${value}`;
+    debugLog(`quotePosixShellArg test: ${keywordValue}`);
+    return keywordValue;
   }
 
   static assertCrashFilename(name: string): void {

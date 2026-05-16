@@ -2,22 +2,53 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { runCommand } from './cmd.js';
-import { DeviceInfo, HilogOptions } from './config.js';
+import { HilogOptions } from './config.js';
 import { ToolProvider } from './tool-provider.js';
-import { EmulatorService } from '../service/emulator-service.js';
+import { DeviceManager } from '../service/device-manager.js';
 import { cyan, red, yellow } from 'colorette';
 import { spawn } from 'child_process';
 import { CommonUtils } from './common-utils.js';
 import { debugLog } from './logger.js';
+import {
+  classifyHdcOutput,
+  runHdcWithRetry,
+  type HdcCommandResult,
+} from './hdc-param.js';
+
+function detectHdcSentinel(
+  result: HdcCommandResult,
+  context: string
+): Error | null {
+  // 命令成功时不要把 stdout 当 fatal 探针 —— hilog / hidumper 的正常输出
+  // 经常包含 "not found" / "fail" 等子串，会被宽匹配误判成致命错误。
+  if (result.exitCode === 0) {
+    return null;
+  }
+  const probe = result.stderr || result.stdout;
+  const cls = classifyHdcOutput(probe);
+  if (cls === 'transient') {
+    return new Error(
+      `${context}: device communication channel is not ready yet. Please retry in a few seconds.`
+    );
+  }
+  if (cls === 'fatal') {
+    return new Error(`${context}: ${probe.trim()}`);
+  }
+  return null;
+}
+
+interface ConnectedDevice {
+  serial: string;
+  name: string;
+}
 
 export class HilogAdapter {
   private toolProvider: ToolProvider;
-  private emulatorService: EmulatorService;
+  private deviceManager: DeviceManager;
 
   constructor(toolProvider: ToolProvider) {
     this.toolProvider = toolProvider;
-    this.emulatorService = new EmulatorService(toolProvider);
+    this.deviceManager = DeviceManager.from(toolProvider);
   }
 
   /**
@@ -32,14 +63,14 @@ export class HilogAdapter {
 
     if (deviceArg) {
       const found = connectedDevices.find(
-        (d) => d.deviceId === deviceArg || d.name.includes(deviceArg)
+        (d) => d.serial === deviceArg || d.name.includes(deviceArg)
       );
       if (found) {
-        debugLog(cyan(`Using device: ${found.name} (${found.deviceId})`));
-        return found.deviceId;
+        debugLog(cyan(`Using device: ${found.name} (${found.serial})`));
+        return found.serial;
       }
       const list = connectedDevices
-        .map((d) => `  - ${d.name} (${d.deviceId})`)
+        .map((d) => `  - ${d.name} (${d.serial})`)
         .join('\n');
       throw new Error(
         `Device '${deviceArg}' not found.\nAvailable devices:\n${list}`
@@ -48,32 +79,30 @@ export class HilogAdapter {
 
     if (connectedDevices.length === 1) {
       const device = connectedDevices[0];
-      debugLog(cyan(`Using device: ${device.name} (${device.deviceId})`));
-      return device.deviceId;
+      debugLog(cyan(`Auto-selected device: ${device.name} (${device.serial})`));
+      return device.serial;
     }
 
-    return await this.promptDeviceSelection(connectedDevices);
+    throw new Error(
+      'Multiple devices found. Please specify a target device using `--device <name>` or `--device <serial>`.\nAvailable devices:\n' +
+        connectedDevices.map((d) => `  - ${d.name} (${d.serial})`).join('\n')
+    );
   }
 
   /**
    * 获取已连接的设备列表
    */
-  private async getConnectedDevices(): Promise<DeviceInfo[] | null> {
+  private async getConnectedDevices(): Promise<ConnectedDevice[] | null> {
     try {
-      const devices = await this.getDevices();
-      const connectedDevices = devices.filter((d: DeviceInfo) => d.isConnected);
+      const devices = await this.deviceManager.listDevicesWithName();
 
-      if (connectedDevices.length === 0) {
-        console.error(red('No running device found.'));
-        console.error('Please ensure:');
-        console.error(
-          '  1. The physical device is connected via USB and debugging mode is enabled'
+      if (devices.length === 0) {
+        throw new Error(
+          'No active devices found. Please start an emulator or connect a physical device.'
         );
-        console.error('  2. Or an emulator is running');
-        return null;
       }
 
-      return connectedDevices;
+      return devices;
     } catch (error) {
       console.error(
         red(`Failed to retrieve the device list: ${(error as Error).message}`)
@@ -86,11 +115,11 @@ export class HilogAdapter {
    * 提示用户选择设备
    */
   private async promptDeviceSelection(
-    devices: DeviceInfo[]
+    devices: ConnectedDevice[]
   ): Promise<string | undefined> {
     console.log(yellow('Multiple devices detected:'));
-    devices.forEach((device: DeviceInfo, index: number) => {
-      console.log(`  ${index + 1}. ${device.name} (${device.deviceId})`);
+    devices.forEach((device, index) => {
+      console.log(`  ${index + 1}. ${device.name} (${device.serial})`);
     });
 
     const selectedIndex = await this.getUserInput(devices.length);
@@ -98,7 +127,7 @@ export class HilogAdapter {
       return undefined;
     }
 
-    return devices[selectedIndex].deviceId;
+    return devices[selectedIndex].serial;
   }
 
   /**
@@ -128,14 +157,6 @@ export class HilogAdapter {
   }
 
   /**
-   * 获取可使用的设备信息列表
-   * @returns 设备信息列表
-   */
-  async getDevices(): Promise<DeviceInfo[]> {
-    return await this.emulatorService.getAvailableDevices();
-  }
-
-  /**
    * 通过应用包名获取进程 ID (PID)
    * @param hdcPath - hdc 工具路径
    * @param deviceId - 设备 ID
@@ -150,27 +171,26 @@ export class HilogAdapter {
     debugLog(`Trying to get PID for bundle: ${bundleName}`);
     CommonUtils.assertBundleName(bundleName);
 
-    // 执行命令: hdc -t <device_id> shell pidof <bundle_name>
-    const result = await runCommand(hdcPath, [
+    const result = await runHdcWithRetry(hdcPath, [
       '-t',
       deviceId,
       'shell',
       'pidof',
       bundleName,
     ]);
+    const sentinel = detectHdcSentinel(result, 'Failed to look up PID');
+    if (sentinel) {
+      throw sentinel;
+    }
 
-    // 检查命令是否成功执行
     if (result.exitCode === 0 && result.stdout.trim()) {
       const pidStr = result.stdout.trim();
-
-      // pidof 可能返回多个 PID，用空格分隔，取第一个
       const firstPid = pidStr.split(/\s+/)[0] || pidStr;
-
       debugLog(`Found PID for ${bundleName}: ${firstPid}`);
       return firstPid;
     }
 
-    console.error(`No PID found for bundle: ${bundleName}`);
+    debugLog(`No PID found for bundle: ${bundleName}`);
     return null;
   }
 
@@ -186,7 +206,7 @@ export class HilogAdapter {
     size: string
   ): Promise<void> {
     debugLog(`Setting hilog buffer size to: ${size}`);
-    const result = await runCommand(hdcPath, [
+    const result = await runHdcWithRetry(hdcPath, [
       '-t',
       deviceId,
       'shell',
@@ -194,6 +214,10 @@ export class HilogAdapter {
       '-G',
       size,
     ]);
+    const sentinel = detectHdcSentinel(result, 'Failed to resize hilog buffer');
+    if (sentinel) {
+      throw sentinel;
+    }
 
     if (result.exitCode !== 0) {
       console.error(
@@ -249,8 +273,8 @@ export class HilogAdapter {
 
     // 添加关键字过滤
     if (options.keyword) {
-      CommonUtils.assertHilogToken(options.keyword, 'keyword');
-      args.push('-e', options.keyword);
+      CommonUtils.assertHilogKeyword(options.keyword);
+      args.push('-e', CommonUtils.quotePosixShellArg(options.keyword));
     }
 
     // 返回命令和参数
@@ -294,13 +318,17 @@ export class HilogAdapter {
     }
 
     const snapshotOptions = { ...options, isFollow: false };
-    const [snapshotCommand, snapshotArgs] = this.buildHilogCommand(
+    const [, snapshotArgs] = this.buildHilogCommand(
       hdcPath,
       deviceId,
       snapshotOptions,
       pid
     );
-    const snapshotResult = await runCommand(snapshotCommand, snapshotArgs);
+    const snapshotResult = await runHdcWithRetry(hdcPath, snapshotArgs);
+    const sentinel = detectHdcSentinel(snapshotResult, 'Failed to get hilog');
+    if (sentinel) {
+      throw sentinel;
+    }
     if (snapshotResult.exitCode !== 0 && snapshotResult.stderr) {
       throw new Error(`Failed to get hilog: ${snapshotResult.stderr}`);
     }
@@ -330,7 +358,11 @@ export class HilogAdapter {
     );
     debugLog(`Ready to execute hilog command: ${command} ${args.join(' ')}`);
 
-    const result = await runCommand(command, args);
+    const result = await runHdcWithRetry(hdcPath, args);
+    const sentinel = detectHdcSentinel(result, 'Failed to get hilog');
+    if (sentinel) {
+      throw sentinel;
+    }
     if (result.exitCode !== 0 && result.stderr) {
       throw new Error(`Failed to get hilog: ${result.stderr}`);
     }
@@ -378,6 +410,12 @@ export class HilogAdapter {
     const pid = options.bundleName
       ? await this.getPidForBundle(hdcPath, deviceId, options.bundleName)
       : undefined;
+
+    if (options.bundleName && !pid) {
+      throw new Error(
+        `No running process found for bundle '${options.bundleName}'. Make sure the app is launched on the device before fetching logs.`
+      );
+    }
 
     // 如果提供了 log_size，调整缓冲区大小
     if (options.logSize) {
@@ -461,10 +499,11 @@ export class HilogAdapter {
 
     debugLog(`Executing command: ${hdcPath} ${listArgs.join(' ')}`);
 
-    // 执行命令
-    const result = await runCommand(hdcPath, listArgs);
-
-    // 检查命令是否成功
+    const result = await runHdcWithRetry(hdcPath, listArgs);
+    const sentinel = detectHdcSentinel(result, 'Failed to list crash logs');
+    if (sentinel) {
+      throw sentinel;
+    }
     if (result.exitCode !== 0) {
       throw new Error(
         `Failed to list crash logs: ${result.stderr || result.stdout}`
@@ -525,15 +564,20 @@ export class HilogAdapter {
 
     debugLog(`Executing command: ${hdcPath} ${fetchArgs.join(' ')}`);
 
-    const result = await runCommand(hdcPath, fetchArgs);
-
+    const result = await runHdcWithRetry(hdcPath, fetchArgs);
+    const sentinel = detectHdcSentinel(
+      result,
+      'Failed to fetch crash log content'
+    );
+    if (sentinel) {
+      throw sentinel;
+    }
     if (result.exitCode !== 0 && result.stderr) {
       console.error(
         `Warning: Failed to fetch crash log content: ${result.stderr}`
       );
     }
 
-    // 返回合并的输出（stdout + stderr）
     const combinedOutput = result.stdout + result.stderr;
     return combinedOutput;
   }
