@@ -91,6 +91,7 @@ Manage local emulator instances created in DevEco Studio.
 - `license view` prints the agreement text (read-only).
 - `license accept` review and accept the agreements; **requires an interactive terminal (TTY)** — cannot run in a non-interactive shell (including most AI-agent subprocesses).
 - If `start` or `image download` exits with *Emulator license agreements are not accepted yet*, **do not** run `license accept` from the agent; ask the user to run `devecocli emulator license accept` in their local terminal and confirm with `y`/`yes`, then retry `start`.
+- If `create` exits with *did not appear in the emulator list within the timeout*, treat it as a **user-action** step (same class as `license accept`): ask the user to open DevEco Studio → **Device Manager**, wait for the list to load, then retry `create` **only if** the emulator is still missing. **Do not** auto-retry `create`, edit SDK `lists.json` / `*.ini`, or claim success until `devecocli emulator list` shows the name after the user has opened Device Manager.
 
 Examples:
 - `devecocli emulator list`
@@ -237,3 +238,4 @@ devecocli build --product oversea --build-mode release
 - **`skills add` reports `Agent <name> not found` / `Invalid agent: <name>, Valid options are: …`** — check the name (only `codebuddy` / `cursor` / `opencode` / `qoder` / `trae-cn` are supported) or omit `--agent` for auto-detect.
 - **Stale CLI / missing flags** — run `devecocli update`.
 - **"`devecocli emulator start` / `image download` is blocked on agreement"** — the user must run `devecocli emulator license accept` in an **interactive terminal (TTY)** on their machine and confirm with `y`/`yes`. AI agents cannot complete this step; do not pipe input or retry in a non-TTY shell. After acceptance, retry `emulator start` or `image download`.
+- **`emulator create` timeout — *did not appear in the emulator list within the timeout*** — treat as a **user-action** step (same class as `license accept`): ask the user to open DevEco Studio → **Device Manager**, wait for the list to load, then retry `create` only if the emulator is still missing. Do **not** auto-retry `create`, edit SDK `lists.json` / `*.ini`, or claim success until `devecocli emulator list` shows the name after the user has opened Device Manager.

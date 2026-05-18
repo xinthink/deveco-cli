@@ -844,7 +844,7 @@ createEmulatorCmd.action(
       console.log(green(`Emulator "${name}" created successfully.`));
     } catch (error) {
       console.error(
-        red(`Failed to create emulator: ${(error as Error).message}`)
+        red(`${(error as Error).message}`)
       );
       process.exit(1);
     }
