@@ -83,7 +83,10 @@ export class HilogAdapter {
       return device.serial;
     }
 
-    return await this.promptDeviceSelection(connectedDevices);
+    throw new Error(
+      'Multiple devices found. Please specify a target device using `--device <name>` or `--device <serial>`.\nAvailable devices:\n' +
+        connectedDevices.map((d) => `  - ${d.name} (${d.serial})`).join('\n')
+    );
   }
 
   /**
@@ -215,10 +218,7 @@ export class HilogAdapter {
       '-G',
       size,
     ]);
-    const sentinel = detectHdcSentinel(
-      result,
-      'Failed to resize hilog buffer'
-    );
+    const sentinel = detectHdcSentinel(result, 'Failed to resize hilog buffer');
     if (sentinel) {
       throw sentinel;
     }
@@ -277,8 +277,8 @@ export class HilogAdapter {
 
     // 添加关键字过滤
     if (options.keyword) {
-      CommonUtils.assertHilogToken(options.keyword, 'keyword');
-      args.push('-e', options.keyword);
+      CommonUtils.assertHilogKeyword(options.keyword);
+      args.push('-e', CommonUtils.quotePosixShellArg(options.keyword));
     }
 
     // 返回命令和参数
