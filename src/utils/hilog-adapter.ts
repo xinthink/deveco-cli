@@ -79,7 +79,7 @@ export class HilogAdapter {
 
     if (connectedDevices.length === 1) {
       const device = connectedDevices[0];
-      debugLog(cyan(`Auto-selected device: ${device.name} (${device.serial})`));
+      debugLog(cyan(`Using device: ${device.name} (${device.serial})`));
       return device.serial;
     }
 
@@ -97,9 +97,13 @@ export class HilogAdapter {
       const devices = await this.deviceManager.listDevicesWithName();
 
       if (devices.length === 0) {
-        throw new Error(
-          'No active devices found. Please start an emulator or connect a physical device.'
+        console.error(red('No running device found.'));
+        console.error('Please ensure:');
+        console.error(
+          '  1. The physical device is connected via USB and debugging mode is enabled'
         );
+        console.error('  2. Or an emulator is running');
+        return null;
       }
 
       return devices;

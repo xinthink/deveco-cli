@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { execa } from 'execa';
 import { ToolProvider } from './tool-provider.js';
 import { debugLog } from './logger.js';
+import { DeviceManager } from '../service/device-manager.js';
 
 export interface DeviceInfo {
   name: string;
@@ -14,9 +15,11 @@ export interface DeviceInfo {
 
 export class HdcAdapter {
   private toolProvider: ToolProvider;
+  private deviceManager: DeviceManager;
 
   constructor(toolProvider: ToolProvider) {
     this.toolProvider = toolProvider;
+    this.deviceManager = DeviceManager.from(toolProvider);
   }
 
   private async runHdc(args: string[], throwOnError = true): Promise<string> {
@@ -36,75 +39,14 @@ export class HdcAdapter {
     }
   }
 
+  /**
+   * Connected devices in legacy `{name, id}` shape, suitable for `run` /
+   * `install` flows. Backed by `DeviceManager` so display-name resolution
+   * stays consistent across all commands.
+   */
   public async listTargets(): Promise<DeviceInfo[]> {
-    const stdout = await this.runHdc(['list', 'targets']);
-    const lines = stdout.split('\n');
-    const devices: DeviceInfo[] = [];
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('[Empty]')) {
-        continue;
-      }
-
-      const id = trimmed.split(/\s+/)[0];
-      const name = await this.getDeviceName(id);
-      devices.push({ name, id });
-    }
-
-    return devices;
-  }
-
-  private async getDeviceName(target: string): Promise<string> {
-    try {
-      // Try emulator name
-      let stdout = await this.runHdc(
-        ['-t', target, 'shell', 'param', 'get', 'ohos.qemu.hvd.name'],
-        false
-      );
-      stdout = stdout.trim();
-      if (
-        stdout &&
-        !stdout.includes('fail!') &&
-        !stdout.includes('not found')
-      ) {
-        return stdout;
-      }
-
-      // Try physical device name
-      stdout = await this.runHdc(
-        ['-t', target, 'shell', 'param', 'get', 'const.product.name'],
-        false
-      );
-      stdout = stdout.trim();
-      if (
-        stdout &&
-        !stdout.includes('fail!') &&
-        !stdout.includes('not found')
-      ) {
-        if (stdout !== 'emulator') {
-          return stdout;
-        }
-      }
-
-      // Fallback to model
-      stdout = await this.runHdc(
-        ['-t', target, 'shell', 'param', 'get', 'const.product.model'],
-        false
-      );
-      stdout = stdout.trim();
-      if (
-        stdout &&
-        !stdout.includes('fail!') &&
-        !stdout.includes('not found')
-      ) {
-        return stdout;
-      }
-    } catch {
-      // Ignore
-    }
-
-    return 'Unknown Device';
+    const entries = await this.deviceManager.listDevicesWithName();
+    return entries.map((e) => ({ name: e.name, id: e.serial }));
   }
 
   public async uninstallApp(

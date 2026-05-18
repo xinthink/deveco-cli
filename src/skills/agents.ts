@@ -4,7 +4,7 @@
  */
 
 import fs from 'fs';
-import { green, red, yellow, cyan } from 'colorette';
+import { cyan } from 'colorette';
 import { AGENT_SKILLS_CONFIG } from '../config/constants';
 import { SkillOperationResult, InstallationTargets } from '../types/skills';
 import { checkAgentExists, resolvePath } from './installer';
@@ -64,9 +64,9 @@ export function summarizeOperationResults(
 
   console.log();
   console.log(cyan('Finished:'));
-  console.log(`  ${green('Success')}: ${successCount}`);
-  console.log(`  ${yellow('Skipped')}: ${skippedCount}`);
-  console.log(`  ${red('Failed')}: ${failedCount}`);
+  console.log(`  Success: ${successCount}`);
+  console.log(`  Skipped: ${skippedCount}`);
+  console.log(`  Failed: ${failedCount}`);
 
   if (failedCount > 0) {
     process.exitCode = 1;
@@ -76,8 +76,11 @@ export function summarizeOperationResults(
 /**
  * 验证路径存在且是目录
  */
-export function validateDirectoryPath(path: string, label: string): void {
+export function validateDirectoryPath(path: string, label: string, force?: boolean): void {
   if (!fs.existsSync(path)) {
+    if (force) {
+      return;
+    }
     throw new Error(`${label} "${path}" not found`);
   }
   if (!fs.statSync(path).isDirectory()) {
@@ -143,7 +146,7 @@ export async function resolveInstallationTargets(
   if (!customPath && agents.length === 0 && projectAgents.length === 0) {
     throw new Error(
       'No agents found. Please install an AI agent (cursor, opencode, etc.) ' +
-        'or use --path for a custom location.'
+      'or use --path for a custom location.'
     );
   }
 
