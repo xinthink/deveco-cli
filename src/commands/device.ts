@@ -3,270 +3,92 @@
  * SPDX-License-Identifier: MIT
  */
 import { Command } from 'commander';
-import { execa } from 'execa';
 import { ToolProvider } from '../utils/tool-provider.js';
-import {
-  tryGetHdcShellParam,
-  tryGetHdcShellParams,
-} from '../utils/hdc-param.js';
 import { EmulatorManager } from '../service/emulator-manager.js';
-import type { EmulatorInfo } from '../service/emulator-types.js';
-import { isLocalEmulatorSerial } from '../utils/emulator-hdc-targets.js';
+import { normalizeListNameKey } from '../service/emulator-types.js';
+import {
+  DeviceManager,
+  type ConnectedDeviceEntry,
+} from '../service/device-manager.js';
 import { red, yellow, gray } from 'colorette';
 import ora, { type Ora } from 'ora';
 import { exitWithListCommandError } from '../utils/ora-fail.js';
+import { renderTable, type TableRow } from '../utils/text-table.js';
 
-interface DeviceListEntry {
-  serial?: string;
-  name?: string;
-  isEmulator: boolean;
-  isConnected: boolean;
-}
-
-interface DeviceInfo {
-  serial: string;
-  status: string;
-  deviceType?: string;
-  osVersion?: string;
-}
-
-class DeviceManager {
-  private hdcPath: string;
-
-  private constructor(hdcPath: string) {
-    this.hdcPath = hdcPath;
-  }
-
-  private escapeRegExp(text: string): string {
-    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-  private stripBrandPrefix(name: string, brand?: string): string {
-    const trimmedName = name.trim();
-    const trimmedBrand = brand?.trim();
-    if (!trimmedName || !trimmedBrand) {
-      return trimmedName;
-    }
-    const prefix = new RegExp(
-      `^${this.escapeRegExp(trimmedBrand)}(\\s+|[-_]+)?`,
-      'i'
-    );
-    const stripped = trimmedName.replace(prefix, '').trim();
-    return stripped || trimmedName;
-  }
-
-  public static from(toolProvider: ToolProvider): DeviceManager {
-    return new DeviceManager(toolProvider.hdcPath);
-  }
-
-  private async executeHdc(
-    args: string[]
-  ): Promise<{ stdout: string; stderr: string }> {
-    return execa(this.hdcPath, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-  }
-
-  public async listDevices(): Promise<DeviceInfo[]> {
-    const { stdout } = await this.executeHdc(['list', 'targets']);
-    const devices: DeviceInfo[] = [];
-
-    for (const line of stdout.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('[Empty]')) {
-        continue;
-      }
-      const parts = trimmed.split(/\s+/);
-      const serial = parts[0];
-      if (!serial || serial.startsWith('[Empty]')) {
-        continue;
-      }
-      devices.push({
-        serial,
-        status: parts.length >= 2 ? parts[1] : 'device',
-      });
-    }
-
-    return devices;
-  }
-
-  public async getDeviceModel(serial: string): Promise<string> {
-    try {
-      const params = await tryGetHdcShellParams(this.hdcPath, serial, [
-        'const.product.brand',
-        'const.product.model',
-        'const.product.name',
-      ]);
-      const brandStr = params.get('const.product.brand') ?? '';
-      const modelStr = params.get('const.product.model') ?? '';
-      const nameStr = params.get('const.product.name') ?? '';
-      const displayName =
-        modelStr && modelStr !== 'emulator' ? modelStr : nameStr || modelStr;
-      const shouldStripBrand =
-        Boolean(brandStr) && Boolean(modelStr) && modelStr !== 'emulator';
-      const cleanedName = shouldStripBrand
-        ? this.stripBrandPrefix(displayName, brandStr)
-        : displayName.trim();
-      return cleanedName || serial;
-    } catch {
-      return serial;
-    }
-  }
-
-  public async getDeviceName(serial: string): Promise<string> {
-    try {
-      const hvd = await this.executeHdc([
-        '-t',
-        serial,
-        'shell',
-        'param',
-        'get',
-        'ohos.qemu.hvd.name',
-      ]);
-      const hvdStr = hvd.stdout.trim();
-      if (
-        hvdStr &&
-        !hvdStr.includes('fail!') &&
-        !hvdStr.includes('not found')
-      ) {
-        return hvdStr;
-      }
-    } catch {
-      // Ignore
-    }
-    return this.getDeviceModel(serial);
-  }
-
-  public async getDeviceInfo(
-    devices: DeviceInfo[],
-    deviceSelector?: string
-  ): Promise<DeviceInfo | null> {
-    if (devices.length === 0) {
-      return null;
-    }
-
-    if (deviceSelector) {
-      const bySerial = devices.find((d) => d.serial === deviceSelector);
-      if (bySerial) {
-        return bySerial;
-      }
-
-      const needle = deviceSelector.toLowerCase();
-      const matches: { device: DeviceInfo; name: string }[] = [];
-      for (const d of devices) {
-        const name = await this.getDeviceName(d.serial);
-        if (name.toLowerCase().includes(needle)) {
-          matches.push({ device: d, name });
-        }
-      }
-
-      if (matches.length === 1) {
-        return matches[0].device;
-      }
-      if (matches.length > 1) {
-        throw new Error(
-          `Multiple devices match "${deviceSelector}". Please use a serial instead:\n` +
-            matches.map((m) => `  - ${m.name} (${m.device.serial})`).join('\n')
-        );
-      }
-
-      throw new Error(
-        `Device "${deviceSelector}" not found. Use \`devecocli device list\` to see available targets.`
-      );
-    }
-
-    return devices[0];
-  }
-
-  public async getDeviceDetail(serial: string): Promise<DeviceInfo> {
-    const detail: DeviceInfo = { serial, status: 'device' };
-    try {
-      const params = await tryGetHdcShellParams(this.hdcPath, serial, [
-        'const.product.devicetype',
-        'const.ohos.apiversion',
-        'const.ohos.releasetype',
-      ]);
-      detail.deviceType = params.get('const.product.devicetype');
-      const apiVer = params.get('const.ohos.apiversion');
-      const relType = params.get('const.ohos.releasetype');
-      if (apiVer) {
-        detail.osVersion = relType
-          ? `API ${apiVer} (${relType})`
-          : `API ${apiVer}`;
-      }
-    } catch {
-      // Ignore errors, partial info is acceptable
-    }
-    return detail;
-  }
-}
-
-async function resolveConnectedEntries(
-  hdcPath: string,
-  serials: string[]
-): Promise<{ entries: DeviceListEntry[]; runningEmulatorNames: Set<string> }> {
-  const entries = await Promise.all(
-    serials.map(async (serial): Promise<DeviceListEntry> => {
-      const isEmulator = isLocalEmulatorSerial(serial);
-      const paramKey = isEmulator ? 'ohos.qemu.hvd.name' : 'const.product.name';
-      let name: string | undefined;
-      try {
-        name = await tryGetHdcShellParam(hdcPath, serial, paramKey);
-      } catch {
-        name = undefined;
-      }
-      return { serial, name, isEmulator, isConnected: true };
-    })
-  );
-
-  const runningEmulatorNames = new Set<string>();
-  for (const entry of entries) {
-    if (entry.isEmulator && entry.name) {
-      runningEmulatorNames.add(entry.name);
-    }
-  }
-
-  return { entries, runningEmulatorNames };
-}
-
-async function loadInstalledEmulators(
-  toolProvider: ToolProvider
-): Promise<EmulatorInfo[]> {
-  if (!toolProvider.emulatorPath) {
-    return [];
-  }
-  try {
-    const emulatorManager = EmulatorManager.from(toolProvider);
-    return await emulatorManager.listEmulators();
-  } catch {
-    return [];
-  }
-}
-
-function appendOfflineEmulators(
-  installed: EmulatorInfo[],
-  runningEmulatorNames: Set<string>,
-  entries: DeviceListEntry[]
+function applyEmulatorDeviceTypeOverrides(
+  entries: ConnectedDeviceEntry[],
+  emulatorDeviceTypeByName: Map<string, string>
 ): void {
-  for (const emu of installed) {
-    if (!emu.name || runningEmulatorNames.has(emu.name)) {
+  if (emulatorDeviceTypeByName.size === 0) {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isEmulator || !entry.name) {
       continue;
     }
-    entries.push({
-      name: emu.name,
-      isEmulator: true,
-      isConnected: false,
-    });
+    const fine = emulatorDeviceTypeByName.get(normalizeListNameKey(entry.name));
+    if (fine) {
+      entry.deviceType = fine;
+    }
   }
 }
 
-function printDeviceEntry(entry: DeviceListEntry): void {
-  const display = entry.name ?? entry.serial ?? '';
-  const status = entry.isConnected
-    ? (entry.serial ?? 'connected')
-    : 'not connected';
-  const tag = entry.isEmulator ? 'emulator' : 'device';
-  console.log(`  ${display} [${status}]  ${gray(`(${tag})`)}`);
+const DEVICE_LIST_TABLE_HEADERS = [
+  'Name',
+  'Serial',
+  'Kind',
+  'Device Type',
+] as const;
+
+function buildDeviceListRow(entry: ConnectedDeviceEntry): TableRow {
+  return {
+    cells: [
+      entry.name ?? entry.serial,
+      entry.serial,
+      entry.isEmulator ? 'emulator' : 'device',
+      entry.deviceType ?? '-',
+    ],
+    highlight: true,
+  };
+}
+
+function compareDeviceEntries(
+  a: ConnectedDeviceEntry,
+  b: ConnectedDeviceEntry
+): number {
+  if (a.isEmulator !== b.isEmulator) {
+    return a.isEmulator ? 1 : -1;
+  }
+  return (a.name ?? a.serial).localeCompare(b.name ?? b.serial);
+}
+
+function printNoDevicesHint(): void {
+  console.log(yellow('  No active devices.'));
+  console.log(
+    gray(
+      '  Connect a USB device with debugging enabled, or start an emulator with `devecocli emulator start <name>`.'
+    )
+  );
+}
+
+function printDeviceListTable(entries: ConnectedDeviceEntry[]): void {
+  const sorted = [...entries].sort(compareDeviceEntries);
+  const rows = sorted.map(buildDeviceListRow);
+  console.log(renderTable(DEVICE_LIST_TABLE_HEADERS, rows));
+}
+
+async function applyEmulatorOverridesIfNeeded(
+  entries: ConnectedDeviceEntry[],
+  toolProvider: ToolProvider
+): Promise<void> {
+  const hasEmulator = entries.some((e) => e.isEmulator);
+  if (!hasEmulator || !toolProvider.emulatorPath) {
+    return;
+  }
+  const overrides = await EmulatorManager.from(
+    toolProvider
+  ).getDeviceTypeByName();
+  applyEmulatorDeviceTypeOverrides(entries, overrides);
 }
 
 async function listAction(
@@ -275,22 +97,14 @@ async function listAction(
   spinner?: Ora
 ) {
   try {
-    const devices = await deviceManager.listDevices();
-    const serials = devices.map((d) => d.serial);
-
-    const [{ entries, runningEmulatorNames }, installed] = await Promise.all([
-      resolveConnectedEntries(toolProvider.hdcPath, serials),
-      loadInstalledEmulators(toolProvider),
-    ]);
-    appendOfflineEmulators(installed, runningEmulatorNames, entries);
+    const entries = await deviceManager.getConnectedEntries();
+    await applyEmulatorOverridesIfNeeded(entries, toolProvider);
 
     spinner?.stop();
     if (entries.length === 0) {
-      console.log('  [Empty]');
+      printNoDevicesHint();
     } else {
-      for (const entry of entries) {
-        printDeviceEntry(entry);
-      }
+      printDeviceListTable(entries);
     }
     console.log('');
   } catch (error) {
