@@ -1,6 +1,6 @@
 {
   "name": "deveco-cli",
-  "version": "0.0.1",
+  "version": "0.0.1-beta.1",
   "description": "HarmonyOS application development command line tool",
   "license": "MIT",
   "type": "module",

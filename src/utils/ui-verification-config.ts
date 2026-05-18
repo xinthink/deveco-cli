@@ -6,6 +6,11 @@ import fs from 'fs';
 import path from 'path';
 import { homedir } from 'os';
 import { AppConfig } from '../config/constants.js';
+import {
+  encryptForLocalStorage,
+  decryptForLocalStorage,
+  isEncryptedBlob,
+} from './local-crypto.js';
 
 export interface UiVerificationConfig {
   baseUrl?: string;
@@ -29,29 +34,51 @@ function ensureConfigDir(): void {
   }
 }
 
-export function loadUiVerificationConfig(): UiVerificationConfig | null {
+function loadRawConfig(): Record<string, unknown> {
   const configPath = getConfigPath();
   if (!fs.existsSync(configPath)) {
-    return null;
+    return {};
   }
   try {
-    return JSON.parse(fs.readFileSync(configPath, 'utf-8')) as UiVerificationConfig;
+    return JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
   } catch {
+    return {};
+  }
+}
+
+export function loadUiVerificationConfig(): UiVerificationConfig | null {
+  const raw = loadRawConfig();
+  if (Object.keys(raw).length === 0) {
     return null;
   }
+  let apiKey: string | undefined;
+  if (isEncryptedBlob(raw.encryptedApiKey)) {
+    try {
+      apiKey = decryptForLocalStorage(raw.encryptedApiKey);
+    } catch {
+      // 解密失败视为未配置
+    }
+  }
+
+  return {
+    baseUrl: typeof raw.baseUrl === 'string' ? raw.baseUrl : undefined,
+    modelName: typeof raw.modelName === 'string' ? raw.modelName : undefined,
+    apiKey,
+  };
 }
 
 export function saveUiVerificationConfig(partial: UiVerificationConfig): void {
   ensureConfigDir();
-  const existing = loadUiVerificationConfig() ?? {};
-  const merged: UiVerificationConfig = { ...existing };
-  if (partial.baseUrl !== undefined) merged.baseUrl = partial.baseUrl;
-  if (partial.modelName !== undefined) merged.modelName = partial.modelName;
-  if (partial.apiKey !== undefined) merged.apiKey = partial.apiKey;
-  fs.writeFileSync(
-    getConfigPath(),
-    JSON.stringify(merged, null, 2),
-    { mode: 0o600 }
-  );
+  const raw = loadRawConfig();
+  if (partial.baseUrl !== undefined) {
+    raw.baseUrl = partial.baseUrl;
+  }
+  if (partial.modelName !== undefined) {
+    raw.modelName = partial.modelName;
+  }
+  if (partial.apiKey !== undefined) {
+    raw.encryptedApiKey = encryptForLocalStorage(partial.apiKey);
+  }
+  fs.writeFileSync(getConfigPath(), JSON.stringify(raw, null, 2), { mode: 0o600 });
   console.log(`UI verification config saved to ${getConfigPath()}`);
 }

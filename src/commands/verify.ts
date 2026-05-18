@@ -12,12 +12,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { ToolProvider } from '../utils/tool-provider.js';
 import { Project } from '../utils/project.js';
-import { loadUiVerificationConfig } from '../utils/ui-verification-config.js';
+import { loadUiVerificationConfig, saveUiVerificationConfig } from '../utils/ui-verification-config.js';
+import { HdcAdapter } from '../utils/hdc-adapter.js';
 
 interface VerifyOptions {
-  testPlan: string;
+  testPlan?: string;
   bundleName?: string;
   freshStart: boolean;
+  device?: string;
 }
 
 interface VerifyResult {
@@ -41,9 +43,13 @@ function resolveUiVerificationBin(): string {
       'bin',
       'ui-verification-mcp.cjs'
     );
-    if (fs.existsSync(candidate)) return candidate;
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
     const parent = path.dirname(dir);
-    if (parent === dir) break;
+    if (parent === dir) {
+      break;
+    }
     dir = parent;
   }
   throw new Error(
@@ -56,10 +62,32 @@ type PendingHandler = {
   reject: (err: Error) => void;
 };
 
+type ProgressHandler = (progress: number, total?: number, message?: string) => void;
+
 class McpSession {
   private buffer = '';
   private nextId = 1;
   private pending = new Map<number, PendingHandler>();
+  private progressHandlers = new Map<string | number, ProgressHandler>();
+
+  private handleMessage(msg: Record<string, unknown>): void {
+    if (!('id' in msg)) {
+      if (msg.method === 'notifications/progress') {
+        const params = msg.params as { progressToken: string | number; progress: number; total?: number; message?: string };
+        const handler = this.progressHandlers.get(params.progressToken);
+        if (handler) {
+          handler(params.progress, params.total, params.message);
+        }
+      }
+      return;
+    }
+    const id = msg.id as number;
+    const handler = this.pending.get(id);
+    if (handler) {
+      this.pending.delete(id);
+      handler.resolve(msg);
+    }
+  }
 
   private constructor(private child: ChildProcess) {
     child.stdout!.on('data', (chunk: Buffer) => {
@@ -67,32 +95,30 @@ class McpSession {
       const lines = this.buffer.split('\n');
       this.buffer = lines.pop() ?? '';
       for (const line of lines) {
-        if (!line.trim()) continue;
-        let msg: Record<string, unknown>;
-        try {
-          msg = JSON.parse(line) as Record<string, unknown>;
-        } catch {
+        if (!line.trim()) {
           continue;
         }
-        if (!('id' in msg)) continue;
-        const id = msg.id as number;
-        const handler = this.pending.get(id);
-        if (handler) {
-          this.pending.delete(id);
-          handler.resolve(msg);
+        try {
+          this.handleMessage(JSON.parse(line) as Record<string, unknown>);
+        } catch {
+          continue;
         }
       }
     });
 
     child.on('error', (err) => {
-      for (const handler of this.pending.values()) handler.reject(err);
+      for (const handler of this.pending.values()) {
+        handler.reject(err);
+      }
       this.pending.clear();
     });
 
     child.on('exit', (code) => {
       if (code !== 0 && code !== null) {
         const err = new Error(`ui-verification-mcp exited with code ${code}`);
-        for (const handler of this.pending.values()) handler.reject(err);
+        for (const handler of this.pending.values()) {
+          handler.reject(err);
+        }
         this.pending.clear();
       }
     });
@@ -121,22 +147,30 @@ class McpSession {
     return session;
   }
 
-  async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+  async callTool(name: string, args: Record<string, unknown>, onProgress?: ProgressHandler): Promise<unknown> {
     const id = this.nextId++;
+    if (onProgress) {
+      this.progressHandlers.set(id, onProgress);
+    }
     const response = await this.sendAndWait(id, {
       jsonrpc: '2.0',
       id,
       method: 'tools/call',
-      params: { name, arguments: args },
+      params: { name, arguments: args, _meta: onProgress ? { progressToken: id } : undefined },
     });
+    this.progressHandlers.delete(id);
     if (response.error) {
       const err = response.error as Record<string, unknown>;
       throw new Error(String(err.message ?? `${name} failed`));
     }
     const result = response.result as Record<string, unknown>;
-    if (result?.structuredContent != null) return result.structuredContent;
+    if (result?.structuredContent != null) {
+      return result.structuredContent;
+    }
     const content = result?.content as Array<{ text: string }> | undefined;
-    if (content && content.length > 0) return content[0].text;
+    if (content && content.length > 0) {
+      return content[0].text;
+    }
     return result;
   }
 
@@ -144,16 +178,27 @@ class McpSession {
     this.child.kill();
   }
 }
+
 const MAX_CACHE_ENTRIES = 15;
 
 function parseVerifyResult(raw: unknown): VerifyResult {
-  if (typeof raw === 'object' && raw !== null) return raw as VerifyResult;
-  if (typeof raw === 'string') return JSON.parse(raw) as VerifyResult;
+  if (typeof raw === 'object' && raw !== null) {
+    return raw as VerifyResult;
+  }
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw) as VerifyResult;
+    } catch {
+      throw new Error(raw);
+    }
+  }
   throw new Error('Failed to parse verifyUI result');
 }
 
 function pruneCache(cacheDir: string, maxEntries: number): void {
-  if (!fs.existsSync(cacheDir)) return;
+  if (!fs.existsSync(cacheDir)) {
+    return;
+  }
   const entries = fs.readdirSync(cacheDir)
     .map((name) => ({ name, mtime: fs.statSync(path.join(cacheDir, name)).mtime }))
     .sort((a, b) => a.mtime.getTime() - b.mtime.getTime());
@@ -163,15 +208,21 @@ function pruneCache(cacheDir: string, maxEntries: number): void {
 }
 
 const verifyCommand = new Command('verify')
-  .description('Run UI intent verification on a HarmonyOS device')
-  .requiredOption(
+  .description('Run UI verification on a connected device')
+  .option(
     '--test-plan <plan>',
     'Natural-language test plan describing steps and expected results'
   )
   .option('--bundle-name <name>', 'App bundle name (auto-detected from app.json5 if omitted)')
   .option('--no-fresh-start', 'Skip relaunching the app before verification')
+  .option('--device <name|serial>', 'Target device (name substring or serial); auto-selected when only one device is connected, required on multi-device hosts')
   .allowExcessArguments(true)
   .action(async (options: VerifyOptions, cmd: Command) => {
+    if (!options.testPlan) {
+      console.error(red('Error: --test-plan is required'));
+      process.exit(1);
+    }
+
     // PowerShell splits quoted strings containing \" into multiple argv entries.
     // Rejoin any excess positional arguments back into testPlan.
     const excess: string[] = cmd.args;
@@ -182,7 +233,7 @@ const verifyCommand = new Command('verify')
     const config = loadUiVerificationConfig();
     if (!config || !config.baseUrl || !config.modelName || !config.apiKey) {
       const userMessage =
-        'UI 意图校验暂不可用：未配置多模态模型。请运行 devecocli init --ui-base-url "your-url" --ui-model-name "your-model-name" --ui-api-key "your-api-key" 指令配置多模态模型后重试。';
+        'UI 意图校验暂不可用：未配置多模态模型。请运行 devecocli verify config --base-url "your-url" --model-name "your-model-name" --api-key "your-api-key" 指令配置多模态模型后重试。';
       console.error(red(userMessage));
       console.log(
         JSON.stringify({
@@ -215,6 +266,30 @@ const verifyCommand = new Command('verify')
         }
       }
 
+      const hdcAdapter = new HdcAdapter(toolProvider);
+      const devices = await hdcAdapter.listTargets();
+      if (devices.length === 0) {
+        throw new Error('No active devices found. Please start an emulator or connect a physical device.');
+      }
+      let resolvedDevice: string;
+      if (options.device) {
+        const found = devices.find(d => d.id === options.device || d.name.includes(options.device!));
+        if (!found) {
+          throw new Error(
+            `Device '${options.device}' not found.\nAvailable devices:\n` +
+            devices.map(d => `  - ${d.name} (${d.id})`).join('\n')
+          );
+        }
+        resolvedDevice = found.id;
+      } else if (devices.length === 1) {
+        resolvedDevice = devices[0].id;
+      } else {
+        throw new Error(
+          'Multiple devices connected. Use --device <name|serial> to specify one.\nAvailable devices:\n' +
+          devices.map(d => `  - ${d.name} (${d.id})`).join('\n')
+        );
+      }
+
       const session = await McpSession.start(binPath, env);
       let result: VerifyResult;
       try {
@@ -222,6 +297,10 @@ const verifyCommand = new Command('verify')
           testPlan: options.testPlan,
           bundleName,
           freshStart: options.freshStart,
+          device: resolvedDevice,
+        }, (progress, total, message) => {
+          const step = total !== undefined ? `${progress}/${total}` : String(progress);
+          spinner.text = message ? `${step} ${message}` : step;
         });
         result = parseVerifyResult(raw);
 
@@ -264,67 +343,91 @@ const verifyCommand = new Command('verify')
     }
   });
 
-export const verifyLogCommand = new Command('verify-log')
-  .description('Get verification log by ID')
-  .requiredOption('--id <id>', 'Verification task ID')
-  .option('--search-keywords <keywords>', 'Filter log by keywords')
-  .option('--max-log-size <n>', 'Max characters to show (-1 for unlimited)', '5000')
-  .action((opts: { id: string; searchKeywords?: string; maxLogSize: string }) => {
-    const logFile = path.join(CACHE_DIR, opts.id, 'verify.log');
-    if (!fs.existsSync(logFile)) {
-      console.error(red(`No log found for ID: ${opts.id}`));
-      process.exit(1);
-    }
-    let log = fs.readFileSync(logFile, 'utf-8');
-
-    if (opts.searchKeywords) {
-      const filtered = log
-        .split('\n')
-        .filter((l) => l.includes(opts.searchKeywords!))
-        .map((l) => l + '\n')
-        .join('');
-      if (!filtered) {
-        console.log(`The log does not contain the keyword '${opts.searchKeywords}.`);
-        return;
+verifyCommand.addCommand(
+  new Command('config')
+    .description('Configure the vision model for UI verification')
+    .option('--base-url <url>', 'Base URL of the vision model (OpenAI-compatible)')
+    .option('--model-name <name>', 'Vision model name (e.g. qwen3-vl-plus)')
+    .option('--api-key <key>', 'API key for the vision model')
+    .action((opts: { baseUrl?: string; modelName?: string; apiKey?: string }) => {
+      if (!opts.baseUrl && !opts.modelName && !opts.apiKey) {
+        console.error(red('Error: at least one of --base-url, --model-name, --api-key is required'));
+        process.exit(1);
       }
-      log = filtered;
-    }
+      saveUiVerificationConfig({
+        baseUrl: opts.baseUrl,
+        modelName: opts.modelName,
+        apiKey: opts.apiKey,
+      });
+      console.log('UI verification config saved.');
+    })
+);
 
-    const maxSize = parseInt(opts.maxLogSize, 10);
-    if (maxSize === -1 || log.length < maxSize) {
-      // no truncation
-    } else if (maxSize < 0) {
-      console.log('Please enter the correct maxLogSize');
-      return;
-    } else {
-      log =
-        `(exceeded log size limit, showing last ${maxSize} characters)...\n` +
-        log.slice(-maxSize);
-    }
+verifyCommand.addCommand(
+  new Command('log')
+    .description('Get verification log by ID')
+    .requiredOption('--id <id>', 'Verification task ID')
+    .option('--search-keywords <keywords>', 'Filter log by keywords')
+    .option('--max-log-size <n>', 'Max characters to show (-1 for unlimited)', '5000')
+    .action((opts: { id: string; searchKeywords?: string; maxLogSize: string }) => {
+      const logFile = path.join(CACHE_DIR, opts.id, 'verify.log');
+      if (!fs.existsSync(logFile)) {
+        console.error(red(`No log found for ID: ${opts.id}`));
+        process.exit(1);
+      }
+      let log = fs.readFileSync(logFile, 'utf-8');
 
-    console.log(log);
-  });
+      if (opts.searchKeywords) {
+        const filtered = log
+          .split('\n')
+          .filter((l) => l.includes(opts.searchKeywords!))
+          .map((l) => l + '\n')
+          .join('');
+        if (!filtered) {
+          console.log(`The log does not contain the keyword '${opts.searchKeywords}.`);
+          return;
+        }
+        log = filtered;
+      }
 
-export const verifyScreenshotCommand = new Command('verify-screenshot')
-  .description('Save verification screenshots by ID')
-  .requiredOption('--id <id>', 'Verification task ID')
-  .requiredOption('--save-path <path>', 'Absolute path to save screenshots')
-  .action((opts: { id: string; savePath: string }) => {
-    const srcDir = path.join(CACHE_DIR, opts.id, 'screenshots');
-    if (!fs.existsSync(srcDir)) {
-      console.error(red(`No screenshots found for ID: ${opts.id}`));
-      process.exit(1);
-    }
-    fs.mkdirSync(opts.savePath, { recursive: true });
-    const files = fs.readdirSync(srcDir);
-    const copied = files.map((f) => {
-      const dest = path.join(opts.savePath, f);
-      fs.copyFileSync(path.join(srcDir, f), dest);
-      return dest;
-    });
-    console.log(
-      JSON.stringify({ filenames: copied, message: 'Screenshots saved successfully' }, null, 2)
-    );
-  });
+      const maxSize = parseInt(opts.maxLogSize, 10);
+      if (maxSize === -1 || log.length < maxSize) {
+        // no truncation
+      } else if (maxSize < 0) {
+        console.log('Please enter the correct maxLogSize');
+        return;
+      } else {
+        log =
+          `(exceeded log size limit, showing last ${maxSize} characters)...\n` +
+          log.slice(-maxSize);
+      }
+
+      console.log(log);
+    })
+);
+
+verifyCommand.addCommand(
+  new Command('screenshot')
+    .description('Save verification screenshots by ID')
+    .requiredOption('--id <id>', 'Verification task ID')
+    .requiredOption('--save-path <path>', 'Absolute path to save screenshots')
+    .action((opts: { id: string; savePath: string }) => {
+      const srcDir = path.join(CACHE_DIR, opts.id, 'screenshots');
+      if (!fs.existsSync(srcDir)) {
+        console.error(red(`No screenshots found for ID: ${opts.id}`));
+        process.exit(1);
+      }
+      fs.mkdirSync(opts.savePath, { recursive: true });
+      const files = fs.readdirSync(srcDir);
+      const copied = files.map((f) => {
+        const dest = path.join(opts.savePath, f);
+        fs.copyFileSync(path.join(srcDir, f), dest);
+        return dest;
+      });
+      console.log(
+        JSON.stringify({ filenames: copied, message: 'Screenshots saved successfully' }, null, 2)
+      );
+    })
+);
 
 export default verifyCommand;
