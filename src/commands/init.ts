@@ -74,10 +74,10 @@ async function handleInitCommand(options: InitOptions): Promise<void> {
   );
 
   if (resolvedProject) {
-    validateDirectoryPath(resolvedProject, 'Project directory');
+    validateDirectoryPath(resolvedProject, 'Project directory', options.force);
   }
   if (resolvedPath) {
-    validateDirectoryPath(resolvedPath, 'Directory');
+    validateDirectoryPath(resolvedPath, 'Directory', options.force);
   }
 
   const sourceFile = resolveBundledSkillMdPath();
