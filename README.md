@@ -66,6 +66,7 @@ If the agent doesn't pick up the skill automatically, prompt it explicitly: *"Us
 | `devecocli init` | Install the bundled `deveco-cli` skill into your AI agents (`claude`, `cursor`, …) so they learn how to drive `devecocli` |
 | `devecocli skills` | List / find / add / remove HMOS skills for AI agents and projects |
 | `devecocli login` / `devecocli logout` | Sign in / out of a Huawei Developer account |
+| `devecocli start mcp` | Start the bundled MCP (Model Context Protocol) server over stdio so AI clients (Trae / Claude / …) can call its `check` tool |
 | `devecocli update` | Update the CLI itself (`npm install -g deveco-cli@latest`) |
 
 Run `devecocli <cmd> --help` for full options, or see [`SKILL.md`](./SKILL.md) for the detailed reference (also consumed by AI agents).

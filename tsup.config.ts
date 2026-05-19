@@ -8,7 +8,7 @@ import fs from 'fs';
 const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
 
 export default defineConfig({
-  entry: ['src/cli.ts', 'src/server.ts'],
+  entry: ['src/cli.ts'],
   format: ['esm'],
   platform: 'node',
   target: 'node18',
