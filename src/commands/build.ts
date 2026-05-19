@@ -78,21 +78,12 @@ function determineModulesToBuild(
   // Resolve HSP dependencies for each initial module
   const finalModulesSet = new Set<string>();
   for (const moduleArg of initialModules) {
-    finalModulesSet.add(moduleArg);
-
     const splitIndex = moduleArg.indexOf('@');
     const moduleName =
       splitIndex !== -1 ? moduleArg.substring(0, splitIndex) : moduleArg;
     const targetName =
-      splitIndex !== -1 ? moduleArg.substring(splitIndex + 1) : null;
-
-    const hspDeps = new Set<string>();
-    project.resolveHspDependencies(moduleName, hspDeps);
-
-    for (const hsp of hspDeps) {
-      const depArg = targetName ? `${hsp}@${targetName}` : hsp;
-      finalModulesSet.add(depArg);
-    }
+      splitIndex !== -1 ? moduleArg.substring(splitIndex + 1) : 'default';
+    finalModulesSet.add(`${moduleName}@${targetName}`);
   }
 
   return Array.from(finalModulesSet);
