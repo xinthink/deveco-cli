@@ -6,9 +6,13 @@ import { HilogOptions } from './config.js';
 import { ToolProvider } from './tool-provider.js';
 import { DeviceManager } from '../service/device-manager.js';
 import { cyan, red, yellow } from 'colorette';
-import { spawn } from 'child_process';
 import { CommonUtils } from './common-utils.js';
 import { debugLog } from './logger.js';
+import {
+  runStreamingCommand,
+  type StreamSource,
+  type StreamCommandHandlers,
+} from './cmd.js';
 import {
   classifyHdcOutput,
   runHdcWithRetry,
@@ -40,6 +44,24 @@ function detectHdcSentinel(
 interface ConnectedDevice {
   serial: string;
   name: string;
+}
+
+export interface HilogDataHandler {
+  (lines: string[], source: StreamSource): void;
+}
+
+export interface HilogErrorHandler {
+  (error: Error): void;
+}
+
+export interface HilogCloseHandler {
+  (code: number | null): void;
+}
+
+const HILOG_RETRY_DELAYS_MS = [800, 1500, 2500];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export class HilogAdapter {
@@ -244,71 +266,92 @@ export class HilogAdapter {
     options: HilogOptions,
     pid?: string | undefined
   ): [string, string[]] {
-    // 基础命令参数
-    // 使用 -x 参数确保 hilog 读取完当前缓冲区后退出，否则命令会挂起等待新日志
-    let args: string[];
-    if (options.isFollow) {
-      args = ['-t', deviceId, 'shell', 'hilog'];
-    } else {
-      args = ['-t', deviceId, 'shell', 'hilog', '-x'];
+    const shellCmd = this.buildHilogShellCommand(options, pid);
+    const args = ['-t', deviceId, 'shell', shellCmd];
+    return [hdcPath, args];
+  }
+
+  private buildHilogShellCommand(
+    options: HilogOptions,
+    pid?: string | undefined
+  ): string {
+    const parts: string[] = ['hilog'];
+
+    if (!options.isFollow) {
+      parts.push('-x');
     }
 
     if (options.tag) {
       CommonUtils.assertHilogToken(options.tag, 'tag');
-      args.push('-T', options.tag);
+      parts.push('-T', options.tag);
     }
 
-    // 添加日志级别过滤
     if (options.level) {
       CommonUtils.assertHilogLevel(options.level);
-      args.push('-L', options.level);
+      parts.push('-L', options.level);
     }
 
-    // 添加领域过滤
     if (options.domain) {
       CommonUtils.assertHilogToken(options.domain, 'domain');
-      args.push('-D', options.domain);
+      parts.push('-D', options.domain);
     }
 
-    // 添加进程 ID 过滤
     if (pid) {
-      args.push('-P', pid);
+      parts.push('-P', pid);
     }
 
-    // 添加关键字过滤
     if (options.keyword) {
       CommonUtils.assertHilogKeyword(options.keyword);
-      args.push('-e', CommonUtils.quotePosixShellArg(options.keyword));
+      parts.push('-e', CommonUtils.quotePosixShellArg(options.keyword));
     }
 
-    // 返回命令和参数
-    return [hdcPath, args];
+    return parts.join(' ');
   }
 
   /**
    * 实时跟随日志输出（不缓存 stdout/stderr，避免 maxBuffer 溢出）
    */
-  private async followHilog(command: string, args: string[]): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn(command, args, {
-        stdio: 'inherit',
-      });
+  public async followHilog(
+    command: string,
+    args: string[],
+    onData: HilogDataHandler,
+    onError: HilogErrorHandler,
+    onClose: HilogCloseHandler
+  ): Promise<HdcCommandResult> {
+    const handlers: StreamCommandHandlers = { onData, onError, onClose };
+    const result = await runStreamingCommand(command, args, handlers);
+    return {
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode,
+    };
+  }
 
-      child.on('error', (error) => {
-        reject(error);
-      });
-
-      child.on('close', (code) => {
-        if (code === 0 || code === null) {
-          resolve();
-          return;
-        }
-
-        reject(
-          new Error(`Failed to follow hilog: process exited with code ${code}`)
-        );
-      });
-    });
+  private async runHilogWithSpawnRetry(
+    command: string,
+    args: string[],
+    onData: HilogDataHandler,
+    onError: HilogErrorHandler,
+    onClose: HilogCloseHandler
+  ): Promise<HdcCommandResult> {
+    const attempts = 1 + HILOG_RETRY_DELAYS_MS.length;
+    let last: HdcCommandResult = { stdout: '', stderr: '', exitCode: -1 };
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      last = await this.followHilog(command, args, onData, onError, onClose);
+      const probe =
+        last.exitCode === 0 ? last.stdout : last.stderr || last.stdout;
+      if (classifyHdcOutput(probe) !== 'transient') {
+        return last;
+      }
+      if (attempt >= attempts - 1) {
+        return last;
+      }
+      debugLog(
+        `hdc transient failure on \`${args.join(' ')}\`: retrying in ${HILOG_RETRY_DELAYS_MS[attempt]}ms`
+      );
+      await sleep(HILOG_RETRY_DELAYS_MS[attempt]);
+    }
+    return last;
   }
 
   private async printTailSnapshotIfNeeded(
@@ -362,7 +405,19 @@ export class HilogAdapter {
     );
     debugLog(`Ready to execute hilog command: ${command} ${args.join(' ')}`);
 
-    const result = await runHdcWithRetry(hdcPath, args);
+    const result = await this.runHilogWithSpawnRetry(
+      command,
+      args,
+      (_lines, _source) => {
+        // 一次性读取模式在结果返回后统一处理，不在流回调中输出
+      },
+      (error) => {
+        debugLog(`hilog once stream error callback: ${error.message}`);
+      },
+      (_code) => {
+        // 非 follow 场景下无需额外处理 close，等待 Promise 结束即可
+      }
+    );
     const sentinel = detectHdcSentinel(result, 'Failed to get hilog');
     if (sentinel) {
       throw sentinel;
@@ -371,8 +426,9 @@ export class HilogAdapter {
       throw new Error(`Failed to get hilog: ${result.stderr}`);
     }
 
+    const collectedOutput = result.stdout || result.stderr;
     let logs = CommonUtils.filterLogsByRelativeWindow(
-      result.stdout || result.stderr,
+      collectedOutput,
       options.fromSeconds,
       options.toSeconds
     );
@@ -397,7 +453,35 @@ export class HilogAdapter {
     debugLog(
       `Ready to execute hilog command which contain follow and tail: ${command} ${args.join(' ')}`
     );
-    await this.followHilog(command, args);
+    const result = await this.runHilogWithSpawnRetry(
+      command,
+      args,
+      (lines, source) => {
+        const keyword = options.keyword;
+        const visibleLines = keyword
+          ? lines.filter((line) => line.includes(keyword))
+          : lines;
+        if (source === 'stderr') {
+          return;
+        }
+        for (const line of visibleLines) {
+          console.log(line);
+        }
+      },
+      (error) => {
+        console.error(error.message);
+      },
+      (_code) => {
+        // close 回调预留给外部处理，这里保持安静退出
+      }
+    );
+    const sentinel = detectHdcSentinel(result, 'Failed to follow hilog');
+    if (sentinel) {
+      throw sentinel;
+    }
+    if (result.exitCode !== 0 && result.stderr) {
+      throw new Error(`Failed to follow hilog: ${result.stderr}`);
+    }
     return '';
   }
 

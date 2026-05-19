@@ -230,7 +230,7 @@ export class CommonUtils {
       throw new Error(`Invalid keyword: ${JSON.stringify(value)}`);
     }
 
-    // runCommand 使用 execFile 参数数组（非 shell 拼接），因此允许符号类关键字（例如 &&、||）。
+    // 关键字会作为字符串传入 shell 命令（通过 quotePosixShellArg 做安全包裹）。
     // 这里只拒绝控制字符，避免命令截断、跨行注入或不可见字符带来的解析歧义。
     const hasControlChar = [...value].some((char) => {
       const code = char.charCodeAt(0);
@@ -245,9 +245,11 @@ export class CommonUtils {
   }
 
   static quotePosixShellArg(value: string): string {
-    const keywordValue = `${value}`;
-    debugLog(`quotePosixShellArg test: ${keywordValue}`);
-    return keywordValue;
+    // 用单引号包裹，内部单引号用 '\'' 转义（结束引号、转义单引号、重新开引号）
+    const escaped = value.replace(/'/g, "'\\''");
+    const result = `'${escaped}'`;
+    debugLog(`quotePosixShellArg: ${value} -> ${result}`);
+    return result;
   }
 
   static assertCrashFilename(name: string): void {
