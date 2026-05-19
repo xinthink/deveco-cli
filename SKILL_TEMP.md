@@ -89,7 +89,9 @@ Manage local emulator instances created in DevEco Studio.
 - `create <name>` — **requires** `--device-type` and `--os-version` (must match a downloaded label from `image list`; quote when it contains spaces/parentheses); optional `--force`.
 - `delete <name>` deletes a local emulator instance.
 - `license view` prints the agreement text (read-only).
-- `license accept` prompts `Please read carefully and confirm whether agree to the above agreement? (y/N):`. Choose `y/yes` to accept; otherwise it is treated as declined.
+- `license accept` review and accept the agreements; **requires an interactive terminal (TTY)** — cannot run in a non-interactive shell (including most AI-agent subprocesses).
+- If `start` or `image download` exits with *Emulator license agreements are not accepted yet*, **do not** run `license accept` from the agent; ask the user to run `devecocli emulator license accept` in their local terminal and confirm with `y`/`yes`, then retry `start`.
+- If `create` exits with *did not appear in the emulator list within the timeout*, treat it as a **user-action** step (same class as `license accept`): ask the user to open DevEco Studio → **Device Manager**, wait for the list to load, then retry `create` **only if** the emulator is still missing. **Do not** auto-retry `create`, edit SDK `lists.json` / `*.ini`, or claim success until `devecocli emulator list` shows the name after the user has opened Device Manager.
 
 Examples:
 - `devecocli emulator list`
@@ -198,7 +200,8 @@ Update the CLI to the latest version.
 ```bash
 devecocli build
 devecocli emulator list                          # pick or note a name
-devecocli emulator license accept                # if blocked on agreement: confirm y/yes once
+# if blocked on agreement: user must run in their own TTY (not the agent):
+#   devecocli emulator license accept   # confirm y/yes once
 devecocli emulator start HarmonyOS_Phone         # or: start "Mate 70 Pro" OtherAVD
 devecocli run
 ```
@@ -235,4 +238,5 @@ devecocli build --product oversea --build-mode release
 - **`knowledge` says "Please login first"** — run `devecocli login`.
 - **`skills add` reports `Agent <name> not found` / `Invalid agent: <name>, Valid options are: …`** — check the name (only `codebuddy` / `cursor` / `opencode` / `qoder` / `trae-cn` are supported) or omit `--agent` for auto-detect.
 - **Stale CLI / missing flags** — run `devecocli update`.
-- **"`devecocli emulator start` / `image download` is blocked on agreement"** — run `devecocli emulator license accept` (confirm with `y`/`yes` to write `agree` flags).
+- **"`devecocli emulator start` / `image download` is blocked on agreement"** — the user must run `devecocli emulator license accept` in an **interactive terminal (TTY)** on their machine and confirm with `y`/`yes`. AI agents cannot complete this step; do not pipe input or retry in a non-TTY shell. After acceptance, retry `emulator start` or `image download`.
+- **`emulator create` timeout — *did not appear in the emulator list within the timeout*** — treat as a **user-action** step (same class as `license accept`): ask the user to open DevEco Studio → **Device Manager**, wait for the list to load, then retry `create` only if the emulator is still missing. Do **not** auto-retry `create`, edit SDK `lists.json` / `*.ini`, or claim success until `devecocli emulator list` shows the name after the user has opened Device Manager.
