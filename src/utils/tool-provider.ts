@@ -612,8 +612,9 @@ export class ToolProvider {
     return existsSync(exePath) ? exePath : undefined;
   }
 
-  private static isValidApiLevel(level: number): boolean {
-    return Number.isInteger(level) && level >= 17 && level <= 23;
+  private static isValidApiLevel(level: number, maxApi?: number): boolean {
+    const maxSupported = maxApi ?? 23;
+    return Number.isInteger(level) && level >= 17 && level <= maxSupported;
   }
 
   private static parseApiLevelFromFile(filePath: string): number | undefined {
@@ -631,7 +632,9 @@ export class ToolProvider {
       }
 
       const level = Number(apiVersion);
-      return ToolProvider.isValidApiLevel(level) ? level : undefined;
+      // Only validate that it's a valid integer >= 17
+      // Max limit is now determined dynamically from SDK
+      return Number.isInteger(level) && level >= 17 ? level : undefined;
     } catch {
       return undefined;
     }
@@ -677,7 +680,11 @@ export class ToolProvider {
     return undefined;
   }
 
-  public detectApiLevel(): number {
+  /**
+   * Get the API level from SDK's sdk-pkg.json or oh-uni-package.json.
+   * Returns the detected API version, or 23 as fallback if SDK files exist but have no valid apiVersion.
+   */
+  public getMaxApiLevel(): number {
     const fromSdkPkg = ToolProvider.detectFromSdkPkg(this.sdkPath);
     if (fromSdkPkg !== undefined) {
       return fromSdkPkg;
@@ -688,6 +695,12 @@ export class ToolProvider {
       return fromOhUni;
     }
 
+    // SDK exists but no valid apiVersion found, use 23 as fallback
     return 23;
+  }
+
+  /** Alias for getMaxApiLevel() */
+  public detectApiLevel(): number {
+    return this.getMaxApiLevel();
   }
 }
