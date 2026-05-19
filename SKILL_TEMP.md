@@ -193,6 +193,17 @@ Examples:
 
 Update the CLI to the latest version.
 
+### `devecocli start mcp`
+
+Start the bundled MCP (Model Context Protocol) server as a **local stdio** server, to be spawned by an MCP-compatible client (Trae / Claude / OpenCode / …).
+
+Environment variables:
+
+- `PROJECT_PATH` — Harmony project root the LSP should index.
+- `DEVECO_PATH` — overrides DevEco Studio auto-detection.
+- `NODE_MAX_OLD_SPACE_SIZE` — Node heap size in MB (default `8192`).
+- `DEBUG=1` — mirror server logs to stderr.
+
 ## Recipes
 
 ### Fresh checkout → running on an emulator
