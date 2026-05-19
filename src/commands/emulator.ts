@@ -7,10 +7,15 @@ import { tryGetHdcShellParams } from '../utils/hdc-param.js';
 import { green, cyan, red, yellow, gray } from 'colorette';
 import ora, { type Ora } from 'ora';
 import { exitWithListCommandError } from '../utils/ora-fail.js';
+import { renderTable, type TableRow } from '../utils/text-table.js';
 import type { EmulatorInfo } from '../service/emulator-types.js';
 import { normalizeListNameKey } from '../service/emulator-types.js';
 import { EmulatorManager } from '../service/emulator-manager.js';
 import { ToolProvider } from '../utils/tool-provider.js';
+import {
+  DeviceManager,
+  isLocalEmulatorSerial,
+} from '../service/device-manager.js';
 import {
   fetchEmulatorSerials,
   fetchRunningEmulatorHvds,
@@ -95,13 +100,27 @@ function assertOsVersionAgainstDownloadedImages(
   }
 }
 
-function printEmulatorDetail(
+const EMULATOR_LIST_TABLE_HEADERS = [
+  'Name',
+  'Status',
+  'Serial',
+  'Device Type',
+] as const;
+
+function buildEmulatorListRow(
   emu: EmulatorInfo,
   serial: string | undefined,
   effectiveRunning: boolean
-) {
-  const statusText = effectiveRunning ? (serial ?? 'running') : 'stopped';
-  console.log(`  ${emu.name} [${statusText}]`);
+): TableRow {
+  return {
+    cells: [
+      emu.name,
+      effectiveRunning ? 'running' : 'stopped',
+      serial ?? '-',
+      emu.deviceType ?? '-',
+    ],
+    highlight: effectiveRunning,
+  };
 }
 
 async function fetchSerialParamsBatched(
@@ -199,6 +218,33 @@ function buildEmulatorMapsFromParams(
   return { productSerialMap, hvdSerialMap };
 }
 
+interface EnrichedEmulator {
+  emu: EmulatorInfo;
+  serial: string | undefined;
+  effectiveRunning: boolean;
+}
+
+function buildSortedEmulatorRows(
+  emulators: EmulatorInfo[],
+  productSerialMap: Map<string, string>,
+  hvdSerialMap: Map<string, string>
+): TableRow[] {
+  const enriched: EnrichedEmulator[] = emulators.map((emu) => ({
+    emu,
+    serial: productSerialMap.get(emu.name) ?? hvdSerialMap.get(emu.name),
+    effectiveRunning: emu.isRunning === true || hvdSerialMap.has(emu.name),
+  }));
+  enriched.sort((a, b) => {
+    if (a.effectiveRunning !== b.effectiveRunning) {
+      return a.effectiveRunning ? -1 : 1;
+    }
+    return a.emu.name.localeCompare(b.emu.name);
+  });
+  return enriched.map((item) =>
+    buildEmulatorListRow(item.emu, item.serial, item.effectiveRunning)
+  );
+}
+
 async function listAction(
   emulatorManager: EmulatorManager,
   hdcPath: string,
@@ -220,7 +266,6 @@ async function listAction(
     const runningNames = emulators
       .filter((e) => e.isRunning)
       .map((e) => e.name);
-
     const { productSerialMap, hvdSerialMap } = buildEmulatorMapsFromParams(
       hdcSnapshot.serials,
       hdcSnapshot.params,
@@ -228,13 +273,13 @@ async function listAction(
     );
 
     spinner?.stop();
-    for (const emu of emulators) {
-      const serial =
-        productSerialMap.get(emu.name) ?? hvdSerialMap.get(emu.name);
-      const effectiveRunning =
-        emu.isRunning === true || hvdSerialMap.has(emu.name);
-      printEmulatorDetail(emu, serial, effectiveRunning);
-    }
+    const rows = buildSortedEmulatorRows(
+      emulators,
+      productSerialMap,
+      hvdSerialMap
+    );
+    console.log(renderTable(EMULATOR_LIST_TABLE_HEADERS, rows));
+    console.log('');
   } catch (error) {
     exitWithListCommandError(
       spinner,
@@ -243,16 +288,30 @@ async function listAction(
   }
 }
 
-function handleError(action: string, name: string, error: unknown): never {
-  const e = error as Error & { stdout?: string; stderr?: string };
-  console.error(red(`Failed to ${action} emulator "${name}": ${e.message}`));
-  if (e.stdout) {
-    console.error(gray(e.stdout));
+function reportSettledFailures(
+  results: PromiseSettledResult<unknown>[],
+  identifiers: string[],
+  action: 'start' | 'stop'
+): boolean {
+  let anyFailed = false;
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status !== 'rejected') {
+      continue;
+    }
+    anyFailed = true;
+    const e = result.reason as Error & { stdout?: string; stderr?: string };
+    console.error(
+      red(`Failed to ${action} emulator "${identifiers[i]}": ${e.message}`)
+    );
+    if (e.stdout) {
+      console.error(gray(e.stdout));
+    }
+    if (e.stderr) {
+      console.error(gray(e.stderr));
+    }
   }
-  if (e.stderr) {
-    console.error(gray(e.stderr));
-  }
-  process.exit(1);
+  return anyFailed;
 }
 
 const EMULATOR_CONFIRM_POLL_INTERVAL_MS = 2000;
@@ -324,42 +383,38 @@ async function startAction(
     names.map((name) => startOneEmulator(emulatorManager, hdcPath, name))
   );
 
-  let anyFailed = false;
-  for (let i = 0; i < results.length; i++) {
-    const result = results[i];
-    if (result.status === 'rejected') {
-      anyFailed = true;
-      const e = result.reason as Error & { stdout?: string; stderr?: string };
-      console.error(
-        red(`Failed to start emulator "${names[i]}": ${e.message}`)
-      );
-      if (e.stdout) {
-        console.error(gray(e.stdout));
-      }
-      if (e.stderr) {
-        console.error(gray(e.stderr));
-      }
-    }
-  }
+  const anyFailed = reportSettledFailures(results, names, 'start');
 
   if (anyFailed) {
     process.exit(1);
   }
 }
 
-async function stopAction(
+async function resolveEmulatorListName(
+  hdcPath: string,
+  identifier: string
+): Promise<string> {
+  const trimmed = identifier.trim();
+  if (!isLocalEmulatorSerial(trimmed)) {
+    return trimmed;
+  }
+  const name = await DeviceManager.withHdcPath(hdcPath).getDeviceName(trimmed);
+  if (name === trimmed) {
+    throw new Error(
+      `Cannot resolve a running emulator with serial "${trimmed}". Use \`devecocli emulator list\` or pass the emulator name instead.`
+    );
+  }
+  return name;
+}
+
+async function stopOneEmulator(
   emulatorManager: EmulatorManager,
   hdcPath: string,
-  name: string
-) {
+  identifier: string
+): Promise<void> {
+  const name = await resolveEmulatorListName(hdcPath, identifier);
   console.log(cyan(`Stopping emulator "${name}"...`));
-  let outcome: 'stopped' | 'already-stopped';
-  try {
-    outcome = await emulatorManager.stopEmulator(name);
-  } catch (error) {
-    handleError('stop', name, error);
-  }
-
+  const outcome = await emulatorManager.stopEmulator(name);
   if (outcome === 'already-stopped') {
     console.log(yellow(`Emulator "${name}" is already stopped.`));
     return;
@@ -374,6 +429,23 @@ async function stopAction(
         `Emulator "${name}" stop signal was sent but the instance is still visible in hdc list targets within the timeout.`
       )
     );
+  }
+}
+
+async function stopAction(
+  emulatorManager: EmulatorManager,
+  hdcPath: string,
+  identifiers: string[]
+) {
+  const results = await Promise.allSettled(
+    identifiers.map((id) => stopOneEmulator(emulatorManager, hdcPath, id))
+  );
+
+  const anyFailed = reportSettledFailures(results, identifiers, 'stop');
+
+  console.log('');
+  if (anyFailed) {
+    process.exit(1);
   }
 }
 
@@ -450,8 +522,6 @@ function toBoolText(value: unknown): string {
   return t;
 }
 
-type ImageListTableRow = { cells: string[]; highlight: boolean };
-
 const IMAGE_LIST_TABLE_HEADERS = [
   'OS Version',
   'Device Type',
@@ -476,8 +546,8 @@ function parseJsonArrayOrNull(text: string): unknown[] | null {
 function buildImageListTableRows(
   data: unknown[],
   highlightDownloaded: boolean
-): ImageListTableRow[] {
-  const rows: ImageListTableRow[] = [];
+): TableRow[] {
+  const rows: TableRow[] = [];
   for (const item of data) {
     if (!item || typeof item !== 'object') {
       continue;
@@ -538,41 +608,6 @@ function isEmulatorImageListOutputEffectivelyEmpty(stdout: string): boolean {
   return buildImageListTableRows(data, true).length === 0;
 }
 
-function computeTableWidths(
-  headers: readonly string[],
-  rows: ImageListTableRow[]
-): number[] {
-  return headers.map((h, idx) => {
-    let w = h.length;
-    for (const r of rows) {
-      w = Math.max(w, (r.cells[idx] ?? '').length);
-    }
-    return w;
-  });
-}
-
-function padCell(s: string, w: number): string {
-  return s + ' '.repeat(Math.max(0, w - s.length));
-}
-
-function renderTable(
-  headers: readonly string[],
-  widths: number[],
-  rows: ImageListTableRow[]
-): string {
-  const lines: string[] = [];
-  lines.push(headers.map((h, i) => padCell(h, widths[i])).join('  '));
-  lines.push(widths.map((w) => '-'.repeat(w)).join('  '));
-  for (const r of rows) {
-    const line = r.cells
-      .map((c, i) => padCell(c ?? '', widths[i]))
-      .join('  ')
-      .trimEnd();
-    lines.push(r.highlight ? green(line) : line);
-  }
-  return lines.join('\n');
-}
-
 function formatImageListTable(
   stdout: string,
   highlightDownloaded: boolean
@@ -586,8 +621,7 @@ function formatImageListTable(
     return stdout.trimEnd();
   }
   const rows = buildImageListTableRows(data, highlightDownloaded);
-  const widths = computeTableWidths(IMAGE_LIST_TABLE_HEADERS, rows);
-  return renderTable(IMAGE_LIST_TABLE_HEADERS, widths, rows);
+  return renderTable(IMAGE_LIST_TABLE_HEADERS, rows);
 }
 
 const imageCommand = new Command('image').description(
@@ -787,11 +821,17 @@ emulatorCommand
   });
 
 emulatorCommand
-  .command('stop <name>')
-  .description('Stop an emulator instance')
-  .action(async (name: string) => {
+  .command('stop <names...>')
+  .description(
+    'Stop one or more emulator instances (by name or 127.0.0.1:<port> serial)'
+  )
+  .action(async (names: string[]) => {
     const { manager, toolProvider } = await initEmulatorManager();
-    await stopAction(manager, toolProvider.hdcPath, name);
+    if (!names?.length) {
+      console.error(red("error: missing required argument 'names'"));
+      process.exit(1);
+    }
+    await stopAction(manager, toolProvider.hdcPath, names);
   });
 
 const createEmulatorCmd = emulatorCommand

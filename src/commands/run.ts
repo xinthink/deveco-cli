@@ -7,6 +7,7 @@ import { green, red } from 'colorette';
 import { Project } from '../utils/project.js';
 import { ToolProvider } from '../utils/tool-provider.js';
 import { HdcAdapter } from '../utils/hdc-adapter.js';
+import { DeviceManager } from '../service/device-manager.js';
 
 interface RunOptions {
   module?: string;
@@ -17,38 +18,33 @@ interface RunOptions {
 }
 
 async function selectDevice(
-  hdcAdapter: HdcAdapter,
+  deviceManager: DeviceManager,
   deviceArg?: string
 ): Promise<string> {
-  const devices = await hdcAdapter.listTargets();
+  const devices = await deviceManager.listDevices();
   if (devices.length === 0) {
     throw new Error(
       'No active devices found. Please start an emulator or connect a physical device.'
     );
   }
 
-  if (deviceArg) {
-    const found = devices.find(
-      (d) => d.id === deviceArg || d.name.includes(deviceArg)
-    );
-    if (found) {
-      return found.id;
-    }
+  if (!deviceArg && devices.length > 1) {
+    const named = await deviceManager.listDevicesWithName();
     throw new Error(
-      `Device '${deviceArg}' not found.\nAvailable devices:\n` +
-        devices.map((d) => `  - ${d.name} (${d.id})`).join('\n')
+      'Multiple devices found. Please specify a target device using `--device <Name>` or `--device <ID>`.\nAvailable devices:\n' +
+        named.map((d) => `  - ${d.name} (${d.serial})`).join('\n')
     );
   }
 
-  if (devices.length === 1) {
-    console.log(`Auto-selected device: ${devices[0].name} (${devices[0].id})`);
-    return devices[0].id;
+  const picked = await deviceManager.getDeviceInfo(devices, deviceArg);
+  if (!picked) {
+    throw new Error('No active devices found.');
   }
-
-  throw new Error(
-    'Multiple devices found. Please specify a target device using `--device <Name>` or `--device <ID>`.\nAvailable devices:\n' +
-      devices.map((d) => `  - ${d.name} (${d.id})`).join('\n')
-  );
+  if (!deviceArg) {
+    const name = await deviceManager.getDeviceName(picked.serial);
+    console.log(`Auto-selected device: ${name} (${picked.serial})`);
+  }
+  return picked.serial;
 }
 
 function identifyModule(project: Project, moduleArg?: string): string {
@@ -148,53 +144,56 @@ const runCommand = new Command('run')
   .option('--uninstall', 'Uninstall existing app before installation')
   .action(async (options: RunOptions) => {
     try {
-      const currentDir = process.cwd();
-      const project = Project.discover(currentDir);
-      const toolProvider = await ToolProvider.new();
-
-      const moduleArg = identifyModule(project, options.module);
-      const splitIndex = moduleArg.indexOf('@');
-      const moduleName =
-        splitIndex !== -1 ? moduleArg.substring(0, splitIndex) : moduleArg;
-      const targetName =
-        splitIndex !== -1 ? moduleArg.substring(splitIndex + 1) : 'default';
-
-      const type = project.getModuleType(moduleName);
-      if (type !== 'entry' && type !== 'feature' && type !== 'shared') {
-        throw new Error(
-          `Module '${moduleName}' is of type '${type}', which is not runnable. Please specify an entry or feature module.`
-        );
-      }
-
-      const hdcAdapter = new HdcAdapter(toolProvider);
-      const targetDeviceId = await selectDevice(hdcAdapter, options.device);
-      const isEmulator =
-        targetDeviceId.includes('127.0.0.1') ||
-        targetDeviceId.includes('localhost');
-      const productName = options.product || 'default';
-
-      const artifactsToInstall = resolveArtifacts(
-        project,
-        moduleName,
-        targetName,
-        isEmulator,
-        productName
-      );
-      const bundleName = project.getBundleName();
-      const mainAbility = project.getMainAbility(moduleName, options.ability);
-
-      await performDeployment(
-        hdcAdapter,
-        targetDeviceId,
-        bundleName,
-        artifactsToInstall,
-        mainAbility,
-        !!options.uninstall
-      );
+      await runActionImpl(options);
     } catch (error) {
       console.error(red((error as Error).message));
       process.exit(1);
     }
   });
+
+async function runActionImpl(options: RunOptions): Promise<void> {
+  const project = Project.discover(process.cwd());
+  const toolProvider = await ToolProvider.new();
+  const moduleArg = identifyModule(project, options.module);
+  const splitIndex = moduleArg.indexOf('@');
+  const moduleName =
+    splitIndex !== -1 ? moduleArg.substring(0, splitIndex) : moduleArg;
+  const targetName =
+    splitIndex !== -1 ? moduleArg.substring(splitIndex + 1) : 'default';
+
+  const type = project.getModuleType(moduleName);
+  if (type !== 'entry' && type !== 'feature' && type !== 'shared') {
+    throw new Error(
+      `Module '${moduleName}' is of type '${type}', which is not runnable. Please specify an entry or feature module.`
+    );
+  }
+
+  const hdcAdapter = new HdcAdapter(toolProvider);
+  const deviceManager = DeviceManager.from(toolProvider);
+  const targetDeviceId = await selectDevice(deviceManager, options.device);
+  const isEmulator =
+    targetDeviceId.includes('127.0.0.1') ||
+    targetDeviceId.includes('localhost');
+  const productName = options.product || 'default';
+
+  const artifactsToInstall = resolveArtifacts(
+    project,
+    moduleName,
+    targetName,
+    isEmulator,
+    productName
+  );
+  const bundleName = project.getBundleName();
+  const mainAbility = project.getMainAbility(moduleName, options.ability);
+
+  await performDeployment(
+    hdcAdapter,
+    targetDeviceId,
+    bundleName,
+    artifactsToInstall,
+    mainAbility,
+    !!options.uninstall
+  );
+}
 
 export default runCommand;

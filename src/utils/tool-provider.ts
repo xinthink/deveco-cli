@@ -107,7 +107,7 @@ export class ToolProvider {
   private static async findDevEcoStudio(): Promise<string> {
     if (ToolProvider._cachedInstallRoot !== undefined) {
       debugLog(
-        `[ToolProvider] findDevEcoStudio: cache hit → ${ToolProvider._cachedInstallRoot}`
+        `[ToolProvider] findDevEcoStudio: cache hit -> ${ToolProvider._cachedInstallRoot}`
       );
       return ToolProvider._cachedInstallRoot;
     }

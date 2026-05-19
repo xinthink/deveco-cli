@@ -133,10 +133,10 @@ function validateAddOptions(options: AddOptions): {
 
   // 4. 目录存在性检查
   if (resolvedProject) {
-    validateDirectoryPath(resolvedProject, 'Project directory');
+    validateDirectoryPath(resolvedProject, 'Project directory', options.force);
   }
   if (resolvedPath) {
-    validateDirectoryPath(resolvedPath, 'Directory');
+    validateDirectoryPath(resolvedPath, 'Directory', options.force);
   }
 
   return { resolvedPath, resolvedProject };

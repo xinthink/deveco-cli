@@ -97,6 +97,11 @@ function tryParseListJson(output: string): EmulatorInfo[] | null {
     return jsonOutput
       .map((item: Record<string, unknown>) => {
         const uuid = pickUuidFromListItem(item);
+        const deviceType = pickStringField(item, [
+          'deviceType',
+          'DeviceType',
+          'devicetype',
+        ]);
         return {
           name: (item.name || item.Name || '') as string,
           isRunning:
@@ -110,6 +115,7 @@ function tryParseListJson(output: string): EmulatorInfo[] | null {
             'ImageRoot',
           ]),
           uuid: uuid || undefined,
+          deviceType: deviceType || undefined,
         };
       })
       .filter((emu: EmulatorInfo) => emu.name);
@@ -121,7 +127,7 @@ function tryParseListJson(output: string): EmulatorInfo[] | null {
 function parseListText(output: string): EmulatorInfo[] {
   const emulators: EmulatorInfo[] = [];
   const fieldRegex =
-    /^(name|isrunning|instancepath|path|imageroot)\s*:\s*(.+)/gim;
+    /^(name|isrunning|instancepath|path|imageroot|devicetype)\s*:\s*(.+)/gim;
 
   let current: EmulatorInfo | null = null;
   let match;
@@ -143,6 +149,8 @@ function parseListText(output: string): EmulatorInfo[] {
         current.path = value.trim();
       } else if (k === 'imageroot') {
         current.imageRoot = value.trim();
+      } else if (k === 'devicetype') {
+        current.deviceType = value.trim();
       }
     }
   }

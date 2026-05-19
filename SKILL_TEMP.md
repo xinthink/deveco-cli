@@ -78,9 +78,9 @@ Examples:
 
 Manage local emulator instances created in DevEco Studio.
 
-- `list` shows each emulator with `[serial]` (running with a resolved serial), `[running]` (running but the serial is not yet resolvable) or `[stopped]`.
+- `list` shows every emulator instance with its status (running / stopped), serial (when running) and device type (phone / foldable / wideFold / …); running rows come first.
 - `start [names...]` starts one or more instances in parallel; quote names with spaces, the command exits non-zero (the others may still have started — recheck with `list`).
-- `stop <name>` stops one instance.
+- `stop [names...]` stops one or more instances in parallel; each argument may be the emulator name (quote names with spaces) or its `127.0.0.1:<port>` serial.
 - `image list` lists system images; defaults to downloaded only. Options:
   - `--device-type <type>` — one of `Phone`, `Foldable`, `WideFold`, `TripleFold`, `Tablet`, `2in1`, `2in1 Foldable`, `Wearable`, `TV`.
   - `--all` includes not-downloaded images.
@@ -96,8 +96,9 @@ Manage local emulator instances created in DevEco Studio.
 Examples:
 - `devecocli emulator list`
 - `devecocli emulator license accept`
-- `devecocli emulator start "Mate 70 Pro" HarmonyOS_Phone`
-- `devecocli emulator stop "Mate 70 Pro"`
+- `devecocli emulator start "Mate 70 Pro" Mate 70`
+- `devecocli emulator stop "Mate 70 Pro" Mate 70`
+- `devecocli emulator stop 127.0.0.1:5555`
 - `devecocli emulator image list --all`
 - `devecocli emulator image download --device-type Phone --os-version "HarmonyOS 6.0.1(21)"`
 - `devecocli emulator create "My Phone" --device-type Phone --os-version "HarmonyOS 6.0.1(21)"`
@@ -107,7 +108,7 @@ Examples:
 
 List / inspect / install / uninstall on connected devices and emulators.
 
-- `list` enumerates real devices and emulators in one view: each entry is tagged `(device)` or `(emulator)`, with `[serial]` for connected entries and `[not connected]` for installed-but-not-running emulators.
+- `list` enumerates only currently active (connected) real devices and running emulators, each annotated with its device type.
 - `view` shows detailed device info (device type + API/release version).
 
 Examples:

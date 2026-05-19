@@ -218,7 +218,7 @@ async function performLocalSkillInstall(
   await fsp.mkdir(skillDir, { recursive: true });
   const target = path.join(skillDir, path.basename(sourceFile));
   await fsp.copyFile(sourceFile, target);
-  console.log(`Skill ${skillName} installed to ${target}`);
+  console.log(`Skill ${skillName} installed to ${skillDir}`);
 }
 
 /**
@@ -238,22 +238,16 @@ function handleOperationError(
  * @param getSkillsDir - 获取 skills 目录路径的函数
  * @param performInstall - 执行安装的函数
  * @param force - 是否强制重新安装
- * @param ensureSkillsDir - 是否需要确保 skillsDir 存在（用于项目 agent 场景）
  * @returns 安装结果
  */
 async function executeInstall(
   skillName: string,
   getSkillsDir: () => string | Promise<string>,
   performInstall: (skillsDir: string) => Promise<void>,
-  force: boolean,
-  ensureSkillsDir: boolean = false
+  force: boolean
 ): Promise<SkillOperationResult> {
   try {
     const skillsDir = await getSkillsDir();
-
-    if (ensureSkillsDir) {
-      await fsp.mkdir(skillsDir, { recursive: true });
-    }
 
     const { shouldSkip } = await prepareSkillDirectory(
       skillsDir,
@@ -367,8 +361,7 @@ export async function installSkillToProjectAgent(
     skillName,
     () => getProjectAgentSkillsDir(projectPath, agentName),
     (skillsDir) => performSkillInstall(zipBuffer, skillsDir, skillName),
-    force,
-    true // 确保项目 agent skills 目录存在
+    force
   );
 }
 
@@ -414,8 +407,7 @@ export async function installLocalSkillToProjectAgent(
     skillName,
     () => getProjectAgentSkillsDir(projectPath, agentName),
     (skillsDir) => performLocalSkillInstall(sourceFile, skillsDir, skillName),
-    force,
-    true // 确保项目 agent skills 目录存在
+    force
   );
 }
 

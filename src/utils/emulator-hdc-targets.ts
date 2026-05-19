@@ -2,21 +2,18 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { runCommand } from './cmd.js';
+import {
+  DeviceManager,
+  isLocalEmulatorSerial,
+} from '../service/device-manager.js';
 import { tryGetHdcShellParam } from './hdc-param.js';
 
-export function isLocalEmulatorSerial(serial: string): boolean {
-  return serial.startsWith('127.0.0.1:');
-}
+export { isLocalEmulatorSerial };
 
 export async function fetchEmulatorSerials(hdcPath: string): Promise<string[]> {
-  const r = await runCommand(hdcPath, ['list', 'targets']);
-  if (r.exitCode !== 0) {
-    return [];
-  }
-  return r.stdout
-    .split('\n')
-    .map((line) => line.trim().split(/\s+/)[0])
+  const devices = await DeviceManager.withHdcPath(hdcPath).listDevices();
+  return devices
+    .map((d) => d.serial)
     .filter(isLocalEmulatorSerial);
 }
 
