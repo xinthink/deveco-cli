@@ -61,6 +61,7 @@ If the agent doesn't pick up the skill automatically, prompt it explicitly: *"Us
 | `devecocli device` | List / inspect connected devices and emulators; install / uninstall `.hap` / `.hsp` packages |
 | `devecocli emulator` | Manage local emulators: list / start / stop / create / delete, system images (`image download|remove|list`), and license helpers (`license view` / `license accept`) |
 | `devecocli log` | Fetch hilog or crash logs (with level / bundle / keyword / from/to / tail / follow filters) |
+| `devecocli verify` | Run UI verification on a connected device using a natural-language test plan; outputs a structured JSON result with pass/fail details and a task ID. Use `verify log` to retrieve execution logs and `verify screenshot` to save step-by-step screenshots by task ID. **Before first use, run `devecocli verify config --base-url <url> --model-name <name> --api-key <key>` to configure the vision model.** |
 | `devecocli knowledge` | Search the HarmonyOS / ArkTS knowledge base (requires `devecocli login`) |
 | `devecocli whoami` | Show the currently logged-in Huawei Developer user |
 | `devecocli init` | Install the bundled `deveco-cli` skill into your AI agents (`claude`, `cursor`, …) so they learn how to drive `devecocli` |
