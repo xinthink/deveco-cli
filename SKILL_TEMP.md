@@ -36,7 +36,7 @@ Initialize a new HarmonyOS application project from the bundled template.
 - `--app-name <name>` (**required**) — 1–200 chars, starts with letter, contains only letters/digits/underscores.
 - `--project-path <path>` — when omitted, defaults to `./<app-name>` and that path **must not exist**; when provided explicitly, the path may not exist (auto-created) or may exist only if it is empty.
 - `--bundle-name <bundle>` — defaults to `com.example.<appname-lowercase>`; 7–128 chars, ≥3 segments, no consecutive dots.
-- `--api-level <level>` — integer in `17`–`23`; auto-detected or defaults to `23`.
+- `--api-level <level>` — integer ≥17; auto-detected from SDK or defaults to `23`.
 
 Examples:
 - `devecocli create --app-name MyApp`
