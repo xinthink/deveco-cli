@@ -219,12 +219,12 @@ function resolveApiLevel(
   toolProvider?: ToolProvider
 ): number {
   const sdkMaxApi = toolProvider?.getMaxApiLevel(); // 有 IDE 时从 SDK 获取，无 IDE 时 undefined
-  const noIdeMaxApi = 24; // 无 IDE 时的默认上限
+  const noIdeMaxApi = 23; // 无 IDE 时的默认上限
 
   if (options.apiLevel) {
     const parsed = Number(options.apiLevel);
     
-    // 最小 API 验证：HarmonyOS Next 从 API 17 开始
+    // 最小 API 验证：API 版本从 17 开始
     if (!Number.isInteger(parsed) || parsed < 17) {
       throw new Error(
         `Invalid API level ${options.apiLevel}. Minimum supported is API 17`
@@ -240,7 +240,7 @@ function resolveApiLevel(
         );
       }
     } else {
-      // 无 IDE：范围 17-24
+      // 无 IDE：范围 17-23
       if (parsed > noIdeMaxApi) {
         throw new Error(
           `Invalid API level ${options.apiLevel}. Without DevEco Studio, supported range is API 17-${noIdeMaxApi}`
