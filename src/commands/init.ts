@@ -71,86 +71,89 @@ async function executeSkillInstallations(
 }
 
 /**
+ * 获取 DevEco Studio 路径（未安装时返回 undefined）
+ */
+async function resolveDevecoPath(): Promise<string | undefined> {
+  try {
+    const toolProvider = await ToolProvider.new();
+    return toolProvider.devecoStudioPath;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 项目级 MCP 安装：对 targets 中所有 agent 安装项目级配置
+ */
+async function installProjectLevelMcp(
+  targets: Awaited<ReturnType<typeof resolveInstallationTargets>>,
+  resolvedProject: string,
+  devecoPath: string | undefined,
+  force: boolean
+): Promise<Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[]> {
+  const results: Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[] = [];
+  for (const { project, agent } of targets.projectAgents) {
+    const result = await installMcpConfigToAgentProject(agent, project, devecoPath, force);
+    results.push(result);
+  }
+  for (const agentName of targets.agents) {
+    const result = await installMcpConfigToAgentProject(agentName, resolvedProject, devecoPath, force);
+    results.push(result);
+  }
+  return results;
+}
+
+/**
+ * 全局 MCP 安装：只 opencode/cursor 支持，其余收集错误信息
+ */
+async function installGlobalMcp(
+  agentNames: string[],
+  devecoPath: string | undefined,
+  force: boolean
+): Promise<{ results: Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[]; errors: string[] }> {
+  const results: Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[] = [];
+  const errors: string[] = [];
+  for (const agentName of agentNames) {
+    const agentConfig = AGENT_MCP_CONFIG[agentName];
+    if (!agentConfig) { continue; }
+    if (!agentConfig.supportsGlobal) {
+      errors.push(
+        `${agentConfig.displayName} does not support global MCP configuration. ` +
+        `Use --project to configure project-level MCP: devecocli init --mcp --project <path> --agent ${agentName}`
+      );
+      continue;
+    }
+    const result = await installMcpConfigToAgentGlobal(agentName, process.cwd(), devecoPath, force);
+    results.push(result);
+  }
+  return { results, errors };
+}
+
+/**
  * 执行 MCP 配置安装（仅 --mcp 时触发）
  *
  * 场景逻辑：
- * 1. devecocli init --mcp             → 全局 MCP（只支持 opencode/cursor），其余报错提示用 --project
- * 2. devecocli init --mcp --agent xxx → 对指定 agent 配置，不支持全局的报错提示用 --project
- * 3. devecocli init --mcp --project   → 只安装项目级 MCP（所有 agent 都支持项目级）
- * 4. devecocli init --mcp --force     → 全局 MCP（opencode/cursor）+ 覆盖已有配置；其余报错提示用 --project
- *
+ * 1. devecocli init --mcp             → 全局 MCP（只 opencode/cursor），其余报错提示用 --project
+ * 2. devecocli init --mcp --project   → 只安装项目级 MCP（所有 agent 都支持项目级）
+ * 3. devecocli init --mcp --force     → 全局 MCP（opencode/cursor）+ 覆盖已有配置；其余报错
  * --force 只改变覆盖行为，不改变全局/项目级模式。
- * 全局 MCP 仅 opencode 和 cursor 支持；
- * trae-cn、codebuddy、qoder 只支持项目级，报错提示使用 --project 参数。
  */
 async function executeMcpInstallations(
   targets: Awaited<ReturnType<typeof resolveInstallationTargets>>,
   resolvedProject: string | undefined,
   options: InitOptions
 ): Promise<void> {
-  // 获取 DevEco Studio 路径
-  let devecoPath: string | undefined;
-  try {
-    const toolProvider = await ToolProvider.new();
-    devecoPath = toolProvider.devecoStudioPath;
-  } catch {
-    // DevEco Studio 未安装时忽略
-  }
-
+  const devecoPath = await resolveDevecoPath();
   const force = options.force ?? false;
-  const mcpResults: Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[] = [];
-  const globalErrors: string[] = [];
+  let mcpResults: Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[] = [];
+  let globalErrors: string[] = [];
 
-  // 决定 MCP 安装模式：
-  //   --project      → 项目级（指定路径）
-  //   无 --project   → 全局（只 opencode/cursor），不支持全局的报错
-  //   --force        → 覆盖已有配置，不改变全局/项目级模式
-  const isProjectLevel = !!resolvedProject;
-
-  if (isProjectLevel) {
-    // 项目级 MCP：使用 --project 指定的路径
-    for (const { project, agent } of targets.projectAgents) {
-      const result = await installMcpConfigToAgentProject(
-        agent,
-        project,
-        devecoPath,
-        force
-      );
-      mcpResults.push(result);
-    }
-
-    // --project 时，targets.agents 也做项目级
-    for (const agentName of targets.agents) {
-      const result = await installMcpConfigToAgentProject(
-        agentName,
-        resolvedProject,
-        devecoPath,
-        force
-      );
-      mcpResults.push(result);
-    }
+  if (resolvedProject) {
+    mcpResults = await installProjectLevelMcp(targets, resolvedProject, devecoPath, force);
   } else {
-    // 全局 MCP（默认模式）：只 opencode/cursor 支持
-    for (const agentName of targets.agents) {
-      const agentConfig = AGENT_MCP_CONFIG[agentName];
-      if (!agentConfig) continue;
-
-      if (!agentConfig.supportsGlobal) {
-        globalErrors.push(
-          `${agentConfig.displayName} does not support global MCP configuration. ` +
-          `Use --project to configure project-level MCP: devecocli init --mcp --project <path> --agent ${agentName}`
-        );
-        continue;
-      }
-
-      const result = await installMcpConfigToAgentGlobal(
-        agentName,
-        process.cwd(),
-        devecoPath,
-        force
-      );
-      mcpResults.push(result);
-    }
+    const { results, errors } = await installGlobalMcp(targets.agents, devecoPath, force);
+    mcpResults = results;
+    globalErrors = errors;
   }
 
   if (mcpResults.length > 0) {
@@ -158,7 +161,6 @@ async function executeMcpInstallations(
     summarizeMcpResults(mcpResults);
   }
 
-  // 全局不支持的错误消息放在最后统一输出
   for (const errMsg of globalErrors) {
     console.error(red(errMsg));
   }

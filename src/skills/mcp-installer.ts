@@ -91,7 +91,9 @@ function removeMcpServerConfig(
   if (!(serverName in mcpServers)) {
     return false;
   }
-  delete mcpServers[serverName];
+  // 使用 spread 语法移除属性，避免 delete 操作符
+  const { [serverName]: _, ...rest } = mcpServers;
+  config[mcpServersKey] = rest;
   return true;
 }
 
