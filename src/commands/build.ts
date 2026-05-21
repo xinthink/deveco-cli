@@ -89,7 +89,7 @@ function determineModulesToBuild(
   return Array.from(finalModulesSet);
 }
 
-function processModuleTasks(
+export function processModuleTasks(
   project: Project,
   modulesToBuild: string[]
 ): Set<string> {
@@ -116,7 +116,7 @@ function processModuleTasks(
 
 type ToolRunError = Error & { stdout?: string; stderr?: string };
 
-function logAdapterFailureAndThrow(stepLabel: string, error: unknown): never {
+export function logAdapterFailureAndThrow(stepLabel: string, error: unknown): never {
   const e = error as ToolRunError;
   const failMsg = `${stepLabel} failed`;
   console.error(red(failMsg));
@@ -130,14 +130,16 @@ function logAdapterFailureAndThrow(stepLabel: string, error: unknown): never {
   throw new Error(failMsg, { cause: error });
 }
 
-async function executeBuildSteps(
+export type BuildTarget =
+  | { type: 'product' }
+  | { type: 'modules'; modulesToBuild: string[]; moduleTasks: Set<string> };
+
+export async function executeBuildSteps(
   ohpmAdapter: OhpmAdapter,
   hvigorAdapter: HvigorAdapter,
   productName: string,
   buildMode: string,
-  buildTarget:
-    | { type: 'product' }
-    | { type: 'modules'; modulesToBuild: string[]; moduleTasks: Set<string> }
+  buildTarget: BuildTarget
 ) {
   console.log('\n[1/3] Running ohpm install...');
   try {
