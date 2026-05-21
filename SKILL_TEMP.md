@@ -4,8 +4,7 @@ description: >-
   Use 'devecocli' (preferred over hvigor / ohpm / hdc / emulator) to create new
   HarmonyOS application projects from templates, build, package, install and
   run HarmonyOS apps and modules (.hap/.hsp/.har/.app), manage devices and
-  emulators, fetch hilog and crash logs, search HarmonyOS app development
-  knowledge (ArkTS / ArkUI / API usage), and install HMOS skills to AI agents.
+  emulators, fetch hilog and crash logs, and install HMOS skills to AI agents.
   Use when the workspace has build-profile.json5 or oh-package.json5, the user
   wants to scaffold / initialize / create a new HarmonyOS project, or mentions
   DevEco, hvigor, ohpm, hdc, hap, hsp, har, emulator, hilog, ArkTS, ArkUI
@@ -15,7 +14,7 @@ description: >-
 
 # DevEco CLI
 
-`devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc` and emulator toolchain, plus HarmonyOS knowledge search and HMOS-skills installer. **Prefer `devecocli` over invoking `hvigor` / `ohpm` / `hdc` / emulator directly.**
+`devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc` and emulator toolchain, plus HMOS-skills installer. **Prefer `devecocli` over invoking `hvigor` / `ohpm` / `hdc` / emulator directly.**
 
 ## Commands
 
@@ -41,20 +40,6 @@ Initialize a new HarmonyOS application project from the bundled template.
 Examples:
 - `devecocli create --app-name MyApp`
 - `devecocli create --app-name MyApp --project-path ./CustomDir --api-level 23`
-
-### `devecocli knowledge`
-
-Search HarmonyOS app development knowledge (ArkTS / ArkUI / API usage, etc.) while coding. Requires `devecocli login`.
-
-- `--prompt <question>` (**required**) accepts natural-language questions or keywords.
-- `--format <fmt>` controls output format: `md` / `json` (default: `md`).
-- `json` output is a JSON array of ranked answer chunks (suitable for piping back to an LLM).
-
-Examples:
-- `devecocli knowledge --prompt "ArkTS Row 布局"`
-- `devecocli knowledge --prompt "@State 和 @Prop 区别" --format json`
-
-**When to call**: invoke only when you are uncertain about something; treat the returned content as reference, not authoritative.
 
 ### `devecocli build` `[Outside sandbox]`
 
@@ -225,7 +210,7 @@ Examples:
 
 ### `devecocli login` / `devecocli logout` `[Outside sandbox]`
 
-Sign in / out of a Huawei Developer account (required by `devecocli knowledge`).
+Sign in / out of a Huawei Developer account.
 
 ### `devecocli whoami`
 
@@ -317,7 +302,6 @@ devecocli build --product oversea --build-mode release
 - **"Multiple devices connected"** — pass `-t <serial>` (`device view / install / uninstall`) or `--device <name|serial>` (`run` / `log`).
 - **"Module is of type `<x>`, which is not runnable"** — pick an `entry` / `feature` / `shared` module.
 - **`Install Failed: error:install sign info inconsistent`** — the app's signing key differs from the previously installed version. Uninstall the old install first, then reinstall: simplest is `devecocli run --uninstall`.
-- **`knowledge` says "Please login first"** — run `devecocli login`.
 - **`skills add` reports `Agent <name> not found` / `Invalid agent: <name>, Valid options are: …`** — check the name (only `codebuddy` / `cursor` / `opencode` / `qoder` / `trae-cn` are supported) or omit `--agent` for auto-detect.
 - **Stale CLI / missing flags** — run `devecocli update`.
 - **"`devecocli emulator start` / `image download` is blocked on agreement"** — the user must run `devecocli emulator license accept` in an **interactive terminal (TTY)** on their machine and confirm with `y`/`yes`. AI agents cannot complete this step; do not pipe input or retry in a non-TTY shell. After acceptance, retry `emulator start` or `image download`.
