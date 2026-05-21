@@ -115,7 +115,7 @@ async function installGlobalMcp(
   const errors: string[] = [];
   for (const agentName of agentNames) {
     const agentConfig = AGENT_MCP_CONFIG[agentName];
-    if (!agentConfig) { continue; }
+    if (!agentConfig) { continue; };
     if (!agentConfig.supportsGlobal) {
       errors.push(
         `${agentConfig.displayName} does not support global MCP configuration. ` +
