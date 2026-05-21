@@ -46,7 +46,8 @@ src/
 ├── skills/                   # HMOS skills marketplace client (api + installer + agents)
 │   ├── api.ts                       # HMOS skills HTTP client + installed-agent discovery
 │   ├── installer.ts                 # Download / extract / remove skill packages
-│   └── agents.ts                    # parseAgentList / getAllExistingAgents / summarizeOperationResults
+│   ├── agents.ts                    # parseAgentList / getAllExistingAgents / summarizeOperationResults
+│   └── mcp-installer.ts             # installMcpConfigToAgentGlobal / installMcpConfigToAgentProject / readJsonConfig / isMcpServerConfigured
 ├── service/                  # Domain helpers
 │   ├── device-manager.ts            # Connected-device discovery + name / device-type lookup
 │   ├── emulator-types.ts            # `EmulatorInfo` + `normalizeListNameKey`
@@ -68,8 +69,9 @@ src/
 │   ├── text-table.ts               # Fixed-width table renderer used by `list` commands
 │   ├── http-client.ts  jwt.ts  browser.ts  cmd.ts  config.ts  region.ts
 │   └── logger.ts                   # debugLog (gated by DEVECO_CLI_DEBUG)
-├── config/                   # constants (AGENT_SKILLS_CONFIG), auth, network, skills
-└── types/                    # Shared type defs
+├── config/                   # constants (AGENT_SKILLS_CONFIG, AGENT_MCP_CONFIG), auth, network, skills
+│   └── mcp.ts                       # AgentMcpConfig / AGENT_MCP_CONFIG / buildMcpConfigForAgent / buildOpenCodeMcpConfig / buildMcpServerConfig
+└── types/                    # Shared type defs (SkillOperationResult, InitOptions with mcp/skill flags, McpConfigResult)
 
 templates/application/        # Project scaffold copied by `devecocli create`
 scripts/update-skill-docs.ts  # Inlines `devecocli --help` into SKILL.md
@@ -90,7 +92,7 @@ SKILL_TEMP.md                 # Edit this; SKILL.md is regenerated from it on bu
 - **`commands/log.ts`** — Thin shell over `HilogAdapter`: `--crash` switches to crash dump; otherwise common hilog with `--level` / `--bundle-name` / `--keyword` filters. `--from <s|m>` / `--to <s|m>` carve a relative time window (default unit is seconds), `--tail <n>` keeps the latest N lines of the filtered output, and `--follow` streams in real time (incompatible with `--to`).
 - **`commands/whoami.ts`** — Login status helper. Prints the current Huawei Developer username from the persisted token session, or exits non-zero when not logged in.
 - **`commands/skills.ts`** + **`skills/`** — `list` / `find` / `add` / `remove`. `remove` uses `--skill <name>` (option form, not positional). Downloads skill `.zip`s and extracts them into per-agent paths defined in `config/constants.ts → AGENT_SKILLS_CONFIG` (e.g. `~/.claude/skills/`, `~/.cursor/skills-cursor/`) and / or `<project>/.deveco/skills/`. With neither `--agent` nor `--project`, operates on every detected agent. The shared agent helpers (`parseAgentList` / `getAllExistingAgents` / `summarizeOperationResults`) live in `skills/agents.ts` so `init` can reuse them.
-- **`commands/init.ts`** — Top-level `devecocli init`. Installs the bundled `deveco-cli` skill (the file ships as `SKILL.md` at the package root; `resolveBundledSkillMdPath` in `skills/installer.ts` walks up from `import.meta.url` to find it) into per-agent / project paths under `<agent_skills_dir>/deveco-cli/`, reusing `installLocalSkillToAgent` / `installLocalSkillToProject`. Same `--agent` (comma-separated) / `--project` / `-f` semantics as `skills add`.
+- **`commands/init.ts`** — `devecocli init`. Two mutually exclusive modes: **`--skill`** (default) installs the bundled `deveco-cli` skill into per-agent / project paths, reusing `installLocalSkillToAgent` / `installLocalSkillToProjectAgent` / `installLocalSkillToPath`. **`--mcp`** configures the `codegenie` MCP server (syntax checking) into agent config files via `installMcpConfigToAgentGlobal` / `installMcpConfigToAgentProject`. `--skill` and `--mcp` are mutually exclusive. `--force` is the overwrite / skip-validation switch (does not change global / project-level mode). Global MCP only supported for opencode and cursor; trae-cn / codebuddy / qoder require `--project` for project-level MCP. Same `--agent` (comma-separated) / `--project` / `-f` semantics as `skills add`.
 - **`commands/login.ts` / `logout.ts`** — Wrap `auth/login-service.ts`, which opens the OAuth URL in the browser, runs a localhost callback server (`local-auth-server.ts`), exchanges the code via `user-info-fetcher.ts`, validates / refreshes JWTs through `token-checker.ts`, and persists tokens (`token-storage.ts`).
 - **`commands/update.ts`** — `npm install -g <package>@latest` (package name from `process.env.npm_package_name`, falling back to `deveco-cli`).
 - **`utils/project.ts`** — `Project.discover(startDir)` walks up to find the project-level `build-profile.json5` (one containing `app`). Provides `getModuleType` (`entry`/`feature`/`shared`/`har`), `resolveHspDependencies`, `findArtifactPath(module, target, isEmulator, product)`, `getBundleName`, `getMainAbility`.
@@ -134,6 +136,8 @@ SKILL_TEMP.md                 # Edit this; SKILL.md is regenerated from it on bu
 - **`--device <name|serial>` accepts name OR serial** (substring match for name, exact match for serial like `127.0.0.1:5555`). For `device view` / `device install` / `device uninstall`, the equivalent is `-t, --target <serial>` (serial only). Docs should describe `--device` as "name or serial".
 - **Login-gated commands** must call `loginService.isLoggedIn()` first and print a clear `Please login first` on false.
 - **Multi-device hosts** must list available serials and exit non-zero rather than silently picking one when no device flag is given.
+- **`devecocli init` mode flags**: `--skill` (skill only) and `--mcp` (MCP config only) are mutually exclusive. Default (no flag) = `--skill`. `--force` is the overwrite / skip-validation switch only; it does not change global / project-level mode.
+- **MCP global / project-level**: `--mcp` without `--project` only configures global MCP for opencode and cursor (trae-cn / codebuddy / qoder do not support global MCP and emit an error). `--mcp --project <path>` configures project-level MCP for all 5 agents. `PROJECT_PATH` in project-level config is the absolute path of the project; in global config it is `.` (OpenCode) or `${workspaceFolder}` (other agents).
 - **When adding a new flag / command**, update the matching prose section in `SKILL_TEMP.md` and `README.md`'s command overview. If you want raw `--help` text inlined into `SKILL.md`, add an `EXEC_START` block too.
 
 ## Development Notes

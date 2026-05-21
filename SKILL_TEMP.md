@@ -218,12 +218,33 @@ Show the currently logged-in Huawei Developer user.
 
 ### `devecocli init`
 
-Install the bundled `deveco-cli` skill into AI agents (and optionally a project). Same `--agent` (comma-separated) / `--project <path>` / `-f, --force` semantics as `skills add`; with neither flag, installs to all detected agents.
+Install the bundled `deveco-cli` skill into AI agents, or configure the `codegenie` MCP server for syntax checking. Two mutually exclusive modes:
+
+- **Default / `--skill`** — install the skill only. Same `--agent` / `--project` / `-f, --force` semantics as `skills add`; installs to all detected agents when no flag is given.
+- **`--mcp`** — configure the `codegenie` MCP server only (see [`devecocli start mcp`](#devecocli-start-mcp) for tool details). No skill installation.
+
+`--skill` and `--mcp` cannot be used together. `--force` is the overwrite / skip-validation switch; it does not change global / project-level mode.
+
+**MCP rules:**
+
+- `--mcp` (no `--project`) — global config for **opencode** and **cursor** only; Trae-CN / Codebuddy / Qoder emit an error prompting `--project`.
+- `--mcp --project <path>` — project-level config for **all** agents. `PROJECT_PATH` is written as the **absolute path** of the project.
+- `--mcp --force` — same mode as `--mcp`, overwrites existing config.
+
+| Agent | Global Config | Project Config |
+|---|---|---|
+| OpenCode | `~/.config/opencode/opencode.json` | `<project>/.opencode/opencode.json` |
+| Trae-CN | — | `<project>/.trae-cn/trae.json` |
+| Cursor | `~/.cursor/mcp.json` | `<project>/.cursor/mcp.json` |
+| Codebuddy | — | `<project>/.codebuddy/mcp.json` |
+| Qoder | — | `<project>/.qoder/mcp.json` |
 
 Examples:
-- `devecocli init`
-- `devecocli init --agent cursor,opencode --force`
-- `devecocli init --project ./my-app`
+- `devecocli init`                              # skill to all detected agents
+- `devecocli init --skill --project ./my-app`    # project-level skill only
+- `devecocli init --mcp`                        # global MCP for opencode + cursor
+- `devecocli init --mcp --project ./my-app`      # project-level MCP for all agents
+- `devecocli init --mcp --project ./my-app --force`  # project-level MCP, overwrite
 
 ### `devecocli skills`
 
@@ -251,13 +272,18 @@ Update the CLI to the latest version.
 
 ### `devecocli start mcp`
 
-Start the bundled MCP (Model Context Protocol) server as a **local stdio** server, to be spawned by an MCP-compatible client (Trae / Claude / OpenCode / …).
+Start the `codegenie` MCP server over stdio (auto-spawned by AI agents after `devecocli init --mcp`). Provides two syntax-checking tools:
 
-Environment variables:
+- **`arkts_check`** — check ArkTS `.ets` files. Input: file path or directory. Output: diagnostics (file, line, column, message, severity).
+- **`cpp_check`** — check C/C++ files. Input: file path or directory. Output: diagnostics with the same structure.
 
-- `PROJECT_PATH` — Harmony project root the LSP should index.
+**Usage:** After `devecocli init --mcp --project <path>`, open the project in your AI agent and ask it to check code (e.g. *"Check for syntax errors in `src/main/ets/pages/Index.ets`"*).
+
+Environment variables (set by the MCP config):
+
+- `PROJECT_PATH` — project root; absolute path (project-level) or `.` / `${workspaceFolder}` (global).
 - `DEVECO_PATH` — overrides DevEco Studio auto-detection.
-- `NODE_MAX_OLD_SPACE_SIZE` — Node heap size in MB (default `8192`).
+- `NODE_MAX_OLD_SPACE_SIZE` — Node heap in MB (default `8192`).
 - `DEBUG=1` — mirror server logs to stderr.
 
 ## Recipes
