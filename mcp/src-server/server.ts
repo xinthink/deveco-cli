@@ -41,7 +41,17 @@ export class CodegenieMcpServer {
     // 初始化 Logger（根据 debug 配置决定输出方式）
     initMcpLogger(config.debug ?? false);
     
-    this.config.projectPath = findHarmonyProject(config.projectPath ?? '') ?? undefined;
+    // 处理 projectPath：
+    // - '.' 或空值：使用 process.cwd() 作为起点
+    // - 其他值：使用配置的路径
+    let startPath: string;
+    const configuredPath = config.projectPath?.trim() ?? '';
+    if (configuredPath === '' || configuredPath === '.') {
+      startPath = process.cwd();
+    } else {
+      startPath = configuredPath;
+    }
+    this.config.projectPath = findHarmonyProject(startPath) ?? undefined;
     
     // Create MCP server instance
     this.server = new McpServer({
