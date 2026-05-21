@@ -18,7 +18,7 @@ import loginCommand from './commands/login.js';
 import logoutCommand from './commands/logout.js';
 import whoamiCommand from './commands/whoami.js';
 import skillsCommand from './commands/skills.js';
-import knowledgeCommand from './commands/knowledge.js';
+
 import logCommand from './commands/log.js';
 import createCommand from './commands/create.js';
 import initCommand from './commands/init.js';
@@ -39,7 +39,7 @@ program.addCommand(emulatorCommand);
 program.addCommand(loginCommand);
 program.addCommand(logoutCommand);
 program.addCommand(whoamiCommand);
-program.addCommand(knowledgeCommand);
+
 program.addCommand(skillsCommand);
 program.addCommand(logCommand);
 program.addCommand(createCommand);

@@ -61,7 +61,7 @@
     "ora": "^9.4.0",
     "proper-lockfile": "^4.1.2",
     "regedit": "^5.1.4",
-    "string-similarity-js": "^2.1.4",
+    
     "zod": "^4.4.3"
   },
   "overrides": {
