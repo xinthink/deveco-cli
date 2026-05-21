@@ -3,13 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-// 认证相关常量
-export {
-  AppConfig,
-  DEFAULT_LOGIN_CONFIG,
-  ApiEndpoints,
-  CryptoConstants,
-} from './auth';
+// 应用配置常量
+export { AppConfig, CryptoConstants } from './auth';
 
 // 网络相关常量
 export { TimeConstants, NetworkConstants } from './network';
