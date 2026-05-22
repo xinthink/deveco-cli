@@ -88,11 +88,11 @@ Examples:
 
 Manage local emulator instances created in DevEco Studio.
 
-- `list` shows every emulator instance with its status (running / stopped), serial (when running) and device type (phone / foldable / wideFold / …); running rows come first.
+- `list` shows every emulator instance with its status (running / stopped), serial (when running) and device type (phone / foldable / widefold / …); running rows come first.
 - `start [names...]` **`[Outside sandbox]`** — starts one or more instances in parallel; quote names with spaces, the command exits non-zero (the others may still have started — recheck with `list`).
 - `stop <names...>` **`[Outside sandbox]`** — stops one or more instances in parallel; each argument may be the emulator name (quote names with spaces) or its `127.0.0.1:<port>` serial.
 - `image list` lists system images; defaults to downloaded only. Options:
-  - `--device-type <type>` — one of `phone`, `foldable`, `wideFold`, `tripleFold`, `tablet`, `2in1`, `2in1 foldable`, `wearable`, `tv` (case-sensitive; lowercase except `wideFold` / `tripleFold`).
+  - `--device-type <type>` — one of `phone`, `foldable`, `widefold`, `triplefold`, `tablet`, `2in1`, `2in1 foldable`, `wearable`, `tv` (all lowercase).
   - `--all` includes not-downloaded images.
   - `--format <table|json>` (default `table`).
 - `image download` / `image remove` **`[Outside sandbox]`** — both **require** `--device-type` (same choices) and `--os-version` (e.g. `"HarmonyOS 6.0.1(21)"`); `download` also accepts `--force`.
@@ -117,7 +117,7 @@ Examples:
 
 ### `devecocli doc`
 
-Search and read HarmonyOS documentation from a local docs directory (offline, no login required).
+Search and read HarmonyOS documentation from a local docs directory.
 
 - `search <keywords...>` — search by keywords (OR logic for multiple keywords — matches any keyword). Options: `--catalog <name>` (filter by catalog: `harmonyos-guides`, `harmonyos-references`, `best-practices`, `harmonyos-faqs`, `harmonyos-releases`, `harmonyos-roadmap`, or `all`), `--format <default|json>` (default: `default`), `--limit <n>` (default: 20).
 - `read <documentId>` — read full document content by ID (from search results).
@@ -225,8 +225,8 @@ Install / remove HMOS skills (agent-side knowledge packs) into AI agents (`codeb
 Subcommands:
 - `list [-l|--long]` — list available skills.
 - `find <keyword>` — search by keyword.
-- `add (--all | --skill <name>) [--agent <a,b,…>] [--project <path>] [-f|--force]` — install. Must pick `--all` **or** `--skill` (not both). With neither `--agent` nor `--project`, installs to all detected agents.
-- `remove --skill <name> [--agent <a,b,…>] [--project <path>]` — uninstall.
+- `add (--all | --skill <name>) [--agent <a,b,…>] [--project <path>] [--path <path>] [-f|--force]` — install. Must pick `--all` **or** `--skill` (not both). With neither `--agent` nor `--project`, installs to all detected agents.
+- `remove --skill <name> [--agent <a,b,…>] [--project <path>] [--path <path>]` — uninstall.
 
 Examples:
 - `devecocli skills list --long`
