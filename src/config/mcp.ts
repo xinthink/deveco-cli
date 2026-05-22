@@ -163,7 +163,7 @@ export function buildOpenCodeMcpConfig(
 
   return {
     type: 'local',
-    command: ['devecocli', 'start', 'mcp'],
+    command: ['devecocli', 'serve', 'mcp'],
     environment,
     enabled: true,
   };
@@ -191,7 +191,7 @@ export function buildMcpServerConfig(
   return {
     type: 'stdio',
     command: 'devecocli',
-    args: ['start', 'mcp'],
+    args: ['serve', 'mcp'],
     env,
   };
 }
