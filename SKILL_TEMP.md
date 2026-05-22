@@ -234,7 +234,7 @@ Install the bundled `deveco-cli` skill into AI agents, or configure the `codegen
 | Agent | Global Config | Project Config |
 |---|---|---|
 | OpenCode | `~/.config/opencode/opencode.json` | `<project>/.opencode/opencode.json` |
-| Trae-CN | — | `<project>/.trae-cn/trae.json` |
+| Trae-CN | — | `<project>/.trae/mcp.json` |
 | Cursor | `~/.cursor/mcp.json` | `<project>/.cursor/mcp.json` |
 | Codebuddy | — | `<project>/.codebuddy/mcp.json` |
 | Qoder | — | `<project>/.qoder/mcp.json` |

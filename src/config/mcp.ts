@@ -93,7 +93,7 @@ export const AGENT_MCP_CONFIG: Record<string, AgentMcpConfig> = {
     displayName: 'Trae-CN',
     supportsGlobal: false,
     globalConfigPath: '',
-    projectConfigPath: '.trae-cn/trae.json',
+    projectConfigPath: '.trae/mcp.json',
     mcpServersKey: 'mcpServers',
     format: 'standard',
   },
