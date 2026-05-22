@@ -471,15 +471,15 @@ const emulatorCommand = new Command('emulator').description(
 );
 
 const EMULATOR_IMAGE_DEVICE_TYPES = [
-  'Phone',
-  'Foldable',
-  'WideFold',
-  'TripleFold',
-  'Tablet',
+  'phone',
+  'foldable',
+  'widefold',
+  'triplefold',
+  'tablet',
   '2in1',
-  '2in1 Foldable',
-  'Wearable',
-  'TV',
+  '2in1 foldable',
+  'wearable',
+  'tv',
 ] as const;
 
 function deviceTypeOption(required: boolean): Option {
@@ -689,7 +689,10 @@ imageCommand
   .command('remove')
   .description('Remove a downloaded system image')
   .addOption(deviceTypeOption(true))
-  .requiredOption('--os-version <version>', 'Same format as for download')
+  .requiredOption(
+    '--os-version <version>',
+    'Supports both image label (HarmonyOS x.y.z(n)) and softwareVersion'
+  )
   .action(async (opts: { deviceType: string; osVersion: string }) => {
     const { manager } = await initEmulatorManager();
     try {
@@ -852,8 +855,8 @@ createEmulatorCmd.configureOutput({
     if (/too many arguments/i.test(str)) {
       write(
         `\n${yellow('Tip: ')}${gray('Unquoted --os-version values with spaces/parentheses are split into multiple arguments. Use:')}\n` +
-          `  ${cyan('devecocli emulator create 123 --device-type Phone --os-version "HarmonyOS 6.0.1(21)"')}\n` +
-          `  ${cyan('devecocli emulator create 123 --device-type Phone --os-version="HarmonyOS 6.0.1(21)"')}\n`
+          `  ${cyan('devecocli emulator create 123 --device-type phone --os-version "HarmonyOS 6.0.1(21)"')}\n` +
+          `  ${cyan('devecocli emulator create 123 --device-type phone --os-version="HarmonyOS 6.0.1(21)"')}\n`
       );
     }
   },

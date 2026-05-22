@@ -92,7 +92,7 @@ Manage local emulator instances created in DevEco Studio.
 - `start [names...]` **`[Outside sandbox]`** — starts one or more instances in parallel; quote names with spaces, the command exits non-zero (the others may still have started — recheck with `list`).
 - `stop <names...>` **`[Outside sandbox]`** — stops one or more instances in parallel; each argument may be the emulator name (quote names with spaces) or its `127.0.0.1:<port>` serial.
 - `image list` lists system images; defaults to downloaded only. Options:
-  - `--device-type <type>` — one of `Phone`, `Foldable`, `WideFold`, `TripleFold`, `Tablet`, `2in1`, `2in1 Foldable`, `Wearable`, `TV`.
+  - `--device-type <type>` — one of `phone`, `foldable`, `wideFold`, `tripleFold`, `tablet`, `2in1`, `2in1 foldable`, `wearable`, `tv` (case-sensitive; lowercase except `wideFold` / `tripleFold`).
   - `--all` includes not-downloaded images.
   - `--format <table|json>` (default `table`).
 - `image download` / `image remove` **`[Outside sandbox]`** — both **require** `--device-type` (same choices) and `--os-version` (e.g. `"HarmonyOS 6.0.1(21)"`); `download` also accepts `--force`.
@@ -110,8 +110,9 @@ Examples:
 - `devecocli emulator stop "Mate 70 Pro" Mate 70`
 - `devecocli emulator stop 127.0.0.1:5555`
 - `devecocli emulator image list --all`
-- `devecocli emulator image download --device-type Phone --os-version "HarmonyOS 6.0.1(21)"`
-- `devecocli emulator create "My Phone" --device-type Phone --os-version "HarmonyOS 6.0.1(21)"`
+- `devecocli emulator image download --device-type phone --os-version "HarmonyOS 6.1.0(23)"` 
+- `devecocli emulator image remove --device-type phone --os-version "HarmonyOS 6.1.0(23)"` 
+- `devecocli emulator create "My Phone" --device-type phone --os-version "HarmonyOS 6.0.1(21)"`
 - `devecocli emulator delete "My Phone"`
 
 ### `devecocli doc`
@@ -269,6 +270,8 @@ devecocli emulator start HarmonyOS_Phone         # or: start "Mate 70 Pro" Other
 devecocli run
 ```
 
+If `image download` / `start` is blocked on agreement, run `devecocli emulator license accept` first (confirm with `y`/`yes`).
+
 ### Diagnose a runtime crash
 
 ```bash
@@ -302,3 +305,5 @@ devecocli build --product oversea --build-mode release
 - **Stale CLI / missing flags** — run `devecocli update`.
 - **"`devecocli emulator start` / `image download` is blocked on agreement"** — the user must run `devecocli emulator license accept` in an **interactive terminal (TTY)** on their machine and confirm with `y`/`yes`. AI agents cannot complete this step; do not pipe input or retry in a non-TTY shell. After acceptance, retry `emulator start` or `image download`.
 - **`emulator create` timeout — *did not appear in the emulator list within the timeout*** — treat as a **user-action** step (same class as `license accept`): ask the user to open DevEco Studio → **Device Manager**, wait for the list to load, then retry `create` only if the emulator is still missing. Do **not** auto-retry `create`, edit SDK `lists.json` / `*.ini`, or claim success until `devecocli emulator list` shows the name after the user has opened Device Manager.
+- **`image list` shows `phone` / `foldable` / `widefold` / `triplefold` as separate rows** — they share one image per `--os-version`. Download or remove **once** (e.g. `--device-type phone`); do not issue four separate `image download` / `image remove` commands for the same API level
+

@@ -10,7 +10,22 @@ import { spawnEmulatorDetached } from '../utils/emulator-spawn.js';
 import { runAllEmulatorStartStrategies } from './emulator-start-strategies.js';
 import { isEmulatorRunningByHdcName } from '../utils/emulator-hdc-targets.js';
 import { parseEmulatorListOutput } from './emulator-list-parse.js';
-import { parseDownloadedOsVersionsFromImageList } from '../utils/emulator-image-list-parse.js';
+import {
+  parseDownloadedImageEntriesFromImageList,
+  parseDownloadedOsVersionsFromImageList,
+  type DownloadedImageEntry,
+} from '../utils/emulator-image-list-parse.js';
+
+const EMULATOR_UNINSTALL_NO_IMAGE_RE = /no images are available/i;
+
+function normalizeToken(value: string): string {
+  return value.normalize('NFKC').trim().toLowerCase();
+}
+
+function isNoImagesAvailableError(error: unknown): boolean {
+  const message = (error as Error).message || '';
+  return EMULATOR_UNINSTALL_NO_IMAGE_RE.test(message);
+}
 
 export class EmulatorManager {
   private emulatorPath: string;
@@ -177,15 +192,33 @@ export class EmulatorManager {
     deviceType: string;
     osVersion: string;
   }): Promise<void> {
-    const args = [
-      '-uninstall',
-      '-deviceType',
-      opts.deviceType,
-      '-osVersion',
-      opts.osVersion,
-      '-force',
-    ];
-    await this.executeEmulatorInherit(args);
+    const softwareVersions = await this.resolveSoftwareVersionsForUninstall(opts);
+    if (softwareVersions.length === 0) {
+      throw new Error(
+        `No downloaded image matches --os-version "${opts.osVersion}" for --device-type "${opts.deviceType}".`
+      );
+    }
+
+    let primaryError: unknown;
+    try {
+      await this.runUninstallImageChecked(opts.deviceType, opts.osVersion);
+    } catch (error) {
+      if (!isNoImagesAvailableError(error)) {
+        throw error;
+      }
+      primaryError = error;
+    }
+
+    const needsFallback =
+      primaryError !== undefined ||
+      (await this.hasMatchingDownloadedImage(opts));
+    if (needsFallback) {
+      await this.runSoftwareVersionFallback(
+        opts,
+        softwareVersions,
+        primaryError
+      );
+    }
   }
 
   public async listEmulatorImages(opts: {
@@ -206,6 +239,82 @@ export class EmulatorManager {
   public async listDownloadedImageOsVersions(): Promise<string[]> {
     const stdout = await this.listEmulatorImages({ downloaded: true });
     return parseDownloadedOsVersionsFromImageList(stdout);
+  }
+
+  private async hasMatchingDownloadedImage(opts: {
+    deviceType: string;
+    osVersion: string;
+  }): Promise<boolean> {
+    const matches = await this.findMatchingDownloadedImages(opts);
+    return matches.length > 0;
+  }
+
+  private async runSoftwareVersionFallback(
+    opts: { deviceType: string; osVersion: string },
+    softwareVersions: string[],
+    primaryError?: unknown
+  ): Promise<void> {
+    try {
+      for (const softwareVersion of softwareVersions) {
+        await this.runUninstallImageChecked(opts.deviceType, softwareVersion);
+      }
+    } catch (fallbackError) {
+      const prefix =
+        primaryError !== undefined
+          ? `Primary uninstall failed: ${(primaryError as Error).message}\n`
+          : '';
+      throw new Error(
+        `${prefix}Fallback uninstall failed: ${(fallbackError as Error).message}`,
+        { cause: fallbackError }
+      );
+    }
+    if (await this.hasMatchingDownloadedImage(opts)) {
+      throw new Error(
+        `Image for --device-type "${opts.deviceType}" and --os-version "${opts.osVersion}" is still listed as downloaded after uninstall.`
+      );
+    }
+  }
+
+  private async resolveSoftwareVersionsForUninstall(opts: {
+    deviceType: string;
+    osVersion: string;
+  }): Promise<string[]> {
+    const matches = await this.findMatchingDownloadedImages(opts);
+    return [
+      ...new Set(matches.map((entry) => entry.softwareVersion).filter(Boolean)),
+    ];
+  }
+
+  private async findMatchingDownloadedImages(opts: {
+    deviceType: string;
+    osVersion: string;
+  }): Promise<DownloadedImageEntry[]> {
+    const stdout = await this.listEmulatorImages({
+      deviceType: opts.deviceType,
+      downloaded: true,
+    });
+    const entries = parseDownloadedImageEntriesFromImageList(stdout);
+    const deviceToken = normalizeToken(opts.deviceType);
+    const inputToken = normalizeToken(opts.osVersion);
+    return entries.filter(
+      (entry) =>
+        normalizeToken(entry.deviceType) === deviceToken &&
+        (normalizeToken(entry.osVersion) === inputToken ||
+          normalizeToken(entry.softwareVersion) === inputToken)
+    );
+  }
+
+  private async runUninstallImageChecked(
+    deviceType: string,
+    osVersion: string
+  ): Promise<void> {
+    await this.runEmulatorChecked(
+      ['-uninstall', '-deviceType', deviceType, '-osVersion', osVersion, '-force'],
+      {
+        printOutputOnSuccess: true,
+        extraReject: [EMULATOR_UNINSTALL_NO_IMAGE_RE],
+      }
+    );
   }
 
   private async runEmulatorChecked(
