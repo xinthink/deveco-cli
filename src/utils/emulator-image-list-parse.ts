@@ -13,14 +13,47 @@ function pickString(obj: Record<string, unknown>, keys: string[]): string {
   return '';
 }
 
+export interface DownloadedImageEntry {
+  osVersion: string;
+  softwareVersion: string;
+  deviceType: string;
+}
+
 function isDownloadedTrue(obj: Record<string, unknown>): boolean {
   const d = obj.downloaded ?? obj.Downloaded;
   return d === true || String(d).toLowerCase() === 'true';
 }
 
-export function parseDownloadedOsVersionsFromImageList(
+function parseDownloadedEntry(
+  row: Record<string, unknown>
+): DownloadedImageEntry | null {
+  if (!isDownloadedTrue(row)) {
+    return null;
+  }
+  const osVersion = pickString(row, [
+    'osVersion',
+    'OsVersion',
+    'OSVersion',
+  ]);
+  const softwareVersion = pickString(row, [
+    'SoftWareVersion',
+    'SoftwareVersion',
+    'softwareVersion',
+  ]);
+  const deviceType = pickString(row, ['deviceType', 'DeviceType']);
+  if (!osVersion && !softwareVersion) {
+    return null;
+  }
+  return {
+    osVersion,
+    softwareVersion,
+    deviceType,
+  };
+}
+
+export function parseDownloadedImageEntriesFromImageList(
   stdout: string
-): string[] {
+): DownloadedImageEntry[] {
   const text = stdout.trim();
   if (!text) {
     return [];
@@ -30,29 +63,26 @@ export function parseDownloadedOsVersionsFromImageList(
     if (!Array.isArray(data)) {
       return [];
     }
-    const out: string[] = [];
+    const out: DownloadedImageEntry[] = [];
     for (const item of data) {
       if (!item || typeof item !== 'object') {
         continue;
       }
-      const row = item as Record<string, unknown>;
-      if (!isDownloadedTrue(row)) {
-        continue;
-      }
-      const ver = pickString(row, [
-        'osVersion',
-        'OsVersion',
-        'OSVersion',
-        'os_version',
-        'systemVersion',
-        'SystemVersion',
-      ]);
-      if (ver) {
-        out.push(ver);
+      const parsed = parseDownloadedEntry(item as Record<string, unknown>);
+      if (parsed) {
+        out.push(parsed);
       }
     }
-    return [...new Set(out)];
+    return out;
   } catch {
     return [];
   }
+}
+
+export function parseDownloadedOsVersionsFromImageList(
+  stdout: string
+): string[] {
+  const entries = parseDownloadedImageEntriesFromImageList(stdout);
+  const out = entries.map((entry) => entry.osVersion).filter(Boolean);
+  return [...new Set(out)];
 }
