@@ -587,20 +587,20 @@ export function diagnosticUriCandidates(uri: string): string[] {
 
 /**
  * 获取 MCP server 日志根目录。
- *  - Windows: `%LOCALAPPDATA%/codegenie-mcp-server/logs`
- *  - macOS:   `~/Library/Logs/codegenie-mcp-server`
- *  - Linux:   `~/.local/share/codegenie-mcp-server/logs`
+ *  - Windows: `%LOCALAPPDATA%/devecocli-mcp-server/logs`
+ *  - macOS:   `~/Library/Logs/devecocli-mcp-server`
+ *  - Linux:   `~/.local/share/devecocli-mcp-server/logs`
  */
 export function getMcpLogDirectory(): string {
   if (process.platform === 'win32') {
     const localAppData =
       process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local');
-    return path.join(localAppData, 'codegenie-mcp-server', 'logs');
+    return path.join(localAppData, 'devecocli-mcp-server', 'logs');
   }
   if (process.platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Logs', 'codegenie-mcp-server');
+    return path.join(os.homedir(), 'Library', 'Logs', 'devecocli-mcp-server');
   }
-  return path.join(os.homedir(), '.local', 'share', 'codegenie-mcp-server', 'logs');
+  return path.join(os.homedir(), '.local', 'share', 'devecocli-mcp-server', 'logs');
 }
 
 /**

@@ -31,10 +31,10 @@ async function startStdioMcpServer(): Promise<void> {
     process.exit(0);
   };
 
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
   if (process.platform === 'win32') {
-    process.on('SIGBREAK', shutdown);
+    process.once('SIGBREAK', shutdown);
   }
 
   try {

@@ -94,7 +94,7 @@ class ClangdLspClient {
     const params: JsonValue = {
       processId: null,
       clientInfo: {
-        name: 'codegenie-mcp-server',
+        name: 'devecocli-mcp-server',
         version: process.env.npm_package_version ?? '0.0.1',
       },
       rootPath: normalizedRoot,

@@ -246,10 +246,14 @@ export class LspClient extends EventEmitter {
         if (!child) {
             return;
         }
+        this.process = null;
         const alive = child.exitCode === null && child.signalCode === null;
         if (alive) {
-            child.kill();
+            try {
+                child.kill();
+            } catch {
+                // 进程可能已自行退出，kill 抛 ESRCH/EPERM 时忽略
+            }
         }
-        this.process = null;
     }
 }
