@@ -11,7 +11,7 @@ export default defineConfig({
   entry: ['src/cli.ts'],
   format: ['esm'],
   platform: 'node',
-  target: 'node18',
+  target: 'node20',
   clean: true,
   dts: false,
   shims: true,

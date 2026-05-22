@@ -6,7 +6,7 @@
 
 ## Quick Start
 
-**Prerequisites:** Node.js >= 18, DevEco Studio installed (Windows or macOS).
+**Prerequisites:** Node.js >= 20, DevEco Studio installed (Windows or macOS).
 
 > Not published yet — until then, build from source (see [Development](#development)) and run `node ./dist/cli.js`. After release, self-update via `devecocli update`.
 
@@ -79,7 +79,7 @@ If the agent doesn't pick up the skill automatically, prompt it explicitly: *"Us
 | `devecocli device` | List / inspect connected devices and emulators |
 | `devecocli emulator` | Manage local emulators: list / start / stop / create / delete, system images (`image download|remove|list`), and license helpers (`license view` / `license accept`) |
 | `devecocli log` | Fetch hilog or crash logs (with level / bundle / keyword / from/to / tail / follow filters) |
-| `devecocli doc` | Search and read HarmonyOS documentation from a local docs directory (offline, no login) |
+| `devecocli doc` | Search and read HarmonyOS documentation from a local docs directory |
 | `devecocli init` | Install the bundled `deveco-cli` skill into AI agents; `--mcp` configures the `deveco-mcp` MCP server for ArkTS `.ets` and C/C++ syntax checking |
 | `devecocli skills` | List / find / add / remove HMOS skills for AI agents and projects |
 | `devecocli serve mcp` | Host the bundled MCP (Model Context Protocol) server over stdio so AI clients (Trae / Claude / …) can call its unified `check` tool for ArkTS `.ets` and C/C++ syntax checking |
