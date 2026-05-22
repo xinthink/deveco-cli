@@ -26,7 +26,7 @@ export interface McpServerConfig {
 /**
  * MCP Server
  */
-export class CodegenieMcpServer {
+export class DevecoCliMcpServer {
   private server: McpServer;
   private toolRouter: ToolRouter;
   private config: McpServerConfig = {};
@@ -55,7 +55,7 @@ export class CodegenieMcpServer {
     
     // Create MCP server instance
     this.server = new McpServer({
-      name: 'codegenie-mcp-server',
+      name: 'devecocli-mcp-server',
       version: '0.0.1',
     });
 
@@ -208,7 +208,12 @@ export class CodegenieMcpServer {
   }
 
   /**
-   * Start the MCP server with stdio transport
+   * Start the MCP server with stdio transport.
+   *
+   * project_path 优先级：
+   *  1. 环境变量 PROJECT_PATH（构造时已解析）
+   *  2. MCP 客户端 listRoots 返回的 workspace root
+   *  3. 无 project path → LSP 初始化跳过
    */
   async start(): Promise<void> {
     // Register tools to server
@@ -218,8 +223,7 @@ export class CodegenieMcpServer {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
 
-    mcpLog.info('codegenie-mcp-server started');
-    
+    mcpLog.info('devecocli-mcp-server started');
     // 非 debug 模式下，打印日志文件路径
     if (!this.config.debug) {
       const logPath = getMcpLogFilePath();
@@ -228,11 +232,128 @@ export class CodegenieMcpServer {
       }
     }
 
-    // Initialize ArktsCheckTool LSP (best-effort)
-    await this.initializeArktsCheck();
+    // 监听 stdin close/end 事件：当 MCP 客户端关闭连接时自动触发 shutdown。
+    this.setupStdinCloseHandler();
 
-    // CppCheckTool 采用懒加载：仅在 projectPath 已配置时构造，clangd 首次调用时才 spawn。
-    this.initializeCppCheck();
+    // 如果构造时没有 project path，尝试从 MCP 客户端的 workspace root 获取
+    if (!this.config.projectPath) {
+      const clientRoot = await this.getProjectRootFromClient();
+      if (clientRoot) {
+        const harmonyRoot = findHarmonyProject(clientRoot);
+        if (harmonyRoot) {
+          mcpLog.info(`Detected project path from client root: ${harmonyRoot}`);
+          this.setProjectPath(harmonyRoot);
+        } else {
+          mcpLog.warn(`Client root '${clientRoot}' is not a Harmony project`);
+        }
+      } else {
+        mcpLog.info('project path is empty (no PROJECT_PATH env and client did not provide roots)');
+      }
+    }
+
+    // 只有当 projectPath 有效时才初始化 LSP；无效路径下 LSP 工具不可用，check 调用将返回错误提示。
+    if (this.config.projectPath) {
+      await this.initializeArktsCheck();
+      this.initializeCppCheck();
+    } else {
+      mcpLog.warn('No valid Harmony project path found, LSP tools will be unavailable');
+    }
+  }
+
+  /**
+   * 从 MCP 客户端获取 workspace root。
+   *
+   * 参考 Rust 版 lib.rs 中 `get_project_root_from_client` 的实现：
+   * 调用 `listRoots()` 获取客户端提供的 workspace roots，取第一个 root 的 URI，
+   * 解析为本地文件路径。
+   */
+  private async getProjectRootFromClient(): Promise<string | null> {
+    try {
+      const result = await this.server.server.listRoots();
+      const firstRoot = result.roots?.[0];
+      if (!firstRoot) {
+        mcpLog.warn('Client did not provide any roots');
+        return null;
+      }
+
+      const uri = firstRoot.uri;
+      return this.resolveFileUri(uri);
+    } catch (err) {
+      mcpLog.warn('Failed to list roots from client:', err);
+      return null;
+    }
+  }
+
+  /**
+   * 将 URI 解析为本地文件路径。
+   *
+   * 处理以下格式：
+   *  - `file:///C:/Users/project` (Windows) → `C:/Users/project`
+   *  - `file:///Users/project` (macOS/Linux) → `/Users/project`
+   *  - 非 file:// URI → 原样返回
+   */
+  private resolveFileUri(uri: string): string | null {
+    // 尝试使用 URL API 解析
+    try {
+      const url = new URL(uri);
+      if (url.protocol === 'file:') {
+        // URL API 的 pathname 在 Windows 上是 `/C:/Users/project`，
+        // 需要去掉前导斜杠
+        const pathname = url.pathname;
+        if (process.platform === 'win32' && /^\/[A-Za-z]:/.test(pathname)) {
+          return pathname.substring(1);
+        }
+        return pathname;
+      }
+    } catch {
+      // URL 解析失败，走手动解析
+    }
+
+    // 手动解析 file:// URI
+    if (uri.startsWith('file://')) {
+      let filePath = uri.substring('file://'.length);
+
+      // URL 解码（处理 %20 等编码字符）
+      filePath = decodeURIComponent(filePath);
+
+      // Windows: file:///C:/Users/project → C:/Users/project
+      if (process.platform === 'win32' && filePath.startsWith('/') && /^[A-Za-z]:/.test(filePath.substring(1))) {
+        filePath = filePath.substring(1);
+      }
+
+      return filePath;
+    }
+
+    // 非 file:// URI，原样返回
+    return uri;
+  }
+
+  /**
+   * 监听 stdin close/end 事件，当 MCP 客户端断开连接后自动触发 shutdown 并退出进程。
+   */
+  private setupStdinCloseHandler(): void {
+    let shutdownTriggered = false;
+
+    const triggerShutdown = (): void => {
+      if (shutdownTriggered) {
+        return;
+      }
+      shutdownTriggered = true;
+      mcpLog.info('stdin closed (MCP client disconnected), shutting down...');
+
+      this.shutdown()
+        .then(() => {
+          mcpLog.info('shutdown completed, exiting process');
+          process.exit(0);
+        })
+        .catch((err) => {
+          mcpLog.error('shutdown failed:', err);
+          process.exit(1);
+        });
+    };
+
+    process.stdin.on('end', triggerShutdown);
+    process.stdin.on('close', triggerShutdown);
   }
 
   /**
@@ -281,7 +402,7 @@ export class CodegenieMcpServer {
   }
 
   /**
-   * Shutdown the server
+   * Shutdown the server: 关闭所有 LSP 子进程、MCP Server 连接、日志。
    */
   async shutdown(): Promise<void> {
     if (this.arktsCheckTool) {
@@ -290,7 +411,14 @@ export class CodegenieMcpServer {
     if (this.cppCheckTool) {
       await this.cppCheckTool.shutdown();
     }
-    mcpLog.info('codegenie-mcp-server stopped');
+
+    try {
+      await this.server.close();
+    } catch (err) {
+      mcpLog.warn('Failed to close MCP server connection:', err);
+    }
+
+    mcpLog.info('devecocli-mcp-server stopped');
     flushMcpLogger();
     disposeMcpLogger();
   }
@@ -338,6 +466,6 @@ function classifyFiles(files: string[]): {
 /**
  * Create a new MCP server
  */
-export function createMcpServer(config: McpServerConfig = {}): CodegenieMcpServer {
-  return new CodegenieMcpServer(config);
+export function createMcpServer(config: McpServerConfig = {}): DevecoCliMcpServer {
+  return new DevecoCliMcpServer(config);
 }

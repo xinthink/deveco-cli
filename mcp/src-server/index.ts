@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-export { CodegenieMcpServer, createMcpServer } from './server.js';
+export { DevecoCliMcpServer, createMcpServer } from './server.js';
 export type { McpServerConfig } from './server.js';
 export { ArktsCheckTool, CppCheckTool } from './tools/index.js';
 export { ToolRouter, createToolRouter } from './router.js';
