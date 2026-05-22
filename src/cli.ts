@@ -19,7 +19,8 @@ import skillsCommand from './commands/skills.js';
 import logCommand from './commands/log.js';
 import createCommand from './commands/create.js';
 import initCommand from './commands/init.js';
-import startCommand from './commands/start.js';
+import serveCommand from './commands/serve.js';
+import docCommand from './commands/doc.js';
 import { ToolProvider } from './utils/tool-provider.js';
 
 program
@@ -37,7 +38,8 @@ program.addCommand(skillsCommand);
 program.addCommand(logCommand);
 program.addCommand(createCommand);
 program.addCommand(initCommand);
-program.addCommand(startCommand);
+program.addCommand(serveCommand);
+program.addCommand(docCommand);
 
 // Allow `devecocli <command> help` as an alias for `devecocli <command> --help`.
 // Commander only supports this automatically for commands that have sub-commands,

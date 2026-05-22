@@ -45,15 +45,15 @@ async function startStdioMcpServer(): Promise<void> {
   }
 }
 
-const startCommand = new Command('start').description(
-  'Start auxiliary services bundled with deveco-cli'
+const serveCommand = new Command('serve').description(
+  'Host bundled auxiliary protocol servers'
 );
 
-startCommand
+serveCommand
   .command('mcp')
   .description('Start a local stdio-based MCP server')
   .action(async () => {
     await startStdioMcpServer();
   });
 
-export default startCommand;
+export default serveCommand;

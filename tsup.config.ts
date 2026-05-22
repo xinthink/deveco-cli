@@ -21,5 +21,4 @@ export default defineConfig({
     npm_package_version: pkg.version,
     npm_package_name: pkg.name,
   },
-  onSuccess: 'tsx scripts/update-skill-docs.ts',
 });
