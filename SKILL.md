@@ -35,7 +35,7 @@ Commands:
   skills            Manage HMOS skills
   log [options]     Obtain device application logs
   create [options]  Scaffold a new HarmonyOS application project
-  init [options]    Install the deveco-cli skill or configure the codegenie MCP
+  init [options]    Install the deveco-cli skill or configure the deveco-mcp MCP
                     server into AI agents
   serve             Host bundled auxiliary protocol servers
   doc [options]     Search and read HarmonyOS documentation from local docs directory
@@ -182,10 +182,10 @@ Examples:
 
 ### `devecocli init`
 
-Install the bundled `deveco-cli` skill into AI agents, or configure the `codegenie` MCP server for syntax checking. Two mutually exclusive modes:
+Install the bundled `deveco-cli` skill into AI agents, or configure the `deveco-mcp` MCP server for syntax checking. Two mutually exclusive modes:
 
 - **Default / `--skill`** — install the skill only. Same `--agent` / `--project` / `--path` / `-f, --force` semantics as `skills add`; installs to all detected agents when no flag is given.
-- **`--mcp`** — configure the `codegenie` MCP server only (see [`devecocli serve mcp`](#devecocli-serve-mcp) for tool details). No skill installation.
+- **`--mcp`** — configure the `deveco-mcp` MCP server only (see [`devecocli serve mcp`](#devecocli-serve-mcp) for tool details). No skill installation.
 
 `--skill` and `--mcp` cannot be used together. `--force` is the overwrite / skip-validation switch; it does not change global / project-level mode.
 
@@ -194,7 +194,7 @@ Options:
 - `--project <path>` — project root directory to install the skill or MCP config into.
 - `--path <path>` — path to install the skill directly (cannot be used with `--project` or `--agent`).
 - `--skill` — install the deveco-cli skill only (same as default behavior; explicit for symmetry with `--mcp`).
-- `--mcp` — configure the codegenie MCP server (syntax checking for .ets and C/C++) only; no skill installation.
+- `--mcp` — configure the deveco-mcp MCP server (syntax checking for .ets and C/C++) only; no skill installation.
 - `-f, --force` — overwrite an existing skill / MCP configuration.
 
 **MCP rules:**
@@ -207,9 +207,9 @@ Options:
 |---|---|---|
 | OpenCode | `~/.config/opencode/opencode.json` | `<project>/.opencode/opencode.json` |
 | Trae-CN | — | `<project>/.trae/mcp.json` |
-| Cursor | `~/.cursor/mcp.json` | `<project>/.cursor/mcp.json` |
-| Codebuddy | — | `<project>/.codebuddy/mcp.json` |
-| Qoder | — | `<project>/.qoder/mcp.json` |
+| Cursor | `~/.cursor/mcp.json` | `~/.cursor/mcp.json` *(PROJECT_PATH=abs path)* |
+| Codebuddy | — | `~/.codebuddy/mcp.json` *(PROJECT_PATH=abs path)* |
+| Qoder | — | `%APPDATA%/Qoder/SharedClientCache/mcp.json` *(PROJECT_PATH=abs path)* |
 
 Examples:
 - `devecocli init`                              # skill to all detected agents
