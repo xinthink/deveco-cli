@@ -9,7 +9,7 @@ import path from 'path';
 /**
  * MCP Server 名称
  */
-export const MCP_SERVER_NAME = 'codegenie';
+export const MCP_SERVER_NAME = 'deveco-mcp';
 
 /**
  * OpenCode MCP Local Server 配置格式
@@ -67,12 +67,16 @@ export const GLOBAL_MCP_AGENTS = ['opencode', 'cursor'];
 
 /**
  * 各 AI Agent 的 MCP 配置信息
+ *
+ * 关键区分：
+ * - 全局模式（--mcp）：所有 supportsGlobal=true 的 agent 写入 globalConfigPath，PROJECT_PATH 用默认值
+ * - 项目级模式（--mcp --project xxx）：opencode/trae-cn 写入项目目录下，其余写入 globalConfigPath（同全局路径），PROJECT_PATH 写入绝对路径
  */
 export const AGENT_MCP_CONFIG: Record<string, AgentMcpConfig> = {
   /**
-   * OpenCode - 支持全局 + 项目级
+   * OpenCode - 支持全局 + 项目级（项目级写入项目目录）
    * 全局：~/.config/opencode/opencode.json
-   * 使用 `mcp` 字段，command 是数组格式
+   * 项目级：<project>/.opencode/opencode.json
    */
   opencode: {
     name: 'opencode',
@@ -85,8 +89,8 @@ export const AGENT_MCP_CONFIG: Record<string, AgentMcpConfig> = {
   },
 
   /**
-   * Trae-CN - 只支持项目级
-   * 需要使用 --project 参数配置项目级 MCP
+   * Trae-CN - 不支持全局，项目级写入项目目录
+   * 项目级：<project>/.trae/mcp.json
    */
   'trae-cn': {
     name: 'trae-cn',
@@ -99,44 +103,48 @@ export const AGENT_MCP_CONFIG: Record<string, AgentMcpConfig> = {
   },
 
   /**
-   * Cursor - 支持全局 + 项目级
-   * 全局：~/.cursor/mcp.json (2025+ 支持)
-   * 项目级：.cursor/mcp.json
+   * Cursor - 支持全局，项目级也写入全局文件（带 PROJECT_PATH 绝对路径）
+   * 全局/项目级都写入 ~/.cursor/mcp.json
    */
   cursor: {
     name: 'cursor',
     displayName: 'Cursor',
     supportsGlobal: true,
     globalConfigPath: path.join(homedir(), '.cursor', 'mcp.json'),
-    projectConfigPath: '.cursor/mcp.json',
+    projectConfigPath: path.join(homedir(), '.cursor', 'mcp.json'),
     mcpServersKey: 'mcpServers',
     format: 'standard',
   },
 
   /**
-   * Codebuddy - 只支持项目级
-   * 需要使用 --project 参数配置项目级 MCP
+   * Codebuddy - 不支持全局，项目级写入全局文件（带 PROJECT_PATH 绝对路径）
+   * 项目级写入 ~/.codebuddy/mcp.json
    */
   codebuddy: {
     name: 'codebuddy',
     displayName: 'Codebuddy',
     supportsGlobal: false,
     globalConfigPath: '',
-    projectConfigPath: '.codebuddy/mcp.json',
+    projectConfigPath: path.join(homedir(), '.codebuddy', 'mcp.json'),
     mcpServersKey: 'mcpServers',
     format: 'standard',
   },
 
   /**
-   * Qoder - 只支持项目级
-   * 需要使用 --project 参数配置项目级 MCP
+   * Qoder - 不支持全局，项目级写入全局文件（带 PROJECT_PATH 绝对路径）
+   * 项目级写入 %APPDATA%/Qoder/SharedClientCache/mcp.json (Windows)
    */
   qoder: {
     name: 'qoder',
     displayName: 'Qoder',
     supportsGlobal: false,
     globalConfigPath: '',
-    projectConfigPath: '.qoder/mcp.json',
+    projectConfigPath: path.join(
+      process.platform === 'win32'
+        ? path.join(process.env.APPDATA ?? path.join(homedir(), 'AppData', 'Roaming'), 'Qoder', 'SharedClientCache')
+        : path.join(homedir(), '.config', 'Qoder', 'SharedClientCache'),
+      'mcp.json'
+    ),
     mcpServersKey: 'mcpServers',
     format: 'standard',
   },

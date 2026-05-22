@@ -44,7 +44,7 @@ Instead of typing the commands above by hand, let an agent (`opencode`, `claude`
 
    (Run `devecocli init` with no flags to install into every detected agent at once.)
 
-2. **Enable syntax checking** — configure the `codegenie` MCP server for your project:
+2. **Enable syntax checking** — configure the `deveco-mcp` MCP server for your project:
 
    ```bash
    devecocli init --mcp --project ./MyApp
@@ -80,7 +80,7 @@ If the agent doesn't pick up the skill automatically, prompt it explicitly: *"Us
 | `devecocli emulator` | Manage local emulators: list / start / stop / create / delete, system images (`image download|remove|list`), and license helpers (`license view` / `license accept`) |
 | `devecocli log` | Fetch hilog or crash logs (with level / bundle / keyword / from/to / tail / follow filters) |
 | `devecocli doc` | Search and read HarmonyOS documentation from a local docs directory (offline, no login) |
-| `devecocli init` | Install the bundled `deveco-cli` skill into AI agents; `--mcp` configures the `codegenie` MCP server for ArkTS `.ets` and C/C++ syntax checking |
+| `devecocli init` | Install the bundled `deveco-cli` skill into AI agents; `--mcp` configures the `deveco-mcp` MCP server for ArkTS `.ets` and C/C++ syntax checking |
 | `devecocli skills` | List / find / add / remove HMOS skills for AI agents and projects |
 | `devecocli serve mcp` | Host the bundled MCP (Model Context Protocol) server over stdio so AI clients (Trae / Claude / …) can call its unified `check` tool for ArkTS `.ets` and C/C++ syntax checking |
 | `devecocli update` | Update the CLI itself (`npm install -g deveco-cli@latest`) |

@@ -22,7 +22,7 @@ import {
   installMcpConfigToAgentProject,
   summarizeMcpResults,
 } from '../skills/mcp-installer';
-import { AGENT_MCP_CONFIG, GLOBAL_MCP_AGENTS } from '../config/mcp';
+import { AGENT_MCP_CONFIG } from '../config/mcp';
 import { InitOptions, SkillOperationResult } from '../types/skills';
 import { ToolProvider } from '../utils/tool-provider';
 
@@ -104,40 +104,32 @@ async function installProjectLevelMcp(
 }
 
 /**
- * 全局 MCP 安装：只 opencode/cursor 支持，其余收集错误信息
+ * 全局 MCP 安装：只给 supportsGlobal 的 agent 配置全局 MCP
  */
 async function installGlobalMcp(
   agentNames: string[],
   devecoPath: string | undefined,
   force: boolean
-): Promise<{ results: Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[]; errors: string[] }> {
+): Promise<Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[]> {
   const results: Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[] = [];
-  const errors: string[] = [];
   for (const agentName of agentNames) {
     const agentConfig = AGENT_MCP_CONFIG[agentName];
-    if (!agentConfig) { 
-      continue; 
-    }
-    if (!agentConfig.supportsGlobal) {
-      errors.push(
-        `${agentConfig.displayName} does not support global MCP configuration. ` +
-        `Use --project to configure project-level MCP: devecocli init --mcp --project <path> --agent ${agentName}`
-      );
+    if (!agentConfig || !agentConfig.supportsGlobal) {
       continue;
     }
     const result = await installMcpConfigToAgentGlobal(agentName, process.cwd(), devecoPath, force);
     results.push(result);
   }
-  return { results, errors };
+  return results;
 }
 
 /**
  * 执行 MCP 配置安装（仅 --mcp 时触发）
  *
  * 场景逻辑：
- * 1. devecocli init --mcp             → 全局 MCP（只 opencode/cursor），其余报错提示用 --project
+ * 1. devecocli init --mcp             → 全局 MCP（opencode/cursor），其余 agent 合并报错提示需要 --project
  * 2. devecocli init --mcp --project   → 只安装项目级 MCP（所有 agent 都支持项目级）
- * 3. devecocli init --mcp --force     → 全局 MCP（opencode/cursor）+ 覆盖已有配置；其余报错
+ * 3. devecocli init --mcp --force     → 全局 MCP + 覆盖已有配置；其余合并报错
  * --force 只改变覆盖行为，不改变全局/项目级模式。
  */
 async function executeMcpInstallations(
@@ -147,24 +139,27 @@ async function executeMcpInstallations(
 ): Promise<void> {
   const devecoPath = await resolveDevecoPath();
   const force = options.force ?? false;
-  let mcpResults: Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[] = [];
-  let globalErrors: string[] = [];
 
-  if (resolvedProject) {
-    mcpResults = await installProjectLevelMcp(targets, resolvedProject, devecoPath, force);
-  } else {
-    const { results, errors } = await installGlobalMcp(targets.agents, devecoPath, force);
-    mcpResults = results;
-    globalErrors = errors;
-  }
+  const mcpResults = resolvedProject
+    ? await installProjectLevelMcp(targets, resolvedProject, devecoPath, force)
+    : await installGlobalMcp(targets.agents, devecoPath, force);
 
   if (mcpResults.length > 0) {
     console.log(cyan('MCP Configuration:'));
     summarizeMcpResults(mcpResults);
   }
 
-  for (const errMsg of globalErrors) {
-    console.error(red(errMsg));
+  if (!resolvedProject) {
+    const projectOnlyNames = targets.agents.filter(name => {
+      const config = AGENT_MCP_CONFIG[name];
+      return config && !config.supportsGlobal;
+    });
+    if (projectOnlyNames.length > 0) {
+      const displayNames = projectOnlyNames.map(name => AGENT_MCP_CONFIG[name].displayName);
+      console.error(
+        red(`${displayNames.join(' ')} need project path. Use --project to configure project-level MCP: devecocli init --mcp --project <path> --agent ${projectOnlyNames[0]}`)
+      );
+    }
   }
 }
 
@@ -217,7 +212,7 @@ async function handleInitCommand(options: InitOptions): Promise<void> {
 }
 
 const initCommand = new Command('init')
-  .description('Install the deveco-cli skill or configure the codegenie MCP server into AI agents')
+  .description('Install the deveco-cli skill or configure the deveco-mcp server into AI agents')
   .option(
     '--agent <agents>',
     'Target agents, comma-separated (e.g. opencode,trae-cn,cursor,qoder,codebuddy); installs to all available agents if omitted'
@@ -236,7 +231,7 @@ const initCommand = new Command('init')
   )
   .option(
     '--mcp',
-    'Configure the codegenie MCP server (syntax checking for .ets and C/C++) only; no skill installation'
+    'Configure the deveco-mcp server (syntax checking for .ets and C/C++) only; no skill installation'
   )
   .option('-f, --force', 'Overwrite an existing skill / MCP configuration')
   .action(async (options: InitOptions) => {
