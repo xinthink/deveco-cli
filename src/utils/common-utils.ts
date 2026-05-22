@@ -2,7 +2,12 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
+import { debugLog } from './logger';
+
 export class CommonUtils {
+  private static readonly ASCII_CONTROL_MAX = 31;
+  private static readonly ASCII_DELETE = 127;
+
   // 解析正整数（用于 tail 等参数校验）
   static parsePositiveInteger(value: string, fieldName = 'value'): number {
     const normalizedValue = value.trim();
@@ -218,6 +223,33 @@ export class CommonUtils {
     if (!/^[A-Za-z0-9_.:\\-]{1,64}$/.test(value)) {
       throw new Error(`Invalid ${field}: ${JSON.stringify(value)}`);
     }
+  }
+
+  static assertHilogKeyword(value: string): void {
+    if (value.length === 0 || value.length > 128) {
+      throw new Error(`Invalid keyword: ${JSON.stringify(value)}`);
+    }
+
+    // 关键字会作为字符串传入 shell 命令（通过 quotePosixShellArg 做安全包裹）。
+    // 这里只拒绝控制字符，避免命令截断、跨行注入或不可见字符带来的解析歧义。
+    const hasControlChar = [...value].some((char) => {
+      const code = char.charCodeAt(0);
+      return (
+        code <= CommonUtils.ASCII_CONTROL_MAX ||
+        code === CommonUtils.ASCII_DELETE
+      );
+    });
+    if (hasControlChar) {
+      throw new Error(`Invalid keyword: ${JSON.stringify(value)}`);
+    }
+  }
+
+  static quotePosixShellArg(value: string): string {
+    // 用单引号包裹，内部单引号用 '\'' 转义（结束引号、转义单引号、重新开引号）
+    const escaped = value.replace(/'/g, "'\\''");
+    const result = `'${escaped}'`;
+    debugLog(`quotePosixShellArg: ${value} -> ${result}`);
+    return result;
   }
 
   static assertCrashFilename(name: string): void {

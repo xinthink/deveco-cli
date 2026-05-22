@@ -260,7 +260,6 @@ async function listAction(
       spinner?.stop();
       console.log(yellow('  No emulator instances found.'));
       console.log(gray('  You can create an emulator in DevEco Studio.'));
-      console.log('');
       return;
     }
 
@@ -386,7 +385,6 @@ async function startAction(
 
   const anyFailed = reportSettledFailures(results, names, 'start');
 
-  console.log('');
   if (anyFailed) {
     process.exit(1);
   }
@@ -889,7 +887,7 @@ createEmulatorCmd.action(
       console.log(green(`Emulator "${name}" created successfully.`));
     } catch (error) {
       console.error(
-        red(`Failed to create emulator: ${(error as Error).message}`)
+        red(`${(error as Error).message}`)
       );
       process.exit(1);
     }

@@ -7,14 +7,27 @@ import { green, red } from 'colorette';
 import { Project } from '../utils/project.js';
 import { ToolProvider } from '../utils/tool-provider.js';
 import { HdcAdapter } from '../utils/hdc-adapter.js';
+import { HvigorAdapter } from '../utils/hvigor-adapter.js';
+import { OhpmAdapter } from '../utils/ohpm-adapter.js';
 import { DeviceManager } from '../service/device-manager.js';
+import { withBuildLock } from '../utils/build-lock.js';
+import { executeBuildSteps, processModuleTasks } from './build.js';
 
 interface RunOptions {
   module?: string;
   device?: string;
   product?: string;
+  buildMode?: string;
   ability?: string;
   uninstall?: boolean;
+  skipBuild?: boolean;
+}
+
+function parseModuleArg(moduleArg: string): { moduleName: string; targetName: string } {
+  const splitIndex = moduleArg.indexOf('@');
+  const moduleName = splitIndex !== -1 ? moduleArg.substring(0, splitIndex) : moduleArg;
+  const targetName = splitIndex !== -1 ? moduleArg.substring(splitIndex + 1) : 'default';
+  return { moduleName, targetName };
 }
 
 async function selectDevice(
@@ -140,8 +153,10 @@ const runCommand = new Command('run')
   )
   .option('--device <device>', 'Target device name or serial')
   .option('--product <product>', 'Product name (default: default)')
+  .option('--build-mode <mode>', 'Build mode (e.g. debug, release; default: debug)')
   .option('--ability <ability>', 'Ability name to launch')
   .option('--uninstall', 'Uninstall existing app before installation')
+  .option('--skip-build', 'Skip the build step and deploy the existing artifacts')
   .action(async (options: RunOptions) => {
     try {
       await runActionImpl(options);
@@ -151,15 +166,38 @@ const runCommand = new Command('run')
     }
   });
 
+async function runBuildPhase(
+  project: Project,
+  toolProvider: ToolProvider,
+  moduleName: string,
+  targetName: string,
+  productName: string,
+  buildMode: string
+): Promise<void> {
+  const ohpmAdapter = new OhpmAdapter(toolProvider, project.rootDir);
+  const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
+
+  const hspModules = new Set<string>();
+  project.resolveHspDependencies(moduleName, hspModules);
+  const modulesToBuild = [moduleName, ...hspModules].map((m) => `${m}@${targetName}`);
+  const moduleTasks = processModuleTasks(project, modulesToBuild);
+  const buildTarget = { type: 'modules' as const, modulesToBuild, moduleTasks };
+
+  await withBuildLock(
+    project.rootDir,
+    () => executeBuildSteps(ohpmAdapter, hvigorAdapter, productName, buildMode, buildTarget),
+    () => console.log('Another build is already running for this project. Waiting for it to finish...')
+  );
+
+  console.log('\n' + green('Build completed successfully!'));
+}
+
 async function runActionImpl(options: RunOptions): Promise<void> {
   const project = Project.discover(process.cwd());
   const toolProvider = await ToolProvider.new();
+
   const moduleArg = identifyModule(project, options.module);
-  const splitIndex = moduleArg.indexOf('@');
-  const moduleName =
-    splitIndex !== -1 ? moduleArg.substring(0, splitIndex) : moduleArg;
-  const targetName =
-    splitIndex !== -1 ? moduleArg.substring(splitIndex + 1) : 'default';
+  const { moduleName, targetName } = parseModuleArg(moduleArg);
 
   const type = project.getModuleType(moduleName);
   if (type !== 'entry' && type !== 'feature' && type !== 'shared') {
@@ -174,7 +212,13 @@ async function runActionImpl(options: RunOptions): Promise<void> {
   const isEmulator =
     targetDeviceId.includes('127.0.0.1') ||
     targetDeviceId.includes('localhost');
+
   const productName = options.product || 'default';
+  const buildMode = options.buildMode || 'debug';
+
+  if (!options.skipBuild) {
+    await runBuildPhase(project, toolProvider, moduleName, targetName, productName, buildMode);
+  }
 
   const artifactsToInstall = resolveArtifacts(
     project,

@@ -8,6 +8,7 @@ import { Project } from '../utils/project.js';
 import { ToolProvider } from '../utils/tool-provider.js';
 import { HvigorAdapter } from '../utils/hvigor-adapter.js';
 import { OhpmAdapter } from '../utils/ohpm-adapter.js';
+import { withBuildLock } from '../utils/build-lock.js';
 
 interface BuildOptions {
   product?: string;
@@ -77,27 +78,18 @@ function determineModulesToBuild(
   // Resolve HSP dependencies for each initial module
   const finalModulesSet = new Set<string>();
   for (const moduleArg of initialModules) {
-    finalModulesSet.add(moduleArg);
-
     const splitIndex = moduleArg.indexOf('@');
     const moduleName =
       splitIndex !== -1 ? moduleArg.substring(0, splitIndex) : moduleArg;
     const targetName =
-      splitIndex !== -1 ? moduleArg.substring(splitIndex + 1) : null;
-
-    const hspDeps = new Set<string>();
-    project.resolveHspDependencies(moduleName, hspDeps);
-
-    for (const hsp of hspDeps) {
-      const depArg = targetName ? `${hsp}@${targetName}` : hsp;
-      finalModulesSet.add(depArg);
-    }
+      splitIndex !== -1 ? moduleArg.substring(splitIndex + 1) : 'default';
+    finalModulesSet.add(`${moduleName}@${targetName}`);
   }
 
   return Array.from(finalModulesSet);
 }
 
-function processModuleTasks(
+export function processModuleTasks(
   project: Project,
   modulesToBuild: string[]
 ): Set<string> {
@@ -124,7 +116,7 @@ function processModuleTasks(
 
 type ToolRunError = Error & { stdout?: string; stderr?: string };
 
-function logAdapterFailureAndThrow(stepLabel: string, error: unknown): never {
+export function logAdapterFailureAndThrow(stepLabel: string, error: unknown): never {
   const e = error as ToolRunError;
   const failMsg = `${stepLabel} failed`;
   console.error(red(failMsg));
@@ -138,14 +130,16 @@ function logAdapterFailureAndThrow(stepLabel: string, error: unknown): never {
   throw new Error(failMsg, { cause: error });
 }
 
-async function executeBuildSteps(
+export type BuildTarget =
+  | { type: 'product' }
+  | { type: 'modules'; modulesToBuild: string[]; moduleTasks: Set<string> };
+
+export async function executeBuildSteps(
   ohpmAdapter: OhpmAdapter,
   hvigorAdapter: HvigorAdapter,
   productName: string,
   buildMode: string,
-  buildTarget:
-    | { type: 'product' }
-    | { type: 'modules'; modulesToBuild: string[]; moduleTasks: Set<string> }
+  buildTarget: BuildTarget
 ) {
   console.log('\n[1/3] Running ohpm install...');
   try {
@@ -225,12 +219,21 @@ const buildCommand = new Command('build')
       const ohpmAdapter = new OhpmAdapter(toolProvider, project.rootDir);
       const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
 
-      await executeBuildSteps(
-        ohpmAdapter,
-        hvigorAdapter,
-        productName,
-        buildMode,
-        buildTarget
+      await withBuildLock(
+        project.rootDir,
+        async () =>
+          executeBuildSteps(
+            ohpmAdapter,
+            hvigorAdapter,
+            productName,
+            buildMode,
+            buildTarget
+          ),
+        () => {
+          console.log(
+            'Another build is already running for this project. Waiting for it to finish...'
+          );
+        }
       );
 
       console.log('\n' + green('Build completed successfully!'));
@@ -251,12 +254,29 @@ buildCommand
       const toolProvider = await ToolProvider.new();
 
       const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
-      console.log('\n[1/1] Running hvigor clean...');
-      try {
-        await hvigorAdapter.clean();
-      } catch (error) {
-        logAdapterFailureAndThrow('hvigor clean', error);
-      }
+      await withBuildLock(
+        project.rootDir,
+        async () => {
+          console.log('\n[1/2] Running hvigor clean...');
+          try {
+            await hvigorAdapter.clean();
+          } catch (error) {
+            logAdapterFailureAndThrow('hvigor clean', error);
+          }
+
+          console.log('\n[2/2] Running hvigor --stop-daemon...');
+          try {
+            await hvigorAdapter.stopDaemon();
+          } catch (error) {
+            logAdapterFailureAndThrow('hvigor --stop-daemon', error);
+          }
+        },
+        () => {
+          console.log(
+            'Another build is already running for this project. Waiting for it to finish...'
+          );
+        }
+      );
 
       console.log('\n' + green('Clean completed successfully!'));
     } catch (error) {

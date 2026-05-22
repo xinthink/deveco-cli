@@ -27,6 +27,11 @@ interface RegeditResult {
   };
 }
 
+interface SignatureVerificationResult {
+  signed: boolean;
+  signer?: string;
+}
+
 // Promisify regedit functions for easier async/await usage
 const regList = (keys: string[]): Promise<RegeditResult> => {
   return new Promise((resolve, reject) => {
@@ -41,15 +46,60 @@ const regList = (keys: string[]): Promise<RegeditResult> => {
 };
 
 export class ToolProvider {
-  public devecoStudioPath: string;
-  public nodePath: string;
-  public ohpmJsPath: string;
-  public hvigorJsPath: string;
-  public javaPath: string;
-  public sdkPath: string;
-  public hdcPath: string;
-  public emulatorPath: string;
-  public emulatorLauncherPath: string | undefined;
+  private _devecoStudioPath: string;
+  private _nodePath: string;
+  private _ohpmJsPath: string;
+  private _hvigorJsPath: string;
+  private _javaPath: string;
+  private _sdkPath: string;
+  private _hdcPath: string;
+  private _emulatorPath: string;
+  private _emulatorLauncherPath: string | undefined;
+
+  private static _verifiedPaths = new Set<string>();
+
+  private static verifyAndCache(filePath: string): void {
+    if (ToolProvider._verifiedPaths.has(filePath)) {
+      return;
+    }
+    ToolProvider.verifySignature(filePath);
+    ToolProvider._verifiedPaths.add(filePath);
+  }
+
+  get devecoStudioPath(): string { 
+    return this._devecoStudioPath; 
+  }
+  get nodePath(): string {
+    ToolProvider.verifyAndCache(this._nodePath);
+    return this._nodePath;
+  }
+  get ohpmJsPath(): string { 
+    return this._ohpmJsPath; 
+  }
+  get hvigorJsPath(): string { 
+    return this._hvigorJsPath; 
+  }
+  get javaPath(): string {
+    ToolProvider.verifyAndCache(this._javaPath);
+    return this._javaPath;
+  }
+  get sdkPath(): string { 
+    return this._sdkPath; 
+  }
+  get hdcPath(): string {
+    ToolProvider.verifyAndCache(this._hdcPath);
+    return this._hdcPath;
+  }
+  get emulatorPath(): string {
+    ToolProvider.verifyAndCache(this._emulatorPath);
+    return this._emulatorPath;
+  }
+  get emulatorLauncherPath(): string | undefined {
+    if (this._emulatorLauncherPath) {
+      ToolProvider.verifyAndCache(this._emulatorLauncherPath);
+    }
+    return this._emulatorLauncherPath;
+  }
 
   private constructor(
     devecoStudioPath: string,
@@ -62,15 +112,15 @@ export class ToolProvider {
     emulatorPath: string,
     emulatorLauncherPath: string | undefined
   ) {
-    this.devecoStudioPath = devecoStudioPath;
-    this.nodePath = nodePath;
-    this.ohpmJsPath = ohpmJsPath;
-    this.hvigorJsPath = hvigorJsPath;
-    this.javaPath = javaPath;
-    this.sdkPath = sdkPath;
-    this.hdcPath = hdcPath;
-    this.emulatorPath = emulatorPath;
-    this.emulatorLauncherPath = emulatorLauncherPath;
+    this._devecoStudioPath = devecoStudioPath;
+    this._nodePath = nodePath;
+    this._ohpmJsPath = ohpmJsPath;
+    this._hvigorJsPath = hvigorJsPath;
+    this._javaPath = javaPath;
+    this._sdkPath = sdkPath;
+    this._hdcPath = hdcPath;
+    this._emulatorPath = emulatorPath;
+    this._emulatorLauncherPath = emulatorLauncherPath;
   }
 
   public static async checkVersion(): Promise<void> {
@@ -612,8 +662,9 @@ export class ToolProvider {
     return existsSync(exePath) ? exePath : undefined;
   }
 
-  private static isValidApiLevel(level: number): boolean {
-    return Number.isInteger(level) && level >= 17 && level <= 23;
+  private static isValidApiLevel(level: number, maxApi?: number): boolean {
+    const maxSupported = maxApi ?? 23;
+    return Number.isInteger(level) && level >= 17 && level <= maxSupported;
   }
 
   private static parseApiLevelFromFile(filePath: string): number | undefined {
@@ -631,7 +682,9 @@ export class ToolProvider {
       }
 
       const level = Number(apiVersion);
-      return ToolProvider.isValidApiLevel(level) ? level : undefined;
+      // Only validate that it's a valid integer >= 17
+      // Max limit is now determined dynamically from SDK
+      return Number.isInteger(level) && level >= 17 ? level : undefined;
     } catch {
       return undefined;
     }
@@ -677,7 +730,11 @@ export class ToolProvider {
     return undefined;
   }
 
-  public detectApiLevel(): number {
+  /**
+   * Get the API level from SDK's sdk-pkg.json or oh-uni-package.json.
+   * Returns the detected API version, or 23 as fallback if SDK files exist but have no valid apiVersion.
+   */
+  public getMaxApiLevel(): number {
     const fromSdkPkg = ToolProvider.detectFromSdkPkg(this.sdkPath);
     if (fromSdkPkg !== undefined) {
       return fromSdkPkg;
@@ -688,6 +745,100 @@ export class ToolProvider {
       return fromOhUni;
     }
 
+    // SDK exists but no valid apiVersion found, use 23 as fallback
     return 23;
+  }
+
+  /** Alias for getMaxApiLevel() */
+  public detectApiLevel(): number {
+    return this.getMaxApiLevel();
+  }
+
+
+  // ---------- signature verification ----------
+
+  /**
+   * Verify that an executable file is digitally signed.
+   * - win32: uses PowerShell Get-AuthenticodeSignature
+   * - darwin: uses codesign -v
+   * - other platforms: returns { signed: true } (no verification)
+   */
+   public static verifySignature(filePath: string) {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`executable not found at: ${filePath}`);
+    }
+    const platform = os.platform();
+
+    if (!ToolProvider.isExecutableFile(filePath, platform)) {
+      return;
+    }
+
+    if (platform === 'win32') {
+      const result = ToolProvider.verifyWindowsSignature(filePath);
+      if (!result.signed) {
+        throw new Error(`The executable is not digitally signed: ${filePath}`);
+      }
+    } else if (platform === 'darwin') {
+      const result = ToolProvider.verifyMacSignature(filePath);
+      if (!result.signed) {
+        throw new Error(`The executable is not digitally signed: ${filePath}`);
+      }
+    }
+  }
+
+  private static isExecutableFile(filePath: string, platform: string): boolean {
+    if (platform === 'win32') {
+      return path.extname(filePath).toLowerCase() === '.exe';
+    }
+    if (platform === 'darwin') {
+      try {
+        fs.accessSync(filePath, fs.constants.X_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  private static verifyWindowsSignature(
+    filePath: string
+  ): SignatureVerificationResult {
+    try {
+      const result = execFileSync(
+        'powershell',
+        [
+          '-NoProfile',
+          '-Command',
+          `Get-AuthenticodeSignature -FilePath '${filePath.replace(/'/g, "''")}' | ConvertTo-Json -Depth 3 -Compress`,
+        ],
+        {
+          encoding: 'utf-8',
+          timeout: 5000,
+        }
+      );
+      const data = JSON.parse(result);
+      const status: number | undefined = data?.Status;
+      return {
+        signed: status === 0,
+        signer: data?.SignerCertificate?.Subject ?? undefined,
+      };
+    } catch {
+      return { signed: false };
+    }
+  }
+
+  private static verifyMacSignature(
+    filePath: string
+  ): SignatureVerificationResult {
+    try {
+      execFileSync('codesign', ['-v', filePath], {
+        encoding: 'utf-8',
+        timeout: 5000,
+      });
+      return { signed: true };
+    } catch {
+      return { signed: false };
+    }
   }
 }

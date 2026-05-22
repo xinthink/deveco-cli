@@ -244,4 +244,8 @@ export interface InitOptions {
   /** Target directory path for skill installation (mutually exclusive with --project and --agent) */
   readonly path?: string;
   readonly force?: boolean;
+  /** Configure MCP server for syntax checking (no skill installation) */
+  readonly mcp?: boolean;
+  /** Install skill only (same as default behavior, explicit for symmetry with --mcp) */
+  readonly skill?: boolean;
 }

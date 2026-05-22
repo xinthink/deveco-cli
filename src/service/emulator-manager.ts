@@ -418,7 +418,7 @@ export class EmulatorManager {
     const created = await this.waitForEmulatorPresenceByList(nameKey);
     if (!created) {
       throw new Error(
-        `Emulator "${opts.name}" was reported as created, but it did not appear in the emulator list within the timeout.`
+          `Emulator "${opts.name}" was reported as created, but it did not appear in the emulator list within the timeout. Please open the device manager list in DevEco Studio, then run this command again.`
       );
     }
   }

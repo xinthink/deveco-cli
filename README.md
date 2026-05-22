@@ -2,7 +2,7 @@
 
 > HarmonyOS application development command line tool.
 
-`devecocli` is a unified CLI wrapper around the DevEco Studio toolchain — `ohpm`, `hvigor`, `hdc`, `emulator`, `hilog` — plus Huawei Developer login, HarmonyOS knowledge search, the HMOS skills installer, and a project-scaffolding template. Drive the full HarmonyOS workflow (create → build → install → run → log → query → install AI skills) from one binary, with no `PATH` / `DEVECO_SDK_HOME` / `JAVA_HOME` setup.
+`devecocli` is a unified CLI wrapper around the DevEco Studio toolchain — `ohpm`, `hvigor`, `hdc`, `emulator`, `hilog` — plus Huawei Developer login, the HMOS skills installer, and a project-scaffolding template. Drive the full HarmonyOS workflow (create → build → install → run → log → install AI skills) from one binary, with no `PATH` / `DEVECO_SDK_HOME` / `JAVA_HOME` setup.
 
 ## Quick Start
 
@@ -35,19 +35,28 @@ Instead of typing the commands above by hand, let an agent (`opencode`, `claude`
 
    (Run `devecocli init` with no flags to install into every detected agent at once.)
 
-2. **Open a project and start opencode**:
+2. **Enable syntax checking** — configure the `codegenie` MCP server for your project:
+
+   ```bash
+   devecocli init --mcp --project ./MyApp
+   # writes MCP config to MyApp/.opencode/opencode.json, MyApp/.cursor/mcp.json, etc.
+   ```
+
+   The MCP server provides `arkts_check` (`.ets` syntax) and `cpp_check` (C/C++ syntax) tools. Once configured, the AI agent will auto-spawn the MCP server when you open the project.
+
+3. **Open a project and start opencode**:
 
    ```bash
    cd MyApp        # any HarmonyOS project (with build-profile.json5 / oh-package.json5)
    opencode
    ```
 
-3. **Ask in natural language** — opencode auto-loads the `deveco-cli` skill and turns prompts like the following into the right `devecocli` invocations:
+4. **Ask in natural language** — opencode auto-loads the `deveco-cli` skill and turns prompts like the following into the right `devecocli` invocations:
 
    - `Scaffold a new HarmonyOS app called Demo at ./Demo and build it`
    - `Build this project in release mode and run it on my emulator`
    - `Tail the last error logs from this app`
-   - `Look up the ArkTS API for showing a Toast`
+   - `Check for syntax errors in src/main/ets/pages/Index.ets`
 
 If the agent doesn't pick up the skill automatically, prompt it explicitly: *"Use the `deveco-cli` skill."*
 
@@ -61,11 +70,12 @@ If the agent doesn't pick up the skill automatically, prompt it explicitly: *"Us
 | `devecocli device` | List / inspect connected devices and emulators; install / uninstall `.hap` / `.hsp` packages |
 | `devecocli emulator` | Manage local emulators: list / start / stop / create / delete, system images (`image download|remove|list`), and license helpers (`license view` / `license accept`) |
 | `devecocli log` | Fetch hilog or crash logs (with level / bundle / keyword / from/to / tail / follow filters) |
-| `devecocli knowledge` | Search the HarmonyOS / ArkTS knowledge base (requires `devecocli login`) |
+| `devecocli verify` | Run UI verification on a connected device using a natural-language test plan; outputs a structured JSON result with pass/fail details and a task ID. Use `verify log` to retrieve execution logs and `verify screenshot` to save step-by-step screenshots by task ID. **Before first use, run `devecocli verify config --base-url <url> --model-name <name> --api-key <key>` to configure the vision model.** |
 | `devecocli whoami` | Show the currently logged-in Huawei Developer user |
-| `devecocli init` | Install the bundled `deveco-cli` skill into your AI agents (`claude`, `cursor`, …) so they learn how to drive `devecocli` |
+| `devecocli init` | Install the bundled `deveco-cli` skill into AI agents; `--mcp` configures the `codegenie` MCP server for ArkTS `.ets` and C/C++ syntax checking |
 | `devecocli skills` | List / find / add / remove HMOS skills for AI agents and projects |
 | `devecocli login` / `devecocli logout` | Sign in / out of a Huawei Developer account |
+| `devecocli start mcp` | Start the bundled `codegenie` MCP server over stdio (provides `arkts_check` and `cpp_check` tools for syntax checking) |
 | `devecocli update` | Update the CLI itself (`npm install -g deveco-cli@latest`) |
 
 Run `devecocli <cmd> --help` for full options, or see [`SKILL.md`](./SKILL.md) for the detailed reference (also consumed by AI agents).

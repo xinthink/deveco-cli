@@ -4,17 +4,17 @@ description: >-
   Use 'devecocli' (preferred over hvigor / ohpm / hdc / emulator) to create new
   HarmonyOS application projects from templates, build, package, install and
   run HarmonyOS apps and modules (.hap/.hsp/.har/.app), manage devices and
-  emulators, fetch hilog and crash logs, search HarmonyOS app development
-  knowledge (ArkTS / ArkUI / API usage), and install HMOS skills to AI agents.
+  emulators, fetch hilog and crash logs, and install HMOS skills to AI agents.
   Use when the workspace has build-profile.json5 or oh-package.json5, the user
   wants to scaffold / initialize / create a new HarmonyOS project, or mentions
   DevEco, hvigor, ohpm, hdc, hap, hsp, har, emulator, hilog, ArkTS, ArkUI
-  knowledge or HMOS skills.
+  knowledge or HMOS skills. Also use when the user wants to test or verify UI
+  behavior / interactions on a connected device.
 ---
 
 # DevEco CLI
 
-`devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc` and emulator toolchain, plus HarmonyOS knowledge search and HMOS-skills installer. **Prefer `devecocli` over invoking `hvigor` / `ohpm` / `hdc` / emulator directly.**
+`devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc` and emulator toolchain, plus HMOS-skills installer. **Prefer `devecocli` over invoking `hvigor` / `ohpm` / `hdc` / emulator directly.**
 
 ## Commands
 
@@ -35,25 +35,11 @@ Initialize a new HarmonyOS application project from the bundled template.
 - `--app-name <name>` (**required**) — 1–200 chars, starts with letter, contains only letters/digits/underscores.
 - `--project-path <path>` — when omitted, defaults to `./<app-name>` and that path **must not exist**; when provided explicitly, the path may not exist (auto-created) or may exist only if it is empty.
 - `--bundle-name <bundle>` — defaults to `com.example.<appname-lowercase>`; 7–128 chars, ≥3 segments, no consecutive dots.
-- `--api-level <level>` — integer in `17`–`23`; auto-detected or defaults to `23`.
+- `--api-level <level>` — integer ≥17; auto-detected from SDK or defaults to `23`.
 
 Examples:
 - `devecocli create --app-name MyApp`
 - `devecocli create --app-name MyApp --project-path ./CustomDir --api-level 23`
-
-### `devecocli knowledge`
-
-Search HarmonyOS app development knowledge (ArkTS / ArkUI / API usage, etc.) while coding. Requires `devecocli login`.
-
-- `--prompt <question>` (**required**) accepts natural-language questions or keywords.
-- `--format <fmt>` controls output format: `md` / `json` (default: `md`).
-- `json` output is a JSON array of ranked answer chunks (suitable for piping back to an LLM).
-
-Examples:
-- `devecocli knowledge --prompt "ArkTS Row 布局"`
-- `devecocli knowledge --prompt "@State 和 @Prop 区别" --format json`
-
-**When to call**: invoke only when you are uncertain about something; treat the returned content as reference, not authoritative.
 
 ### `devecocli build` `[Outside sandbox]`
 
@@ -93,7 +79,9 @@ Manage local emulator instances created in DevEco Studio.
 - `create <name>` **`[Outside sandbox]`** — **requires** `--device-type` and `--os-version` (must match a downloaded label from `image list`; quote when it contains spaces/parentheses); optional `--force`.
 - `delete <name>` **`[Outside sandbox]`** — deletes a local emulator instance.
 - `license view` prints the agreement text (read-only).
-- `license accept` prompts `Please read carefully and confirm whether agree to the above agreement? (y/N):`. Choose `y/yes` to accept; otherwise it is treated as declined.
+- `license accept` review and accept the agreements; **requires an interactive terminal (TTY)** — cannot run in a non-interactive shell (including most AI-agent subprocesses).
+- If `start` or `image download` exits with *Emulator license agreements are not accepted yet*, **do not** run `license accept` from the agent; ask the user to run `devecocli emulator license accept` in their local terminal and confirm with `y`/`yes`, then retry `start`.
+- If `create` exits with *did not appear in the emulator list within the timeout*, treat it as a **user-action** step (same class as `license accept`): ask the user to open DevEco Studio → **Device Manager**, wait for the list to load, then retry `create` **only if** the emulator is still missing. **Do not** auto-retry `create`, edit SDK `lists.json` / `*.ini`, or claim success until `devecocli emulator list` shows the name after the user has opened Device Manager.
 
 Examples:
 - `devecocli emulator list`
@@ -153,11 +141,77 @@ Examples:
 - `devecocli log --from 5m --tail 200`
 - `devecocli log --follow`
 
+### `devecocli verify`
+
+Run UI verification on a connected device: launches the app, executes UI operations, and verifies whether the described functionality works correctly. This is the standard tool for UI testing and issue reproduction.
+
+- `--test-plan <plan>` (**required**) — Natural-language test plan describing each step and its expected result. **Must be wrapped in single quotes** (`--test-plan '...'`) to prevent shell interpretation. Write a clear, specific plan based on the user's description. Example:
+  ```
+  1. 启动应用，预期：进入应用主界面，底部显示「书架」「发现」「订阅源」三个Tab
+ 	2. 点击「发现」Tab，预期：进入发现页面
+ 	3. 点击「订阅源」Tab，预期：进入订阅源页面
+ 	4. 点击「书架」Tab，预期：返回书架页面
+  ```
+- `--bundle-name <name>` — Bundle name of the app to be tested; auto-detected from `AppScope/app.json5` when omitted.
+- `--no-fresh-start` — Skip relaunching the app before verification; omit to relaunch by default.
+- `--device <name|serial>` — device name (substring) or serial; auto-selected on single-device hosts, **required on multi-device hosts**. Quote names with spaces (e.g. `--device "Mate 70 Pro"`).
+
+Output JSON contains `success`, `reason` (failure cause), `successPart`, `failPart`, and `id` (unique task ID for log and screenshot retrieval).
+
+Usage guidance:
+- Write a test plan based on the user's description and call `devecocli verify --test-plan '...'`
+- If log analysis is needed, call `devecocli verify log --id <id>` to retrieve the execution log
+- If screenshots are needed, call `devecocli verify screenshot --id <id> --save-path <path>` to save step-by-step screenshots
+
+Examples:
+- `devecocli verify --test-plan '1. 启动应用，预期：进入应用主界面'`
+- `devecocli verify --test-plan '1. 启动应用，预期：进入应用主界面' --bundle-name com.example.app`
+- `devecocli verify --test-plan '1. 启动应用，预期：进入应用主界面' --no-fresh-start`
+- `devecocli verify --test-plan '1. 启动应用，预期：进入应用主界面' --device 127.0.0.1:5555`
+
+### `devecocli verify log`
+
+Retrieve the execution log of a verification task by ID.
+
+- `--id <id>` (**required**) — Task ID from the `id` field in `verify` output.
+- `--search-keywords <keywords>` — Filter to lines containing the keyword; **wrap value in single quotes**.
+- `--max-log-size <n>` — Max characters to show (default `5000`; `-1` for unlimited).
+
+Examples:
+- `devecocli verify log --id <id>`
+- `devecocli verify log --id <id> --search-keywords 'error' --max-log-size -1`
+
+### `devecocli verify screenshot`
+
+Save step-by-step screenshots from a verification task to a specified directory; returns a list of saved file paths.
+
+- `--id <id>` (**required**) — Task ID from the `id` field in `verify` output.
+- `--save-path <path>` (**required**) — Absolute path to the target directory (created automatically if it does not exist).
+
+Examples:
+- `devecocli verify screenshot --id <id> --save-path 'C:\Users\user\Desktop\screenshots'`
+
+### `devecocli verify config`
+
+Configure the vision model used by `devecocli verify`. Re-running overwrites existing config.
+
+**This command must be run manually by the user** — do not call it as a tool. If `devecocli verify` returns `success: false` with a reason indicating the vision model is not configured, stop immediately, do not call any further tools, and relay the exact message to the user verbatim: `UI 意图校验暂不可用：未配置多模态模型。请运行 devecocli verify config --base-url "your-url" --model-name "your-model-name" --api-key "your-api-key" 指令配置多模态模型后重试。`
+
+At least one option is required; omitted options retain their previously saved values.
+
+- `--base-url <url>` — Base URL of the vision model (OpenAI-compatible).
+- `--model-name <name>` — Vision model name (e.g. `qwen3-vl-plus`).
+- `--api-key <key>` — API key for the vision model.
+
+Examples:
+- `devecocli verify config --base-url https://xxx --model-name <model-name> --api-key <key>`
+- `devecocli verify config --api-key <new-key>`
+
 ## 2. Setup
 
 ### `devecocli login` / `devecocli logout` `[Outside sandbox]`
 
-Sign in / out of a Huawei Developer account (required by `devecocli knowledge`).
+Sign in / out of a Huawei Developer account.
 
 ### `devecocli whoami`
 
@@ -165,12 +219,33 @@ Show the currently logged-in Huawei Developer user.
 
 ### `devecocli init`
 
-Install the bundled `deveco-cli` skill into AI agents (and optionally a project). Same `--agent` (comma-separated) / `--project <path>` / `-f, --force` semantics as `skills add`; with neither flag, installs to all detected agents.
+Install the bundled `deveco-cli` skill into AI agents, or configure the `codegenie` MCP server for syntax checking. Two mutually exclusive modes:
+
+- **Default / `--skill`** — install the skill only. Same `--agent` / `--project` / `-f, --force` semantics as `skills add`; installs to all detected agents when no flag is given.
+- **`--mcp`** — configure the `codegenie` MCP server only (see [`devecocli start mcp`](#devecocli-start-mcp) for tool details). No skill installation.
+
+`--skill` and `--mcp` cannot be used together. `--force` is the overwrite / skip-validation switch; it does not change global / project-level mode.
+
+**MCP rules:**
+
+- `--mcp` (no `--project`) — global config for **opencode** and **cursor** only; Trae-CN / Codebuddy / Qoder emit an error prompting `--project`.
+- `--mcp --project <path>` — project-level config for **all** agents. `PROJECT_PATH` is written as the **absolute path** of the project.
+- `--mcp --force` — same mode as `--mcp`, overwrites existing config.
+
+| Agent | Global Config | Project Config |
+|---|---|---|
+| OpenCode | `~/.config/opencode/opencode.json` | `<project>/.opencode/opencode.json` |
+| Trae-CN | — | `<project>/.trae/mcp.json` |
+| Cursor | `~/.cursor/mcp.json` | `<project>/.cursor/mcp.json` |
+| Codebuddy | — | `<project>/.codebuddy/mcp.json` |
+| Qoder | — | `<project>/.qoder/mcp.json` |
 
 Examples:
-- `devecocli init`
-- `devecocli init --agent cursor,opencode --force`
-- `devecocli init --project ./my-app`
+- `devecocli init`                              # skill to all detected agents
+- `devecocli init --skill --project ./my-app`    # project-level skill only
+- `devecocli init --mcp`                        # global MCP for opencode + cursor
+- `devecocli init --mcp --project ./my-app`      # project-level MCP for all agents
+- `devecocli init --mcp --project ./my-app --force`  # project-level MCP, overwrite
 
 ### `devecocli skills`
 
@@ -196,6 +271,22 @@ Examples:
 
 Update the CLI to the latest version.
 
+### `devecocli start mcp`
+
+Start the `codegenie` MCP server over stdio (auto-spawned by AI agents after `devecocli init --mcp`). Provides two syntax-checking tools:
+
+- **`arkts_check`** — check ArkTS `.ets` files. Input: file path or directory. Output: diagnostics (file, line, column, message, severity).
+- **`cpp_check`** — check C/C++ files. Input: file path or directory. Output: diagnostics with the same structure.
+
+**Usage:** After `devecocli init --mcp --project <path>`, open the project in your AI agent and ask it to check code (e.g. *"Check for syntax errors in `src/main/ets/pages/Index.ets`"*).
+
+Environment variables (set by the MCP config):
+
+- `PROJECT_PATH` — project root; absolute path (project-level) or `.` / `${workspaceFolder}` (global).
+- `DEVECO_PATH` — overrides DevEco Studio auto-detection.
+- `NODE_MAX_OLD_SPACE_SIZE` — Node heap in MB (default `8192`).
+- `DEBUG=1` — mirror server logs to stderr.
+
 ## Recipes
 
 ### Fresh checkout → running on an emulator
@@ -203,7 +294,8 @@ Update the CLI to the latest version.
 ```bash
 devecocli build
 devecocli emulator list                          # pick or note a name
-devecocli emulator license accept                # if blocked on agreement: confirm y/yes once
+# if blocked on agreement: user must run in their own TTY (not the agent):
+#   devecocli emulator license accept   # confirm y/yes once
 devecocli emulator start HarmonyOS_Phone         # or: start "Mate 70 Pro" OtherAVD
 devecocli run
 ```
@@ -239,8 +331,9 @@ devecocli build --product oversea --build-mode release
 - **"Multiple devices connected"** — pass `-t <serial>` (`device view / install / uninstall`) or `--device <name|serial>` (`run` / `log`).
 - **"Module is of type `<x>`, which is not runnable"** — pick an `entry` / `feature` / `shared` module.
 - **`Install Failed: error:install sign info inconsistent`** — the app's signing key differs from the previously installed version. Uninstall the old install first, then reinstall: simplest is `devecocli run --uninstall`.
-- **`knowledge` says "Please login first"** — run `devecocli login`.
 - **`skills add` reports `Agent <name> not found` / `Invalid agent: <name>, Valid options are: …`** — check the name (only `codebuddy` / `cursor` / `opencode` / `qoder` / `trae-cn` are supported) or omit `--agent` for auto-detect.
 - **Stale CLI / missing flags** — run `devecocli update`.
-- **"`devecocli emulator start` / `image download` is blocked on agreement"** — run `devecocli emulator license accept` (confirm with `y`/`yes` to write `agree` flags).
-- **`image list` shows `phone` / `foldable` / `widefold` / `triplefold` as separate rows** — they share one image per `--os-version`. Download or remove **once** (e.g. `--device-type phone`); do not issue four separate `image download` / `image remove` commands for the same API level.
+- **"`devecocli emulator start` / `image download` is blocked on agreement"** — the user must run `devecocli emulator license accept` in an **interactive terminal (TTY)** on their machine and confirm with `y`/`yes`. AI agents cannot complete this step; do not pipe input or retry in a non-TTY shell. After acceptance, retry `emulator start` or `image download`.
+- **`emulator create` timeout — *did not appear in the emulator list within the timeout*** — treat as a **user-action** step (same class as `license accept`): ask the user to open DevEco Studio → **Device Manager**, wait for the list to load, then retry `create` only if the emulator is still missing. Do **not** auto-retry `create`, edit SDK `lists.json` / `*.ini`, or claim success until `devecocli emulator list` shows the name after the user has opened Device Manager.
+- **`image list` shows `phone` / `foldable` / `widefold` / `triplefold` as separate rows** — they share one image per `--os-version`. Download or remove **once** (e.g. `--device-type phone`); do not issue four separate `image download` / `image remove` commands for the same API level
+

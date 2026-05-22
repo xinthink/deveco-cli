@@ -12,10 +12,12 @@
     "scripts",
     "templates",
     "THIRD-PARTY-LICENSES",
-    "SKILL.md"
+    "SKILL.md",
+    "docs.zip"
   ],
   "scripts": {
     "build": "tsup",
+    "download-docs": "tsx scripts/download-docs.ts",
     "dev": "tsx watch src/cli.ts",
     "start": "tsx src/cli.ts",
     "lint": "eslint src",
@@ -37,6 +39,7 @@
     "@types/adm-zip": "^0.5.8",
     "@types/fs-extra": "^11.0.4",
     "@types/global-agent": "^3.0.0",
+    "@types/turndown": "^5.0.5",
     "@types/node": "^25.6.0",
     "eslint": "^10.2.1",
     "generate-license-file": "^4.1.1",
@@ -44,9 +47,12 @@
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.59.1"
+    "typescript-eslint": "^8.59.1",
+    "turndown": "^7.2.4"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@vscode/ripgrep": "^1.18.0",
     "adm-zip": "^0.5.17",
     "axios": "1.15.2",
     "colorette": "^2.0.20",
@@ -57,8 +63,10 @@
     "json5": "^2.2.3",
     "natural": "^8.1.1",
     "ora": "^9.4.0",
+    "proper-lockfile": "^4.1.2",
     "regedit": "^5.1.4",
-    "string-similarity-js": "^2.1.4"
+    
+    "zod": "^4.4.3"
   },
   "overrides": {
     "dotenv": "16.4.7"

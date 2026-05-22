@@ -94,6 +94,10 @@ export class HvigorAdapter {
     await this.runHvigor(args);
   }
 
+  public async stopDaemon(): Promise<void> {
+    await this.runHvigor(['--stop-daemon']);
+  }
+
   private async runHvigor(args: string[]): Promise<void> {
     const cmd = this.toolProvider.nodePath;
     const cmdArgs = [this.toolProvider.hvigorJsPath, ...args];

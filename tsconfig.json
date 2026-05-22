@@ -8,9 +8,9 @@
     "skipLibCheck": true,
     "declaration": true,
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "mcp/src-server/**/*"],
   "exclude": ["node_modules", "dist"]
 }

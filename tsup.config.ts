@@ -16,6 +16,7 @@ export default defineConfig({
   dts: false,
   shims: true,
   minify: true,
+  splitting: false,
   env: {
     npm_package_version: pkg.version,
     npm_package_name: pkg.name,
