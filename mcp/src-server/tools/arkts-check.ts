@@ -64,7 +64,7 @@ export class ArktsCheckTool {
     nodeMaxOldSpaceSize?: string
   ) {
     this.projectPath = projectPath;
-    this.devecoPath = smartFindToolPath(devecoPath ?? '') ?? devecoPath;
+    this.devecoPath = devecoPath ?? '';
     this.arktsLangServerPath = null;
     this.nodeMaxOldSpaceSize = nodeMaxOldSpaceSize;
   }
