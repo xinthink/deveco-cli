@@ -97,7 +97,7 @@ npm run dev                  # Watch mode
 npm start -- <command>       # tsx (no build step)
 npm run lint                 # add :fix to autofix
 npm run format
-npm run build                # tsup → dist/cli.js, then regenerates SKILL.md from SKILL_TEMP.md
+npm run build                # tsup → dist/cli.js
 ```
 
 See [`AGENTS.md`](./AGENTS.md) for the architecture overview.

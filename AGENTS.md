@@ -137,7 +137,7 @@ templates/application/        # Project scaffold copied by `devecocli create`
 
 ### SKILL.md
 
-`SKILL.md` is consumed by AI agents to learn how to invoke `devecocli`. It is a static reference document — **do not edit by hand** unless updating the prose directly.
+`SKILL.md` is consumed by AI agents to learn how to invoke `devecocli`.
 
 ## Technology Stack
 
