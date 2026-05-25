@@ -14,8 +14,6 @@ import ora from 'ora';
 import type { CatalogName } from './doc-portal-types.js';
 import { CATALOG_TITLES } from './doc-portal-types.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 const APP_NAME: string = 'deveco-cli';
 const DOCS_DIR_NAME: string = 'docs';
 
@@ -123,12 +121,14 @@ export class LocalDocService {
   }
 
   private findDocsZip(): string | null {
-    const cliDir = path.dirname(process.argv[1]);
+    const currentFileUrl = import.meta.url;
+    const currentFilePath = fileURLToPath(currentFileUrl);
+    const currentDir = path.dirname(currentFilePath);
+
     const candidates = [
-      path.join(cliDir, '..', 'docs.zip'),
-      path.join(cliDir, 'docs.zip'),
-      path.join(process.cwd(), 'docs.zip'),
-      path.join(__dirname, '..', '..', 'docs.zip'),
+      // 生产环境：代码被打包在 dist/cli.js
+      // currentDir 为 dist/，docs.zip 在上一级 (项目根目录)
+      path.join(currentDir, '..', 'docs.zip')
     ];
 
     for (const candidate of candidates) {

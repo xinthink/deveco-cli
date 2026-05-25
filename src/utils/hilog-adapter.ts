@@ -408,13 +408,13 @@ export class HilogAdapter {
     const result = await this.runHilogWithSpawnRetry(
       command,
       args,
-      (_lines, _source) => {
+      () => {
         // 一次性读取模式在结果返回后统一处理，不在流回调中输出
       },
       (error) => {
         debugLog(`hilog once stream error callback: ${error.message}`);
       },
-      (_code) => {
+      () => {
         // 非 follow 场景下无需额外处理 close，等待 Promise 结束即可
       }
     );
@@ -471,7 +471,7 @@ export class HilogAdapter {
       (error) => {
         console.error(error.message);
       },
-      (_code) => {
+      () => {
         // close 回调预留给外部处理，这里保持安静退出
       }
     );
