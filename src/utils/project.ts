@@ -191,79 +191,77 @@ export class Project {
     }
   }
 
-  public resolveHspDependencies(
-    moduleName: string,
-    hspModules: Set<string>
-  ): void {
+  public getModuleDependencies(moduleName: string): string[] {
     const moduleNode = this.profile.modules.find((m) => m.name === moduleName);
     if (!moduleNode) {
-      return;
+      return [];
     }
 
-    const pkgPath = path.join(
-      this.rootDir,
-      moduleNode.srcPath,
-      'oh-package.json5'
-    );
+    const pkgPath = path.join(this.rootDir, moduleNode.srcPath, 'oh-package.json5');
     if (!fs.existsSync(pkgPath)) {
-      return;
+      return [];
     }
+
+    const deps: string[] = [];
 
     try {
       const content = fs.readFileSync(pkgPath, 'utf-8');
-      const pkg = json5.parse(content) as {
-        dependencies?: Record<string, string>;
-      };
-      const deps = pkg?.dependencies || {};
+      const pkg = json5.parse(content) as { dependencies?: Record<string, string> };
+      const dependencies = pkg?.dependencies || {};
 
-      for (const value of Object.values(deps)) {
-        this.processSingleHspDependency(moduleNode.srcPath, value, hspModules);
+      for (const value of Object.values(dependencies)) {
+        if (typeof value !== 'string') {
+          continue;
+        }
+
+        let relativePath = value;
+        const isLocal = relativePath.startsWith('file:') || relativePath.startsWith('.') || relativePath.startsWith('..');
+        if (!isLocal) {
+          continue;
+        }
+
+        if (relativePath.startsWith('file:')) {
+          relativePath = relativePath.substring(5);
+        }
+
+        const depDir = path.resolve(this.rootDir, moduleNode.srcPath, relativePath);
+        const depModule = this.profile.modules.find(
+          (m) => path.resolve(this.rootDir, m.srcPath) === depDir
+        );
+
+        if (depModule) {
+          deps.push(depModule.name);
+        }
       }
-    } catch (e) {
-      console.warn(
-        `Warning: Failed to resolve dependencies for ${moduleName}:`,
-        e
-      );
+    } catch {
+      // Ignore unparseable oh-package.json5
     }
+    return deps;
   }
 
-  private processSingleHspDependency(
-    moduleSrcPath: string,
-    depValue: string,
-    hspModules: Set<string>
-  ): void {
-    if (typeof depValue !== 'string') {
-      return;
+  public collectNonHarDependentModuleList(module: string) {
+    const dependentModules: string[] = [];
+    const moduleQueue: string[] = [];
+    const processedModules = new Set<string>();
+
+    moduleQueue.push(module);
+    processedModules.add(module);
+
+    while (moduleQueue.length > 0) {
+      const currentModule = moduleQueue.shift()!;
+      const type = this.getModuleType(currentModule);
+      if (type !== 'har') {
+        dependentModules.push(currentModule);
+      } 
+      const deps = this.getModuleDependencies(currentModule);
+      for (const depModule of deps) {
+        if (!processedModules.has(depModule)) {
+          moduleQueue.push(depModule);
+          processedModules.add(depModule);
+        }
+      }
     }
-
-    let relativePath = depValue;
-    const isLocal =
-      relativePath.startsWith('file:') ||
-      relativePath.startsWith('.') ||
-      relativePath.startsWith('..');
-
-    if (!isLocal) {
-      return;
-    }
-
-    if (relativePath.startsWith('file:')) {
-      relativePath = relativePath.substring(5);
-    }
-
-    const depDir = path.resolve(this.rootDir, moduleSrcPath, relativePath);
-    const depModule = this.profile.modules.find(
-      (m) => path.resolve(this.rootDir, m.srcPath) === depDir
-    );
-
-    if (!depModule) {
-      return;
-    }
-
-    const type = this.getModuleType(depModule.name);
-    if (type === 'shared' && !hspModules.has(depModule.name)) {
-      hspModules.add(depModule.name);
-      this.resolveHspDependencies(depModule.name, hspModules);
-    }
+    return dependentModules;
   }
 
   public findArtifactPath(

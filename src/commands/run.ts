@@ -90,10 +90,9 @@ function resolveArtifacts(
   productName: string
 ): string[] {
   const artifactsToInstall: string[] = [];
-  const hspModules = new Set<string>();
-  project.resolveHspDependencies(moduleName, hspModules);
+  const nonHarModules = project.collectNonHarDependentModuleList(moduleName);
 
-  for (const hsp of hspModules) {
+  for (const hsp of nonHarModules) {
     const p = project.findArtifactPath(
       hsp,
       targetName,
@@ -177,9 +176,8 @@ async function runBuildPhase(
   const ohpmAdapter = new OhpmAdapter(toolProvider, project.rootDir);
   const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
 
-  const hspModules = new Set<string>();
-  project.resolveHspDependencies(moduleName, hspModules);
-  const modulesToBuild = [moduleName, ...hspModules].map((m) => `${m}@${targetName}`);
+  const nonHarModules = project.collectNonHarDependentModuleList(moduleName);
+  const modulesToBuild = nonHarModules.map((m) => `${m}@${targetName}`);
   const moduleTasks = processModuleTasks(project, modulesToBuild);
   const buildTarget = { type: 'modules' as const, modulesToBuild, moduleTasks };
 
