@@ -37,7 +37,7 @@ async function readJsonConfig(filePath: string): Promise<Record<string, unknown>
       // 文件不存在，返回空对象，后续写入时会创建新文件
       return {};
     }
-    throw new Error(`Failed to read config file ${filePath}: ${(err as Error).message}`);
+    throw new Error(`Failed to read config file ${filePath}: ${(err as Error).message}`, { cause: err });
   }
 }
 
@@ -96,6 +96,7 @@ function removeMcpServerConfig(
     return false;
   }
   // 使用 spread 语法移除属性，避免 delete 操作符
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { [serverName]: _, ...rest } = mcpServers;
   config[mcpServersKey] = rest;
   return true;
