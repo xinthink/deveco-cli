@@ -2,10 +2,8 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import * as os from 'os';
 import * as path from 'path';
 import type { EmulatorInfo } from './emulator-types.js';
-import { spawnEmulatorDetachedShellWin } from '../utils/emulator-spawn.js';
 
 function dedupeArgLists(lists: string[][]): string[][] {
   const seen = new Set<string>();
@@ -65,52 +63,13 @@ export function buildEmulatorStartArgCandidates(
   return dedupeArgLists(candidates);
 }
 
-async function tryWindowsShellEmulatorStart(
-  emulatorPath: string,
-  sdkPath: string,
-  listName: string,
-  emulator: EmulatorInfo
-): Promise<{ ok: true } | { ok: false; lastError: Error }> {
-  const attempts = buildEmulatorStartArgCandidates(listName, emulator);
-  let lastError = new Error('Windows shell start not attempted');
-  for (const argv of attempts) {
-    try {
-      await spawnEmulatorDetachedShellWin(emulatorPath, sdkPath, argv);
-      return { ok: true };
-    } catch (err) {
-      lastError = err as Error;
-    }
-  }
-  return { ok: false, lastError };
-}
-
 export async function runAllEmulatorStartStrategies(
-  emulatorPath: string,
-  sdkPath: string,
   listName: string,
   targetEmulator: EmulatorInfo,
   executeEmulatorDetached: (args: string[]) => Promise<void>
 ): Promise<{ ok: true } | { ok: false; lastError: Error }> {
   let lastError: Error = new Error('No start strategy ran');
   const candidates = buildEmulatorStartArgCandidates(listName, targetEmulator);
-
-  const spacedName = /\s/.test(listName);
-  const hasInstancePath = Boolean(targetEmulator.instancePath?.trim());
-  const shellFirstForSpacedNameOnly =
-    os.platform() === 'win32' && spacedName && !hasInstancePath;
-
-  if (shellFirstForSpacedNameOnly) {
-    const shellFirst = await tryWindowsShellEmulatorStart(
-      emulatorPath,
-      sdkPath,
-      listName,
-      targetEmulator
-    );
-    if (shellFirst.ok) {
-      return { ok: true };
-    }
-    lastError = shellFirst.lastError;
-  }
 
   for (const args of candidates) {
     try {
@@ -119,19 +78,6 @@ export async function runAllEmulatorStartStrategies(
     } catch (err) {
       lastError = err as Error;
     }
-  }
-
-  if (os.platform() === 'win32' && !spacedName) {
-    const shellOut = await tryWindowsShellEmulatorStart(
-      emulatorPath,
-      sdkPath,
-      listName,
-      targetEmulator
-    );
-    if (shellOut.ok) {
-      return { ok: true };
-    }
-    lastError = shellOut.lastError;
   }
 
   return { ok: false, lastError };

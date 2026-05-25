@@ -57,7 +57,7 @@ src/
 │   ├── template-provider.ts        # Copy templates/application + render API-level fields
 │   ├── ohpm-adapter.ts   hvigor-adapter.ts
 │   ├── hdc-adapter.ts    hilog-adapter.ts    hdc-param.ts
-│   ├── emulator-spawn.ts           # Detached Emulator.exe spawn + Windows shell quoting
+│   ├── emulator-spawn.ts           # Detached Emulator.exe spawn (parameterized argv)
 │   ├── emulator-hdc-targets.ts     # `hdc list targets` filter for emulator serials
 │   ├── emulator-image-list-parse.ts # Parses `emulator -imageList` JSON for downloaded osVersions
 │   ├── common-utils.ts             # Shared validators (bundle / level / crash / duration / tail)
