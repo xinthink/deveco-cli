@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { Command } from 'commander';
-import { green, red } from 'colorette';
+import { green, red, yellow } from 'colorette';
 import { Project } from '../utils/project.js';
 import { ToolProvider } from '../utils/tool-provider.js';
 import { HdcAdapter } from '../utils/hdc-adapter.js';
@@ -192,6 +192,7 @@ async function runBuildPhase(
 
 async function runActionImpl(options: RunOptions): Promise<void> {
   const project = Project.discover(process.cwd());
+  console.warn(yellow('Please ensure the project source is trustworthy before proceeding.'));
   const toolProvider = await ToolProvider.new();
 
   const moduleArg = identifyModule(project, options.module);
