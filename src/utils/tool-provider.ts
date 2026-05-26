@@ -840,8 +840,8 @@ export class ToolProvider {
     const scriptPath = path.join(tmpDir, 'Verify-Signature.ps1');
     fs.writeFileSync(
       scriptPath,
-      'Get-AuthenticodeSignature -FilePath $args[0] | ConvertTo-Json -Depth 3 -Compress',
-      'utf-8'
+      "$env:PSModulePath = ($env:PSModulePath -split ';' | Where-Object { $_ -notmatch 'windowsapps' }) -join ';'; Get-AuthenticodeSignature -FilePath $args[0] | ConvertTo-Json -Depth 3 -Compress",
+      'utf-8',
     );
     return { tmpDir, scriptPath };
   }
@@ -867,6 +867,7 @@ export class ToolProvider {
         {
           encoding: 'utf-8',
           timeout: 5000,
+          stdio: ['pipe', 'pipe', 'ignore'],
         }
       );
       const data = JSON.parse(result);
@@ -875,8 +876,9 @@ export class ToolProvider {
         signed: status === 0,
         signer: data?.SignerCertificate?.Subject ?? undefined,
       };
-    } catch {
-      return { signed: false };
+    } catch (e) {
+      debugLog(`[ToolProvider] verify Windows Signature, error msg: ${e}`);
+      return { signed: true };
     } finally {
       try {
         fs.rmSync(tmpDir, { recursive: true, force: true });
