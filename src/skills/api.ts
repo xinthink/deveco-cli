@@ -185,7 +185,7 @@ export function validateApiResponse<T extends ApiResponseBase>(
  */
 export async function fetchSkillChecksum(skillName: string): Promise<ChecksumData> {
   // 构建 Checksum API URL
-  const url = `${SkillsApiConstants.SKILL_CHECKSUM_API_BASE}/${skillName}/checksum`;
+  const url = `${SkillsApiConstants.SKILL_API_BASE}/${skillName}/checksum`;
 
   // 调用 Checksum API 获取校验和信息
   const response = await httpClient.get(url);

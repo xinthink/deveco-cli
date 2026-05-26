@@ -105,7 +105,7 @@ export async function verifyZipIntegrity(
  */
 export async function downloadSkill(skillName: string): Promise<Buffer> {
   // 构建 API URL
-  const url = `${SkillsApiConstants.SKILL_INSTALL_API_BASE}/${skillName}/install?format=zip`;
+  const url = `${SkillsApiConstants.SKILL_API_BASE}/${skillName}/install?format=zip`;
   // 使用 httpClient.getBinary 下载
   const buffer = await httpClient.getBinary(url);
 
