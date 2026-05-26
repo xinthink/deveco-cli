@@ -3,9 +3,6 @@
  * SPDX-License-Identifier: MIT
  */
 
-// 应用配置常量
-export { AppConfig, CryptoConstants } from './auth';
-
 // 网络相关常量
 export { TimeConstants, NetworkConstants } from './network';
 
