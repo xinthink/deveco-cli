@@ -107,6 +107,7 @@ export class HdcAdapter {
       if (!installRes.includes('install bundle successfully.')) {
         throw new Error(installRes);
       }
+      console.log(`App installed successfully`);
     } finally {
       // 4. Remove the temporary directory
       await this.runHdc(['-t', target, 'shell', 'rm', '-rf', remoteDir], false);
