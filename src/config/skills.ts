@@ -14,6 +14,8 @@ export const SkillsApiConstants = {
   SKILLS_API_URL: 'https://matrix.openharmony.cn/api/registry/skill/skills',
   /** Skill 安装 API 基础路径 */
   SKILL_INSTALL_API_BASE: 'https://matrix.openharmony.cn/api/registry/skill',
+  /** Skill Checksum API 基础路径 */
+  SKILL_CHECKSUM_API_BASE: 'https://matrix.openharmony.cn/api/registry/skill',
   /** 默认分页大小 */
   DEFAULT_PAGE_SIZE: 20,
   /** 成功响应码 */

@@ -4,13 +4,16 @@
  */
 
 import AdmZip from 'adm-zip';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { homedir } from 'os';
 import { AGENT_SKILLS_CONFIG, SkillsApiConstants } from '../config/constants';
 import { httpClient } from '../utils/http-client';
-import { SkillOperationResult } from '../types/skills';
+import { ChecksumData, SkillOperationResult } from '../types/skills';
+import { fetchSkillChecksum } from './api';
+import { red } from 'colorette';
 
 const fsp = fs.promises;
 
@@ -55,6 +58,45 @@ export function resolvePath(pathToResolve: string): string {
 }
 
 /**
+ * 计算 Buffer 的 SHA256 哈希值
+ * @param buffer - 待计算的 Buffer 数据
+ * @returns 小写十六进制格式的 SHA256 哈希字符串
+ */
+export function calculateSha256(buffer: Buffer): string {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+/**
+ * 验证 zip 文件的完整性
+ * 校验文件大小和 SHA256 哈希值是否与预期一致
+ * @param zipBuffer - zip 文件的 Buffer 数据
+ * @param expected - 预期的校验和数据（包含 enName、sha256、size）
+ * @throws 如果大小或哈希值不匹配
+ */
+export async function verifyZipIntegrity(
+  zipBuffer: Buffer,
+  expected: ChecksumData
+): Promise<void> {
+  // 验证大小
+  const actualSize = zipBuffer.length;
+  if (actualSize !== expected.size) {
+    throw new Error(
+      `Skill zip integrity verification failed: Size mismatch`
+    );
+  }
+
+  // 计算 SHA256 并验证
+  const actualSha256 = calculateSha256(zipBuffer);
+  const expectedSha256 = expected.sha256.toLowerCase();
+
+  if (actualSha256 !== expectedSha256) {
+    throw new Error(
+      `Skill zip integrity verification failed: SHA256 mismatch`
+    );
+  }
+}
+
+/**
  * 下载 Skill 的 zip 文件
  * 通过 API 下载指定 skill 的 zip 压缩包
  * @param skillName - skill 的英文名称
@@ -66,6 +108,12 @@ export async function downloadSkill(skillName: string): Promise<Buffer> {
   const url = `${SkillsApiConstants.SKILL_INSTALL_API_BASE}/${skillName}/install?format=zip`;
   // 使用 httpClient.getBinary 下载
   const buffer = await httpClient.getBinary(url);
+
+  // 获取校验和信息
+  const checksum = await fetchSkillChecksum(skillName);
+
+  // 验证完整性
+  await verifyZipIntegrity(buffer, checksum);
 
   return buffer;
 }
@@ -225,10 +273,12 @@ async function performLocalSkillInstall(
  * 统一的错误处理
  */
 function handleOperationError(
+  skillName: string,
   error: unknown,
   defaultErrMsg: string = ''
 ): SkillOperationResult {
   const errorMessage = error instanceof Error ? error.message : defaultErrMsg;
+  console.log(red(`Skill ${skillName} operation failed - ${errorMessage}`));
   return { success: false, error: errorMessage };
 }
 
@@ -262,7 +312,7 @@ async function executeInstall(
     await performInstall(skillsDir);
     return { success: true };
   } catch (error: unknown) {
-    return handleOperationError(error, 'Installation failed');
+    return handleOperationError(skillName, error, 'Installation failed');
   }
 }
 
@@ -293,7 +343,7 @@ async function executeRemove(
     console.log(`Skill ${skillName} removed from ${skillDir}`);
     return { success: true };
   } catch (error: unknown) {
-    return handleOperationError(error, 'Removal failed');
+    return handleOperationError(skillName, error, 'Removal failed');
   }
 }
 

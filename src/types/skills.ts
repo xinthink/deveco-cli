@@ -26,19 +26,29 @@ export interface Tag {
 }
 
 /**
- * Tags API 响应
+ * 格物API通用响应结构
  */
-export interface TagsResponse {
+export interface MatrixApiResponse<T> {
   /** 响应码 */
   code: string;
   /** 响应消息 */
   message: string;
   /** 响应数据 */
-  data: {
-    /** 技能标签列表 */
-    skill: Tag[];
-  };
+  data: T;
 }
+
+/**
+ * Tags API 响应数据
+ */
+export interface TagsData {
+  /** 技能标签列表 */
+  skill: Tag[];
+}
+
+/**
+ * Tags API 响应
+ */
+export type TagsResponse = MatrixApiResponse<TagsData>;
 
 /**
  * 技能所有者
@@ -181,21 +191,38 @@ export interface Skill {
 }
 
 /**
+ * Skills API 响应数据
+ */
+export interface SkillsData {
+  /** 总数 */
+  count: number;
+  /** 技能列表 */
+  list: Skill[];
+}
+
+/**
  * Skills API 响应
  */
-export interface SkillsResponse {
-  /** 响应码 */
-  code: string;
-  /** 响应消息 */
-  message: string;
-  /** 响应数据 */
-  data: {
-    /** 总数 */
-    count: number;
-    /** 技能列表 */
-    list: Skill[];
-  };
+export type SkillsResponse = MatrixApiResponse<SkillsData>;
+
+/**
+ * 校验和数据
+ */
+export interface ChecksumData {
+  /** 英文名称 */
+  enName: string;
+  /** SHA256 哈希值 */
+  sha256: string;
+  /** 文件大小（字节） */
+  size: number;
+  /** 创建时间 */
+  createTime: string;
 }
+
+/**
+ * Checksum API 响应
+ */
+export type ChecksumResponse = MatrixApiResponse<ChecksumData>;
 
 /**
  * 技能操作结果（统一接口）
