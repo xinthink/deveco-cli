@@ -73,27 +73,80 @@ export class HilogAdapter {
     this.deviceManager = DeviceManager.from(toolProvider);
   }
 
+  private createFollowLineHandler(options: HilogOptions): HilogDataHandler {
+    return (lines, source) => {
+      const visibleLines = options.keyword
+        ? lines.filter((line) => line.includes(options.keyword as string))
+        : lines;
+      if (source === 'stderr') {
+        return;
+      }
+      for (const line of visibleLines) {
+        console.log(line);
+      }
+    };
+  }
+
+  private findDeviceByArg(
+    connectedDevices: ConnectedDevice[],
+    deviceArg: string
+  ): ConnectedDevice | undefined {
+    return connectedDevices.find(
+      (d) => d.serial === deviceArg || d.name.includes(deviceArg)
+    );
+  }
+
+  private formatConnectedDeviceList(
+    connectedDevices: ConnectedDevice[]
+  ): string {
+    return connectedDevices
+      .map((d) => `  - ${d.name} (${d.serial})`)
+      .join('\n');
+  }
+
+  private async loadConnectedDevicesByName(): Promise<
+    ConnectedDevice[] | undefined
+  > {
+    const connectedDevices = await this.getConnectedDevices();
+    if (!connectedDevices) {
+      return undefined;
+    }
+    return connectedDevices;
+  }
+
   /**
    * 获取选择的设备
    * @param deviceArg 用户传入的 --device 参数（可以是设备 name 或 serial）
    */
   async selectDevice(deviceArg?: string): Promise<string | undefined> {
-    const connectedDevices = await this.getConnectedDevices();
+    const serials = await this.getConnectedDeviceSerials();
+    if (!serials) {
+      return undefined;
+    }
+
+    if (!deviceArg && serials.length === 1) {
+      const serial = serials[0];
+      debugLog(cyan(`Using device serial: ${serial}`));
+      return serial;
+    }
+
+    if (deviceArg && serials.includes(deviceArg)) {
+      debugLog(cyan(`Using device serial: ${deviceArg}`));
+      return deviceArg;
+    }
+
+    const connectedDevices = await this.loadConnectedDevicesByName();
     if (!connectedDevices) {
       return undefined;
     }
 
     if (deviceArg) {
-      const found = connectedDevices.find(
-        (d) => d.serial === deviceArg || d.name.includes(deviceArg)
-      );
+      const found = this.findDeviceByArg(connectedDevices, deviceArg);
       if (found) {
         debugLog(cyan(`Using device: ${found.name} (${found.serial})`));
         return found.serial;
       }
-      const list = connectedDevices
-        .map((d) => `  - ${d.name} (${d.serial})`)
-        .join('\n');
+      const list = this.formatConnectedDeviceList(connectedDevices);
       throw new Error(
         `Device '${deviceArg}' not found.\nAvailable devices:\n${list}`
       );
@@ -107,28 +160,22 @@ export class HilogAdapter {
 
     throw new Error(
       'Multiple devices found. Please specify a target device using `--device <name>` or `--device <serial>`.\nAvailable devices:\n' +
-        connectedDevices.map((d) => `  - ${d.name} (${d.serial})`).join('\n')
+        this.formatConnectedDeviceList(connectedDevices)
     );
   }
 
   /**
-   * 获取已连接的设备列表
+   * 获取已连接设备 serial 列表（快速路径，不查询设备名）
    */
-  private async getConnectedDevices(): Promise<ConnectedDevice[] | null> {
+  private async getConnectedDeviceSerials(): Promise<string[] | null> {
     try {
-      const devices = await this.deviceManager.listDevicesWithName();
-
+      const devices = await this.deviceManager.listDevices();
       if (devices.length === 0) {
-        console.error(red('No running device found.'));
-        console.error('Please ensure:');
-        console.error(
-          '  1. The physical device is connected via USB and debugging mode is enabled'
+        throw new Error(
+          'No active devices found. Please start an emulator or connect a physical device.'
         );
-        console.error('  2. Or an emulator is running');
-        return null;
       }
-
-      return devices;
+      return devices.map((d) => d.serial);
     } catch (error) {
       console.error(
         red(`Failed to retrieve the device list: ${(error as Error).message}`)
@@ -138,48 +185,24 @@ export class HilogAdapter {
   }
 
   /**
-   * 提示用户选择设备
+   * 获取已连接的设备列表（包含设备名）
    */
-  private async promptDeviceSelection(
-    devices: ConnectedDevice[]
-  ): Promise<string | undefined> {
-    console.log(yellow('Multiple devices detected:'));
-    devices.forEach((device, index) => {
-      console.log(`  ${index + 1}. ${device.name} (${device.serial})`);
-    });
+  private async getConnectedDevices(): Promise<ConnectedDevice[] | null> {
+    try {
+      const devices = await this.deviceManager.listDevicesWithName();
 
-    const selectedIndex = await this.getUserInput(devices.length);
-    if (selectedIndex === null) {
-      return undefined;
+      if (devices.length === 0) {
+        throw new Error(
+          'No active devices found. Please start an emulator or connect a physical device.'
+        );
+      }
+      return devices;
+    } catch (error) {
+      console.error(
+        red(`Failed to retrieve the device list: ${(error as Error).message}`)
+      );
+      return null;
     }
-
-    return devices[selectedIndex].serial;
-  }
-
-  /**
-   * 获取用户输入的设备索引
-   */
-  private async getUserInput(maxIndex: number): Promise<number | null> {
-    const readline = await import('readline');
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-
-    const answer = await new Promise<string>((resolve) => {
-      rl.question('Please enter the device ID: ', (input) => {
-        rl.close();
-        resolve(input);
-      });
-    });
-
-    const index = parseInt(answer) - 1;
-    if (index >= 0 && index < maxIndex) {
-      return index;
-    }
-
-    console.error(red('Invalid device ID'));
-    return null;
   }
 
   /**
@@ -456,18 +479,7 @@ export class HilogAdapter {
     const result = await this.runHilogWithSpawnRetry(
       command,
       args,
-      (lines, source) => {
-        const keyword = options.keyword;
-        const visibleLines = keyword
-          ? lines.filter((line) => line.includes(keyword))
-          : lines;
-        if (source === 'stderr') {
-          return;
-        }
-        for (const line of visibleLines) {
-          console.log(line);
-        }
-      },
+      this.createFollowLineHandler(options),
       (error) => {
         console.error(error.message);
       },
