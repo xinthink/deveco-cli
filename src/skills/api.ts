@@ -8,7 +8,13 @@ import { homedir } from 'os';
 import { httpClient } from '../utils/http-client';
 import type { HttpResponse } from '../types/http';
 import { SkillsApiConstants, AGENT_SKILLS_CONFIG } from '../config/constants';
-import type { TagsResponse, SkillsResponse, Skill } from '../types/skills';
+import type {
+  TagsResponse,
+  SkillsResponse,
+  Skill,
+  ChecksumData,
+  ChecksumResponse,
+} from '../types/skills';
 
 /**
  * 获取 HMOS 标签的 ID
@@ -168,4 +174,24 @@ export function validateApiResponse<T extends ApiResponseBase>(
   }
 
   return data;
+}
+
+/**
+ * 获取技能的校验和信息
+ * 通过 Checksum API 获取指定技能的 SHA256 哈希值和文件大小
+ * @param skillName - 技能名称
+ * @returns 校验和数据
+ * @throws 如果 API 调用失败或数据格式不正确
+ */
+export async function fetchSkillChecksum(skillName: string): Promise<ChecksumData> {
+  // 构建 Checksum API URL
+  const url = `${SkillsApiConstants.SKILL_CHECKSUM_API_BASE}/${skillName}/checksum`;
+
+  // 调用 Checksum API 获取校验和信息
+  const response = await httpClient.get(url);
+
+  // 验证并解析响应
+  const data = validateApiResponse<ChecksumResponse>(response, 'Checksum API');
+
+  return data.data;
 }
