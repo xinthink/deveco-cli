@@ -32,11 +32,11 @@ function validateOneOf<T extends string>(...allowed: T[]): (value: string) => T 
 }
 
 function validatePositiveInt(value: string): number {
-  const parsed = parseInt(value, 10);
-  if (isNaN(parsed) || parsed <= 0) {
+  const num = Number(value);
+  if (!Number.isInteger(num) || num <= 0) {
     throw new InvalidArgumentError('Must be a positive integer');
   }
-  return parsed;
+  return num;
 }
 
 const validateSearchFormat = validateOneOf<'json' | 'default'>('json', 'default');
