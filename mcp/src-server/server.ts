@@ -9,7 +9,7 @@ import * as path from 'path';
 import { z } from 'zod';
 import { ToolRouter, createToolRouter } from './router.js';
 import { ArktsCheckTool, CppCheckTool } from './tools/index.js';
-import { findHarmonyProject, isSupportedCppFile, smartFindToolPath } from './utils/common.js';
+import { findHarmonyProject, isSupportedCppFile, smartFindToolPath, devecoStudioContentRoot } from './utils/common.js';
 import { initMcpLogger, disposeMcpLogger, flushMcpLogger, getMcpLogFilePath, mcpLog } from './utils/mcp-logger.js';
 import { ArktsLspManager } from './lsp/ArktsLspManager.js';
 
@@ -387,12 +387,15 @@ export class DevecoCliMcpServer {
 
     mcpLog.info('Initializing ArkTS LSP...');
     this.config.devecoPath = smartFindToolPath(this.config.devecoPath ?? '');
+    const contentRoot = devecoStudioContentRoot(this.config.devecoPath);
+    const sdkPath = path.join(contentRoot, 'sdk');
+    mcpLog.info(`devecoPath: ${this.config.devecoPath}, contentRoot: ${contentRoot}, sdkPath: ${sdkPath}`);
     this.arktsCheckTool = new ArktsCheckTool(
       projectPath,
       this.config.devecoPath ?? null,
       this.config.nodeMaxOldSpaceSize
     );
-    await ArktsLspManager.handleSyncProject(projectPath, path.join(this.config.devecoPath, 'sdk'));
+    await ArktsLspManager.handleSyncProject(projectPath, sdkPath);
     try {
       await this.arktsCheckTool.initialize();
       mcpLog.info('ArkTS LSP initialized successfully');

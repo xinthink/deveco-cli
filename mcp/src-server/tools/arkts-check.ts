@@ -20,6 +20,7 @@ import {
   smartFindToolPath,
   toFileUri,
   toStandardPath,
+  devecoStudioContentRoot,
 } from '../utils/common.js';
 import { mcpLog } from '../utils/mcp-logger.js';
 import { ArktsLspManager } from '../lsp/ArktsLspManager.js';
@@ -131,8 +132,10 @@ export class ArktsCheckTool {
       : NaN;
     const nodeMaxOldSpaceSize = Number.isNaN(parsedMaxSize) ? undefined : parsedMaxSize;
 
+    const sdkPath = path.join(devecoStudioContentRoot(devecoPath), 'sdk');
+    mcpLog.info(`ArktsCheck devecoPath: ${devecoPath}, contentRoot: ${devecoStudioContentRoot(devecoPath)}, sdkPath: ${sdkPath}`);
     this.manager = new ArktsLspManager({
-      sdkPath: path.join(devecoPath, 'sdk'),
+      sdkPath,
       arktsLangServerPath,
       workspaceRoot: toUnixPath(normalizedProjectRoot),
       indexLogPath: indexPath,

@@ -18,6 +18,7 @@ import {
   smartFindToolPath,
   toFileUri,
   COMPILE_COMMANDS_RELATIVE_SEGMENTS,
+  devecoStudioContentRoot,
 } from '../utils/common.js';
 import { mcpLog } from '../utils/mcp-logger.js';
 import { ModuleInfoParse } from '../lsp/parse/ModuleInfoParse.js';
@@ -740,14 +741,15 @@ function runCompileNative(
   devecoPath: string,
   cppModules: ModuleInfo[]
 ): void {
-  const sdkPath = path.join(devecoPath, 'sdk');
+  const sdkPath = path.join(devecoStudioContentRoot(devecoPath), 'sdk');
   const osType = process.platform === 'win32' ? 'Windows'
     : process.platform === 'darwin' ? 'Mac'
     : 'Linux';
 
   // 推导 node 和 hvigor 路径
   const nodePath = process.execPath || 'node';
-  const toolsDir = path.join(devecoPath, process.platform === 'darwin' ? 'Contents' : '', 'tools');
+  const toolsDir = path.join(devecoStudioContentRoot(devecoPath), 'tools');
+  mcpLog.info(`CppCheck devecoPath: ${devecoPath}, contentRoot: ${devecoStudioContentRoot(devecoPath)}, sdkPath: ${sdkPath}, toolsDir: ${toolsDir}`);
   const hvigorPath = process.platform === 'win32'
     ? path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.bat')
     : path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.js');

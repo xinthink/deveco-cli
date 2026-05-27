@@ -312,7 +312,7 @@ function firstExistingPath(candidates: string[]): string | null {
  * (Windows -> `<root>`, macOS -> `<root>/Contents`). The result is the
  * directory that should contain `plugins/`, `sdk/`, `tools/` etc.
  */
-function devecoStudioContentRoot(dir: string): string {
+export function devecoStudioContentRoot(dir: string): string {
   if (process.platform === 'darwin') {
     return path.join(dir, 'Contents');
   }
