@@ -42,7 +42,7 @@ function validatePositiveInt(value: string): number {
 const validateSearchFormat = validateOneOf<'json' | 'default'>('json', 'default');
 const validateCatalogFormat = validateOneOf<'json' | 'default'>('json', 'default');
 
-const docCommand = new Command('doc').description(
+const docCommand = new Command('docs').description(
   'Search and read Harmony documentation from local docs directory'
 );
 
