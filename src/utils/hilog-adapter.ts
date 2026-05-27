@@ -5,7 +5,7 @@
 import { HilogOptions } from './config.js';
 import { ToolProvider } from './tool-provider.js';
 import { DeviceManager } from '../service/device-manager.js';
-import { cyan, red, yellow } from 'colorette';
+import { cyan, red } from 'colorette';
 import { CommonUtils } from './common-utils.js';
 import { debugLog } from './logger.js';
 import {
