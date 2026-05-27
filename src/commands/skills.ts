@@ -7,7 +7,7 @@ import { Command } from 'commander';
 import { green, red, cyan, yellow, dim } from 'colorette';
 import { SpinnerHelper } from '../utils/spinner-helper.js';
 import {
-  fetchHmosTagId,
+  fetchTagIds,
   fetchAllSkills,
   searchSkills,
   getInstalledAgents,
@@ -40,15 +40,15 @@ import {
  * 获取要安装的技能名称列表
  */
 async function getSkillNames(options: AddOptions): Promise<string[]> {
-  const tagId = await fetchHmosTagId();
+  const tagIds = await fetchTagIds();
 
   if (options.all) {
     // 如果 --all，调用 API 获取所有技能
-    const skills = await fetchAllSkills(tagId);
+    const skills = await fetchAllSkills(tagIds);
     return skills.map((s) => s.enName);
   } else {
     // 如果 --skill，查找指定技能（精确匹配 enName）
-    const allSkills = await searchSkills(options.skill!, tagId);
+    const allSkills = await searchSkills(options.skill!, tagIds);
     const skill = allSkills.find((s) => s.enName === options.skill);
     if (!skill) {
       throw new Error(`Skill "${options.skill}" not found`);
@@ -374,10 +374,10 @@ skillsCommand
     const spinner = new SpinnerHelper();
     try {
       spinner.start('Fetching skills...');
-      const tagId = await fetchHmosTagId();
+      const tagIds = await fetchTagIds();
 
       // 获取所有技能
-      const skills = await fetchAllSkills(tagId);
+      const skills = await fetchAllSkills(tagIds);
 
       // 处理空结果
       if (skills.length === 0) {
@@ -418,10 +418,10 @@ skillsCommand
     const spinner = new SpinnerHelper();
     try {
       spinner.start('Searching skills...');
-      const tagId = await fetchHmosTagId();
+      const tagIds = await fetchTagIds();
 
       // 搜索技能
-      const skills = await searchSkills(keyword, tagId);
+      const skills = await searchSkills(keyword, tagIds);
 
       // 处理空结果
       if (skills.length === 0) {

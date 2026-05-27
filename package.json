@@ -16,6 +16,7 @@
     "docs.zip"
   ],
   "scripts": {
+    "prepare": "husky",
     "build": "tsup",
     "download-docs": "tsx scripts/download-docs.ts",
     "dev": "tsx watch src/cli.ts",
@@ -48,7 +49,8 @@
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.1",
-    "turndown": "^7.2.4"
+    "turndown": "^7.2.4",
+    "husky": "9.1.7"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

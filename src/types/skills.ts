@@ -116,11 +116,11 @@ export interface SkillTag {
  * 单个技能对象
  */
 export interface Skill {
-  /** 技能ID */
+  /** 技能ID，唯一标识 */
   id: string;
   /** 技能名称 */
   name: string;
-  /** 英文名称 */
+  /** 英文名称，名称唯一不会重复 */
   enName: string;
   /** 所有者信息 */
   owner: Owner;

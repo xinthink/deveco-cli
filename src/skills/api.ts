@@ -17,41 +17,41 @@ import type {
 } from '../types/skills';
 
 /**
- * 获取 HMOS 标签的 ID
- * 通过 Tags API 查询所有标签，返回 HMOS 标签的 ID
- * @returns HMOS 标签的 ID
- * @throws 如果 API 调用失败或找不到 HMOS 标签
+ * 获取需要的标签 ID 列表（HMOS 和 DevEco）
+ * 通过 Tags API 查询所有标签，返回匹配标签的 ID 列表
+ * @returns 标签 ID 数组
+ * @throws 如果 API 调用失败或找不到任何标签
  */
-export async function fetchHmosTagId(): Promise<string> {
+export async function fetchTagIds(): Promise<string[]> {
   // 调用 Tags API 获取标签列表
   const response = await httpClient.get(SkillsApiConstants.TAGS_API_URL);
 
   // 验证并解析响应
   const data = validateApiResponse<TagsResponse>(response, 'Tags API');
 
-  // 在标签列表中查找 HMOS 标签
-  const hmosTag = data.data.skill.find((tag) => tag.name === 'HMOS');
+  // 在标签列表中查找 HMOS 和 DevEco 标签
+  const requiredTags = data.data.skill.filter(
+    (tag) => tag.name === 'HMOS' || tag.name === 'DevEco'
+  );
 
-  if (!hmosTag) {
-    throw new Error('HMOS tag not found');
+  if (requiredTags.length === 0) {
+    throw new Error('No HMOS or DevEco tags found');
   }
 
-  return hmosTag.id;
+  return requiredTags.map((tag) => tag.id);
 }
 
 /**
- * 获取所有技能（自动翻页）
- * 通过 Skills API 获取指定标签下的所有技能，自动处理分页
- * @param tagId - HMOS 标签的 ID
- * @returns 所有技能数组
+ * 获取单个标签的所有技能（自动翻页）
+ * @param tagId - 标签 ID
+ * @returns 该标签下的所有技能数组
  * @throws 如果 API 调用失败
  */
-export async function fetchAllSkills(tagId: string): Promise<Skill[]> {
-  const allSkills: Skill[] = [];
-  let pageNum = 1;
+async function fetchSkillsForTag(tagId: string): Promise<Skill[]> {
+  const skills: Skill[] = [];
   const pageSize = SkillsApiConstants.DEFAULT_PAGE_SIZE;
+  let pageNum = 1;
 
-  // 循环获取每一页数据
   while (true) {
     // 发送 POST 请求
     const response = await httpClient.post(SkillsApiConstants.SKILLS_API_URL, {
@@ -68,8 +68,8 @@ export async function fetchAllSkills(tagId: string): Promise<Skill[]> {
     // 验证并解析响应
     const data = validateApiResponse<SkillsResponse>(response, 'Skills API');
 
-    // 将当前页的技能添加到结果数组
-    allSkills.push(...data.data.list);
+    // 将当前页的技能添加到数组
+    skills.push(...data.data.list);
 
     // 如果当前页数据少于页大小，说明已经是最后一页
     if (data.data.list.length < pageSize) {
@@ -79,21 +79,43 @@ export async function fetchAllSkills(tagId: string): Promise<Skill[]> {
     pageNum++;
   }
 
-  return allSkills;
+  return skills;
 }
 
 /**
- * 搜索技能
- * 通过 Skills API 搜索匹配关键词的技能
- * @param keyword - 搜索关键词
- * @param tagId - HMOS 标签的 ID
- * @returns 匹配的技能数组
+ * 获取所有技能
+ * 通过 Skills API 分别获取每个标签下的所有技能，并合并去重
+ * @param tagIds - 标签 ID 数组
+ * @returns 所有技能数组（根据 id 去重）
  * @throws 如果 API 调用失败
  */
-export async function searchSkills(
-  keyword: string,
-  tagId: string
-): Promise<Skill[]> {
+export async function fetchAllSkills(tagIds: string[]): Promise<Skill[]> {
+  const skillMap = new Map<string, Skill>();
+
+  // 并行获取所有标签的技能
+  const fetchPromises = tagIds.map(tagId => fetchSkillsForTag(tagId));
+  const allTagSkills = await Promise.all(fetchPromises);
+
+  // 合并并去重所有技能
+  for (const tagSkills of allTagSkills) {
+    for (const skill of tagSkills) {
+      if (!skillMap.has(skill.id)) {
+        skillMap.set(skill.id, skill);
+      }
+    }
+  }
+
+  return Array.from(skillMap.values());
+}
+
+/**
+ * 在单个标签中搜索技能
+ * @param keyword - 搜索关键词
+ * @param tagId - 标签 ID
+ * @returns 该标签下匹配的技能数组
+ * @throws 如果 API 调用失败
+ */
+async function searchSkillsInTag(keyword: string, tagId: string): Promise<Skill[]> {
   // 发送 POST 请求
   const response = await httpClient.post(SkillsApiConstants.SKILLS_API_URL, {
     headers: {
@@ -111,6 +133,36 @@ export async function searchSkills(
   const data = validateApiResponse<SkillsResponse>(response, 'Skills API');
 
   return data.data.list;
+}
+
+/**
+ * 搜索技能
+ * 通过 Skills API 分别在每个标签下搜索匹配关键词的技能，并合并去重
+ * @param keyword - 搜索关键词
+ * @param tagIds - 标签 ID 数组
+ * @returns 匹配的技能数组（根据 id 去重）
+ * @throws 如果 API 调用失败
+ */
+export async function searchSkills(
+  keyword: string,
+  tagIds: string[]
+): Promise<Skill[]> {
+  const skillMap = new Map<string, Skill>();
+
+  // 并行在所有标签中搜索技能
+  const searchPromises = tagIds.map(tagId => searchSkillsInTag(keyword, tagId));
+  const allTagSkills = await Promise.all(searchPromises);
+
+  // 合并并去重所有技能
+  for (const tagSkills of allTagSkills) {
+    for (const skill of tagSkills) {
+      if (!skillMap.has(skill.id)) {
+        skillMap.set(skill.id, skill);
+      }
+    }
+  }
+
+  return Array.from(skillMap.values());
 }
 
 /**
