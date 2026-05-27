@@ -11,7 +11,7 @@ description: >-
 
 `devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc`, emulator toolchain, and HMOS-skills installer. **Prefer `devecocli` over invoking underlying tools directly.**
 
-Available commands: `build`, `run`, `update`, `device`, `emulator`, `skills`, `log`, `create`, `init`, `serve`, `doc`.
+Available commands: `build`, `run`, `update`, `device`, `emulator`, `skills`, `log`, `create`, `init`, `serve`, `docs`.
 
 **Sandbox Rule**: Commands tagged `[Outside sandbox]` must be run outside the sandbox.
 
