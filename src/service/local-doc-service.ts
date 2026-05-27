@@ -152,27 +152,22 @@ export class LocalDocService {
     await this.ensureInitialized();
 
     const searchDir = catalog ? path.join(this.docsDir, CATALOG_TITLES[catalog]) : this.docsDir;
-    const fileMatchCounts = await this.searchFiles(keywords, searchDir);
-    const sortedFiles = Array.from(fileMatchCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([filePath]) => filePath);
+    const fileStats = await this.searchFiles(keywords, searchDir);
+
+    const enriched = await this.enrichWithTitleRelevance(fileStats, keywords);
+    const selected = this.selectByTiers(enriched, keywords.length);
 
     const results = await Promise.all(
-      sortedFiles.map(async (filePath) => {
-        const relativePath = this.parseFilePath(filePath);
-        if (!relativePath) {
+      selected.map(async (item) => {
+        const relativePath = this.parseFilePath(item.filePath);
+        if (!relativePath || !item.metadata) {
           return null;
         }
 
-        const metadata = await this.readMetadata(filePath);
-        if (!metadata) {
-          return null;
-        }
-
-        const contentPreview = await this.readContentPreview(filePath);
+        const contentPreview = await this.readContentPreview(item.filePath);
 
         return {
-          title: metadata.title,
+          title: item.metadata.title,
           documentId: relativePath,
           content: contentPreview,
         };
@@ -182,16 +177,70 @@ export class LocalDocService {
     return results.filter((r): r is LocalSearchResult => r !== null);
   }
 
-  private async searchFiles(
-    keywords: string[],
+  private selectByTiers(
+    enriched: Array<{
+      filePath: string;
+      keywordCount: number;
+      totalMatches: number;
+      titleKeywordCount: number;
+      metadata: LocalDocMetadata | null;
+    }>,
+    totalKeywords: number
+  ): Array<typeof enriched[0]> {
+    const byMatches = (a: typeof enriched[0], b: typeof enriched[0]) =>
+      b.totalMatches - a.totalMatches;
+
+    const tier1 = enriched
+      .filter(i => i.titleKeywordCount === totalKeywords)
+      .sort(byMatches);
+    const tier2 = enriched
+      .filter(i => i.keywordCount === totalKeywords && i.titleKeywordCount < totalKeywords)
+      .sort(byMatches);
+    const tier3 = enriched
+      .filter(i => i.keywordCount < totalKeywords)
+      .sort(byMatches);
+
+    if (tier1.length > 0) {
+      return [...tier1, ...tier3];
+    }
+    if (tier2.length > 0) {
+      return [...tier2, ...tier3];
+    }
+    return tier3;
+  }
+
+  private async enrichWithTitleRelevance(
+    fileStats: Map<string, { keywordCount: number; totalMatches: number }>,
+    keywords: string[]
+  ): Promise<Array<{
+    filePath: string;
+    keywordCount: number;
+    totalMatches: number;
+    titleKeywordCount: number;
+    metadata: LocalDocMetadata | null;
+  }>> {
+    return Promise.all(
+      Array.from(fileStats.entries()).map(async ([filePath, stats]) => {
+        const metadata = await this.readMetadata(filePath);
+        const titleKeywordCount = metadata
+          ? keywords.filter(kw => metadata.title.toLowerCase().includes(kw.toLowerCase())).length
+          : 0;
+        return {
+          filePath,
+          keywordCount: stats.keywordCount,
+          totalMatches: stats.totalMatches,
+          titleKeywordCount,
+          metadata,
+        };
+      })
+    );
+  }
+
+  private async searchSingleKeyword(
+    keyword: string,
     searchDir: string
   ): Promise<Map<string, number>> {
-    const rgArgs = ['--type', 'md', '--json', '--no-messages'];
-    for (const keyword of keywords) {
-      rgArgs.push('-e', keyword);
-    }
-    rgArgs.push(searchDir);
-
+    const rgArgs = ['--type', 'md', '--json', '--no-messages', '-i', '-e', keyword, searchDir];
     const result = await execa(rgPath, rgArgs, { reject: false });
 
     if (result.exitCode === 1) {
@@ -202,6 +251,30 @@ export class LocalDocService {
     }
 
     return this.parseSearchResults(result.stdout);
+  }
+
+  private async searchFiles(
+    keywords: string[],
+    searchDir: string
+  ): Promise<Map<string, { keywordCount: number; totalMatches: number }>> {
+    const perKeywordResults = await Promise.all(
+      keywords.map((kw) => this.searchSingleKeyword(kw, searchDir))
+    );
+
+    const fileStats = new Map<string, { keywordCount: number; totalMatches: number }>();
+    for (const resultMap of perKeywordResults) {
+      for (const [filePath, count] of resultMap) {
+        const existing = fileStats.get(filePath);
+        if (existing) {
+          existing.keywordCount += 1;
+          existing.totalMatches += count;
+        } else {
+          fileStats.set(filePath, { keywordCount: 1, totalMatches: count });
+        }
+      }
+    }
+
+    return fileStats;
   }
 
   private parseSearchResults(stdout: string): Map<string, number> {

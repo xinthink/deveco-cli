@@ -59,6 +59,10 @@ docCommand
         console.error(red('Keywords cannot be empty'));
         process.exit(1);
       }
+      if (normalizedKeywords.length > 10) {
+        console.error(red('Keywords cannot exceed 10'));
+        process.exit(1);
+      }
 
       const catalog = opts.catalog && opts.catalog !== 'all' ? opts.catalog : undefined;
       const results = await localDocService.search(normalizedKeywords, catalog);
