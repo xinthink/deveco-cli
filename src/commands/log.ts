@@ -113,10 +113,11 @@ const logCommand = new Command('log')
 
 async function handleLogCommand(options: LogOptions) {
   const spinner = ora({
-    text: 'Fetching logs…',
+    text: 'Preparing log request…',
     color: 'cyan',
   });
   try {
+    spinner.start();
     validateLogTimeRange(options);
     const fromSeconds = options.from;
     const toSeconds = options.to;
@@ -126,6 +127,7 @@ async function handleLogCommand(options: LogOptions) {
 
     const deviceId = await service.selectDevice(options.device);
     if (!deviceId) {
+      spinner.stop();
       process.exit(1);
     }
 
@@ -133,7 +135,7 @@ async function handleLogCommand(options: LogOptions) {
     debugLog(cyan(`type: ${options.crash ? 'Crash logs' : 'Common logs'}`));
     debugLog(cyan('Obtaining logs ...'));
 
-    spinner.start();
+    spinner.text = 'Fetching logs…';
     if (options.follow) {
       spinner.stop();
     }
