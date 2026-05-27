@@ -45,7 +45,7 @@ Manage local emulator instances and system images.
 - `image download` / `image remove` (Req: `--device-type`, `--os-version`): Download/remove image. (Takes 30+ min, set long timeout).
 *Device types*: `phone`, `foldable`, `widefold`, `triplefold`, `tablet`, `2in1`, `2in1 foldable`, `wearable`, `tv`.
 
-### `devecocli doc`
+### `devecocli docs`
 Search/read local HarmonyOS docs.
 - `search <keywords...>`: Match any keyword. Opts: `--catalog <name>`, `--format <default|json>`, `--limit <n>`.
 - `read <documentId>`: Read full content by ID.
