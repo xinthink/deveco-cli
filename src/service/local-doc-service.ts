@@ -197,16 +197,10 @@ export class LocalDocService {
       .filter(i => i.keywordCount === totalKeywords && i.titleKeywordCount < totalKeywords)
       .sort(byMatches);
     const tier3 = enriched
-      .filter(i => i.keywordCount < totalKeywords)
+      .filter(i => i.keywordCount < totalKeywords && i.titleKeywordCount < totalKeywords)
       .sort(byMatches);
 
-    if (tier1.length > 0) {
-      return [...tier1, ...tier3];
-    }
-    if (tier2.length > 0) {
-      return [...tier2, ...tier3];
-    }
-    return tier3;
+    return [...tier1, ...tier2, ...tier3];
   }
 
   private async enrichWithTitleRelevance(
