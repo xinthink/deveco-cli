@@ -96,12 +96,12 @@ export class ArktsLspManager {
             logger.error('[ArktsLspManager] handleSyncProject: workspaceRoot or sdkPath is empty');
             return false;
         }
-        const installSuccess = ohpmInstallAll(workspaceRoot, sdkPath);
+        const installSuccess = await ohpmInstallAll(workspaceRoot, sdkPath);
         if (!installSuccess) {
             logger.error('[ArktsLspManager] ohpm install failed');
             return false;
         }
-        const success = syncProject(workspaceRoot, sdkPath);
+        const success = await syncProject(workspaceRoot, sdkPath);
         if (success) {
             logger.info('[ArktsLspManager] syncProject completed successfully');
         } else {
