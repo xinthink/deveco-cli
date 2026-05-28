@@ -6,7 +6,7 @@
 
 ## Quick Start
 
-**Prerequisites:** Node.js >= 20, DevEco Studio installed (Windows or macOS).
+**Prerequisites:** Node.js >= 18, DevEco Studio installed (Windows or macOS).
 
 > Not published yet — until then, build from source (see [Development](#development)) and run `node ./dist/cli.js`. After release, self-update via `devecocli update`.
 
