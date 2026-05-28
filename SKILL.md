@@ -48,7 +48,7 @@ Manage local emulator instances and system images.
 ### `devecocli docs`
 Search/read local HarmonyOS docs.
 - `search <keywords...>`: Match any keyword. Opts: `--catalog <name>`, `--format <default|json>`, `--limit <n>`.
-- `read <documentId>`: Read full content by ID.
+- `read <documentId>`: Read full content by ID (e.g. `devecocli docs read 开发指南/冷启动_Launch分析/Launch模板基本操作/ide-insight-session-launch`).
 - `catalog`: List available catalogs.
 
 ### `devecocli device`
