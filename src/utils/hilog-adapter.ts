@@ -5,7 +5,7 @@
 import { HilogOptions } from './config.js';
 import { ToolProvider } from './tool-provider.js';
 import { DeviceManager } from '../service/device-manager.js';
-import { cyan, red } from 'colorette';
+import { cyan } from 'colorette';
 import { CommonUtils } from './common-utils.js';
 import { debugLog } from './logger.js';
 import {
@@ -168,41 +168,27 @@ export class HilogAdapter {
    * 获取已连接设备 serial 列表（快速路径，不查询设备名）
    */
   private async getConnectedDeviceSerials(): Promise<string[] | null> {
-    try {
-      const devices = await this.deviceManager.listDevices();
-      if (devices.length === 0) {
-        throw new Error(
-          'No active devices found. Please start an emulator or connect a physical device.'
-        );
-      }
-      return devices.map((d) => d.serial);
-    } catch (error) {
-      console.error(
-        red(`Failed to retrieve the device list: ${(error as Error).message}`)
+    const devices = await this.deviceManager.listDevices();
+    if (devices.length === 0) {
+      throw new Error(
+        'No active devices found. Please start an emulator or connect a physical device.'
       );
-      return null;
     }
+    return devices.map((d) => d.serial);
   }
 
   /**
    * 获取已连接的设备列表（包含设备名）
    */
   private async getConnectedDevices(): Promise<ConnectedDevice[] | null> {
-    try {
-      const devices = await this.deviceManager.listDevicesWithName();
+    const devices = await this.deviceManager.listDevicesWithName();
 
-      if (devices.length === 0) {
-        throw new Error(
-          'No active devices found. Please start an emulator or connect a physical device.'
-        );
-      }
-      return devices;
-    } catch (error) {
-      console.error(
-        red(`Failed to retrieve the device list: ${(error as Error).message}`)
+    if (devices.length === 0) {
+      throw new Error(
+        'No active devices found. Please start an emulator or connect a physical device.'
       );
-      return null;
     }
+    return devices;
   }
 
   /**
