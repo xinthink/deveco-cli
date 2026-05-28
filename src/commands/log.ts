@@ -116,6 +116,10 @@ async function handleLogCommand(options: LogOptions) {
     text: 'Preparing log request…',
     color: 'cyan',
   });
+  const stopAndClearSpinner = () => {
+    spinner.stop();
+    spinner.clear();
+  };
   try {
     spinner.start();
     validateLogTimeRange(options);
@@ -127,7 +131,7 @@ async function handleLogCommand(options: LogOptions) {
 
     const deviceId = await service.selectDevice(options.device);
     if (!deviceId) {
-      spinner.stop();
+      stopAndClearSpinner();
       process.exit(1);
     }
 
@@ -137,7 +141,7 @@ async function handleLogCommand(options: LogOptions) {
 
     spinner.text = 'Fetching logs…';
     if (options.follow) {
-      spinner.stop();
+      stopAndClearSpinner();
     }
 
     let logs = await fetchLogsByOptions(
@@ -147,7 +151,7 @@ async function handleLogCommand(options: LogOptions) {
       fromSeconds,
       toSeconds
     );
-    spinner.stop();
+    stopAndClearSpinner();
 
     if (options.crash && logs) {
       logs = postProcessCrashLogs(logs, options, fromSeconds, toSeconds);
@@ -157,7 +161,7 @@ async function handleLogCommand(options: LogOptions) {
       console.log(logs);
     }
   } catch (error) {
-    spinner.stop();
+    stopAndClearSpinner();
     console.error(red((error as Error).message));
     process.exit(1);
   }
