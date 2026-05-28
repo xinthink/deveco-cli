@@ -7,6 +7,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { logger } from '../logger.js';
+import { OhpmConfig } from '../../config/constants.js';
 
 function getOsType(): string {
     const p = process.platform;
@@ -19,7 +20,7 @@ function getOsType(): string {
     return 'Linux';
 }
 
-const OHPM_ARGS = 'install --all --registry https://ohpm.openharmony.cn/ohpm/ --strict_ssl true';
+const OHPM_ARGS = `install --all --registry ${OhpmConfig.OHPM_URL} --strict_ssl true`;
 
 function findOhpmPath(sdk: string, osType: string): string | null {
     const toolsDir = sdk.replace(/sdk\/?$/i, 'tools');
