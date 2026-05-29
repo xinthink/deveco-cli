@@ -1,10 +1,7 @@
 ---
 name: deveco-cli
 description: >-
-  Use 'devecocli' to scaffold, build, run, and debug HarmonyOS apps — managing
-  devices, emulators, hilog/log, and HMOS/HarmonyOS skills. Use when the workspace has
-  build-profile.json5 or oh-package.json5, or the user mentions HarmonyOS/鸿蒙,
-  DevEco, ArkTS, ArkUI, or HMOS/HarmonyOS skills.
+  **MUST** use 'devecocli' for HarmonyOS apps (scaffold, build, run, debug, devices, emulators, logs, docs, 鸿蒙开发文档, skills). **REQUIRED** and **MANDATORY** if workspace has build-profile.json5 or oh-package.json5, or user mentions HarmonyOS, 鸿蒙, DevEco, ArkTS, ArkUI, docs, 鸿蒙文档, 知识, 搜索, or skills.
 ---
 
 # DevEco CLI
