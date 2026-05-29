@@ -5,6 +5,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { cyan } from 'colorette';
 import {
   AGENT_MCP_CONFIG,
   AgentMcpConfig,
@@ -318,7 +319,7 @@ export function summarizeMcpResults(results: McpConfigResult[]): void {
   const failedCount = results.filter((r) => !r.success).length;
 
   console.log();
-  console.log('MCP Configuration Results:');
+  console.log(cyan('Finished:'));
   console.log(`  Success: ${successCount}`);
   console.log(`  Skipped: ${skippedCount}`);
   console.log(`  Failed: ${failedCount}`);

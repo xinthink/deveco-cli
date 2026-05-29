@@ -78,6 +78,7 @@ async function installProjectLevelMcp(
   force: boolean
 ): Promise<Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[]> {
   const results: Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[] = [];
+
   for (const { project, agent } of targets.projectAgents) {
     const result = await installMcpConfigToAgentProject(agent, project, force);
     results.push(result);
@@ -122,11 +123,29 @@ async function executeMcpInstallations(
   resolvedProject: string | undefined,
   options: InitOptions
 ): Promise<void> {
+  // 只有用户明确指定 --agent qoder 时才报错
+  if (options.agent) {
+    const specifiedAgents = options.agent.split(',').map(a => a.trim());
+    if (specifiedAgents.includes('qoder')) {
+      throw new Error('Qoder does not support MCP configuration. Use other agents (opencode, trae-cn, cursor, codebuddy).');
+    }
+  }
+
   const force = options.force ?? false;
 
+  // 过滤掉 qoder，不对其进行 MCP 配置
+  const filteredProjectAgents = targets.projectAgents.filter(p => p.agent !== 'qoder');
+  const filteredAgents = targets.agents.filter(a => a !== 'qoder');
+
+  const filteredTargets = {
+    ...targets,
+    projectAgents: filteredProjectAgents,
+    agents: filteredAgents,
+  };
+
   const mcpResults = resolvedProject
-    ? await installProjectLevelMcp(targets, resolvedProject, force)
-    : await installGlobalMcp(targets.agents, force);
+    ? await installProjectLevelMcp(filteredTargets, resolvedProject, force)
+    : await installGlobalMcp(filteredTargets.agents, force);
 
   if (mcpResults.length > 0) {
     console.log(cyan('MCP Configuration:'));

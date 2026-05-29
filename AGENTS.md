@@ -166,7 +166,7 @@ templates/application/        # Project scaffold copied by `devecocli create`
 - **`--device <name|serial>` accepts name OR serial** (substring match for name, exact match for serial like `127.0.0.1:5555`). For `device view`, the equivalent is `-t, --target <serial>`. Docs should describe `--device` as "name or serial".
 - **Multi-device hosts** must list available serials and exit non-zero rather than silently picking one when no device flag is given.
 - **`devecocli init` mode flags**: `--skill` (skill only) and `--mcp` (MCP config only) are mutually exclusive. Default (no flag) = `--skill`. `--force` is the overwrite / skip-validation switch only; it does not change global / project-level mode.
-- **MCP global / project-level**: `--mcp` without `--project` configures global MCP for all agents (writes to each agent's global config path). `--mcp --project <path>` configures project-level MCP for all agents (writes to each agent's project config path). `PROJECT_PATH` in project-level config is the absolute path of the project; in global config it is `.` (OpenCode) or `${workspaceFolder}` (other agents).
+- **MCP global / project-level**: `--mcp` without `--project` configures global MCP for supported agents (except Qoder). `--mcp --project <path>` configures project-level MCP for supported agents (except Qoder).
 - **When adding a new flag / command**, update the matching prose section in `SKILL.md` and `README.md`'s command overview.
 
 ## Development Notes
