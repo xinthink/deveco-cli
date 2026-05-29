@@ -79,26 +79,11 @@ async function installProjectLevelMcp(
 ): Promise<Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[]> {
   const results: Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[] = [];
 
-  // 收集所有 agent 名称（包括 projectAgents 和单独的 agents）
-  const allAgents = [
-    ...targets.projectAgents.map(p => p.agent),
-    ...targets.agents
-  ];
-
-  // Qoder 不支持项目级 MCP，输出提示并跳过
-  if (allAgents.includes('qoder')) {
-    console.log(red('Note: Qoder does not support project-level MCP. Use "devecocli init --mcp --agent qoder" for global configuration.'));
-  }
-
-  // 过滤掉 qoder，项目级 MCP 不对 qoder 进行配置
-  const filteredProjectAgents = targets.projectAgents.filter(p => p.agent !== 'qoder');
-  const filteredAgents = targets.agents.filter(a => a !== 'qoder');
-
-  for (const { project, agent } of filteredProjectAgents) {
+  for (const { project, agent } of targets.projectAgents) {
     const result = await installMcpConfigToAgentProject(agent, project, force);
     results.push(result);
   }
-  for (const agentName of filteredAgents) {
+  for (const agentName of targets.agents) {
     const result = await installMcpConfigToAgentProject(agentName, resolvedProject, force);
     results.push(result);
   }
@@ -138,11 +123,29 @@ async function executeMcpInstallations(
   resolvedProject: string | undefined,
   options: InitOptions
 ): Promise<void> {
+  // 只有用户明确指定 --agent qoder 时才报错
+  if (options.agent) {
+    const specifiedAgents = options.agent.split(',').map(a => a.trim());
+    if (specifiedAgents.includes('qoder')) {
+      throw new Error('Qoder does not support MCP configuration. Use other agents (opencode, trae-cn, cursor, codebuddy).');
+    }
+  }
+
   const force = options.force ?? false;
 
+  // 过滤掉 qoder，不对其进行 MCP 配置
+  const filteredProjectAgents = targets.projectAgents.filter(p => p.agent !== 'qoder');
+  const filteredAgents = targets.agents.filter(a => a !== 'qoder');
+
+  const filteredTargets = {
+    ...targets,
+    projectAgents: filteredProjectAgents,
+    agents: filteredAgents,
+  };
+
   const mcpResults = resolvedProject
-    ? await installProjectLevelMcp(targets, resolvedProject, force)
-    : await installGlobalMcp(targets.agents, force);
+    ? await installProjectLevelMcp(filteredTargets, resolvedProject, force)
+    : await installGlobalMcp(filteredTargets.agents, force);
 
   if (mcpResults.length > 0) {
     console.log(cyan('MCP Configuration:'));
