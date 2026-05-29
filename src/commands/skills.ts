@@ -5,6 +5,7 @@
 
 import { Command } from 'commander';
 import { green, red, cyan, yellow, dim } from 'colorette';
+import pLimit from 'p-limit';
 import { SpinnerHelper } from '../utils/spinner-helper.js';
 import {
   fetchTagIds,
@@ -173,24 +174,41 @@ async function installSkills(
 ): Promise<SkillOperationResult[]> {
   const results: SkillOperationResult[] = [];
   const total = skillNames.length;
+  const limit = pLimit(5);
+
+  // 并发启动下载任务
+  const downloadPromises = skillNames.map(async (name) => {
+    return limit(async () => {
+      try {
+        const buffer = await downloadSkill(name);
+        return { name, buffer, success: true as const };
+      } catch (error: unknown) {
+        const errorMsg =
+          error instanceof Error ? error.message : 'unknown error';
+        return { name, error: errorMsg, success: false as const };
+      }
+    });
+  });
 
   for (let i = 0; i < skillNames.length; i++) {
     const skillName = skillNames[i];
     const progress = total > 1 ? ` (${i + 1}/${total})` : '';
     spinner.start(`Installing ${skillName}${progress}...`);
-    let zipBuffer: Buffer;
-    try {
-      zipBuffer = await downloadSkill(skillName);
-    } catch (error: unknown) {
-      const errorMsg = error instanceof Error ? error.message : 'unknown error';
+
+    // 等待当前技能的下载结果
+    const downloadResult = await downloadPromises[i];
+    if (!downloadResult.success) {
       spinner.fail();
-      console.log(red(`${skillName}: Download failed - ${errorMsg}`));
+      console.log(
+        red(`${skillName}: Download failed - ${downloadResult.error}`)
+      );
       results.push({ success: false });
       continue;
     }
+    spinner.stop();
     const installResults = await installSingleSkill(
       skillName,
-      zipBuffer,
+      downloadResult.buffer,
       targets,
       force
     );
@@ -263,6 +281,7 @@ async function handleRemoveCommand(
   try {
     spinner.start('Removing skill...');
     const { resolvedPath, resolvedProject } = validateRemoveOptions(options);
+    spinner.stop();
     const results = await removeSkill(
       options,
       skillName,
