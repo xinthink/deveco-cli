@@ -3,61 +3,55 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { spawnSync } from 'child_process';
+import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { logger } from '../logger.js';
-import { OhpmConfig } from '../../config/constants.js';
+import { findNodePath } from '../../utils/common.js';
 
-function getOsType(): string {
-    const p = process.platform;
-    if (p === 'win32') {
-        return 'Windows';
-    }
-    if (p === 'darwin') {
-        return 'Mac';
-    }
-    return 'Linux';
-}
+const OHPM_ARGS = ['install', '--all'];
 
-const OHPM_ARGS = `install --all --registry ${OhpmConfig.OHPM_URL} --strict_ssl true`;
-
-function findOhpmPath(sdk: string, osType: string): string | null {
+function findOhpmJsPath(sdk: string): string | null {
     const toolsDir = sdk.replace(/sdk\/?$/i, 'tools');
-    const ohpmBin = osType === 'Windows' ? 'ohpm.bat' : 'ohpm';
 
-    // DevEco Studio 风格: tools/ohpm/bin/ohpm
-    let ohpmPath = path.join(toolsDir, 'ohpm', 'bin', ohpmBin);
+    let ohpmPath = path.join(toolsDir, 'ohpm', 'bin', 'pm-cli.js');
     if (fs.existsSync(ohpmPath)) {
         return ohpmPath;
     }
 
-    // command-line-tools 风格: ohpm/bin/ohpm
-    let sdkPath = sdk.toLowerCase().endsWith('sdk') ? path.dirname(sdk) : sdk;
-    ohpmPath = path.join(sdkPath, 'ohpm', 'bin', ohpmBin);
+    const sdkPath = sdk.toLowerCase().endsWith('sdk') ? path.dirname(sdk) : sdk;
+    ohpmPath = path.join(sdkPath, 'ohpm', 'bin', 'pm-cli.js');
     return fs.existsSync(ohpmPath) ? ohpmPath : null;
 }
 
-function runOhpmCommand(ohpmPath: string, projectPath: string, osType: string): { exitCode: number; output: string } {
-    const isWindows = osType === 'Windows';
-    const escapedProject = projectPath.replace(/'/g, isWindows ? "''" : "'\\''");
-    const escapedOhpm = ohpmPath.replace(/'/g, isWindows ? "''" : "'\\''");
+async function runOhpmCommand(nodePath: string, ohpmJsPath: string, projectPath: string, sdkPath: string): Promise<{ exitCode: number; output: string }> {
+    return new Promise<{ exitCode: number; output: string }>((resolve) => {
+        const child = spawn(nodePath, [ohpmJsPath, ...OHPM_ARGS], {
+            cwd: projectPath,
+            env: { ...process.env, DEVECO_SDK_HOME: sdkPath },
+            windowsHide: true,
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
 
-    const result = isWindows
-        ? spawnSync('powershell.exe', ['-Command', `cd '${escapedProject}'; & '${escapedOhpm}' ${OHPM_ARGS}`], {
-              cwd: projectPath,
-              encoding: 'utf8',
-              windowsHide: true,
-          })
-        : spawnSync('bash', ['-c', `cd '${escapedProject}' && '${escapedOhpm}' ${OHPM_ARGS}`], {
-              cwd: projectPath,
-              encoding: 'utf8',
-          });
+        let stdout = '';
+        let stderr = '';
+        child.stdout?.on('data', (data: Buffer | string) => {
+            stdout += data.toString();
+        });
+        child.stderr?.on('data', (data: Buffer | string) => {
+            stderr += data.toString();
+        });
 
-    const stdout = (result.stdout ?? '') as string;
-    const stderr = (result.stderr ?? '') as string;
-    const output = [stdout, stderr].filter(Boolean).join('\n');
-    return { exitCode: result.status ?? -1, output };
+        child.on('close', (code: number | null) => {
+            const output = [stdout, stderr].filter(Boolean).join('\n');
+            resolve({ exitCode: code ?? -1, output });
+        });
+
+        child.on('error', (err: Error) => {
+            const output = [stdout, stderr].filter(Boolean).join('\n');
+            resolve({ exitCode: -1, output: output + '\n' + err.message });
+        });
+    });
 }
 
 function logOhpmOutput(output: string): void {
@@ -65,21 +59,25 @@ function logOhpmOutput(output: string): void {
 }
 
 /**
- * 安装所有依赖（同步，对应 Java ohpmInstallAll）
+ * 安装所有依赖（异步，不阻塞事件循环）
  * @param projectPath 项目路径
  * @param sdk DevEco SDK 路径，用于推导 ohpm 路径
  * @returns 是否成功
  */
-export function ohpmInstallAll(projectPath: string, sdk: string): boolean {
+export async function ohpmInstallAll(projectPath: string, sdk: string): Promise<boolean> {
     try {
-        const osType = getOsType();
-        const ohpmPath = findOhpmPath(sdk, osType);
-        if (!ohpmPath) {
-            logger.error('ohpm 不存在');
+        const nodePath = findNodePath(sdk);
+        if (!nodePath) {
+            logger.error('node 路径不存在');
+            return false;
+        }
+        const ohpmJsPath = findOhpmJsPath(sdk);
+        if (!ohpmJsPath) {
+            logger.error('ohpm (pm-cli.js) 不存在');
             return false;
         }
 
-        const { exitCode, output } = runOhpmCommand(ohpmPath, projectPath, osType);
+        const { exitCode, output } = await runOhpmCommand(nodePath, ohpmJsPath, projectPath, sdk);
         logOhpmOutput(output);
 
         if (exitCode === 0) {

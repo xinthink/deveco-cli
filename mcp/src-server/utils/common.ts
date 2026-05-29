@@ -733,3 +733,22 @@ function removeIfExpired(full: string, now: number, maxAgeMs: number, logTag: st
     console.error(`${logTag} Failed to remove expired dir ${full}: ${e}`);
   }
 }
+
+export function findNodePath(sdk: string): string {
+    const toolsDir = sdk.replace(/sdk\/?$/i, 'tools');
+    const nodeBin = process.platform === 'win32' ? 'node.exe' : 'node';
+
+    let nodePath = path.join(toolsDir, 'node', nodeBin);
+    if (fs.existsSync(nodePath)) {
+        return nodePath;
+    }
+
+    if (process.platform !== 'win32') {
+        nodePath = path.join(toolsDir, 'node', 'bin', 'node');
+        if (fs.existsSync(nodePath)) {
+            return nodePath;
+        }
+    }
+
+    return process.execPath ?? 'node';
+}
