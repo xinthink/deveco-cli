@@ -13,6 +13,7 @@ export interface EmulatorInfo {
   /** From `-list -details` when present; CLI target for some images */
   uuid?: string;
   deviceType?: string;
+  osVersion?: string;
 }
 
 /** Match CLI input to `-list` names (unicode / repeated spaces). */

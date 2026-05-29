@@ -7,6 +7,8 @@ import * as path from 'path';
 import type { EmulatorInfo } from './emulator-types.js';
 import { spawnEmulatorDetachedShellWin } from '../utils/emulator-spawn.js';
 
+type EmulatorNativeBootMode = 'snapshot';
+
 function dedupeArgLists(lists: string[][]): string[][] {
   const seen = new Set<string>();
   const out: string[][] = [];
@@ -45,20 +47,38 @@ function collectEmulatorImageSources(
   return imageSources;
 }
 
+function withBootMode(
+  args: string[],
+  nativeBootMode?: EmulatorNativeBootMode
+): string[] {
+  if (!nativeBootMode) {
+    return args;
+  }
+  return [...args, '-bootmode', nativeBootMode];
+}
+
 /**
  * Prefer bare `-start <name>`; fall back to `-hvd <name> -path <deployedParent>
- * [-imageRoot …]` when list details supply paths.
+ * [-imageRoot …] [-bootmode …]` when list details supply paths.
  */
 export function buildEmulatorStartArgCandidates(
   listName: string,
-  emulator: EmulatorInfo
+  emulator: EmulatorInfo,
+  nativeBootMode?: EmulatorNativeBootMode
 ): string[][] {
-  const candidates: string[][] = [['-start', listName]];
+  const candidates: string[][] = [
+    withBootMode(['-start', listName], nativeBootMode),
+  ];
 
   const pathVal = resolveEmulatorDeployedParentDir(emulator);
   if (pathVal) {
     for (const imageArgs of collectEmulatorImageSources(emulator.imageRoot)) {
-      candidates.push(['-hvd', listName, '-path', pathVal, ...imageArgs]);
+      candidates.push(
+        withBootMode(
+          ['-hvd', listName, '-path', pathVal, ...imageArgs],
+          nativeBootMode
+        )
+      );
     }
   }
 
@@ -69,9 +89,14 @@ async function tryWindowsShellEmulatorStart(
   emulatorPath: string,
   sdkPath: string,
   listName: string,
-  emulator: EmulatorInfo
+  emulator: EmulatorInfo,
+  nativeBootMode?: EmulatorNativeBootMode
 ): Promise<{ ok: true } | { ok: false; lastError: Error }> {
-  const attempts = buildEmulatorStartArgCandidates(listName, emulator);
+  const attempts = buildEmulatorStartArgCandidates(
+    listName,
+    emulator,
+    nativeBootMode
+  );
   let lastError = new Error('Windows shell start not attempted');
   for (const argv of attempts) {
     try {
@@ -89,10 +114,15 @@ export async function runAllEmulatorStartStrategies(
   sdkPath: string,
   listName: string,
   targetEmulator: EmulatorInfo,
-  executeEmulatorDetached: (args: string[]) => Promise<void>
+  executeEmulatorDetached: (args: string[]) => Promise<void>,
+  nativeBootMode?: EmulatorNativeBootMode
 ): Promise<{ ok: true } | { ok: false; lastError: Error }> {
   let lastError: Error = new Error('No start strategy ran');
-  const candidates = buildEmulatorStartArgCandidates(listName, targetEmulator);
+  const candidates = buildEmulatorStartArgCandidates(
+    listName,
+    targetEmulator,
+    nativeBootMode
+  );
 
   const spacedName = /\s/.test(listName);
   const hasInstancePath = Boolean(targetEmulator.instancePath?.trim());
@@ -104,7 +134,8 @@ export async function runAllEmulatorStartStrategies(
       emulatorPath,
       sdkPath,
       listName,
-      targetEmulator
+      targetEmulator,
+      nativeBootMode
     );
     if (shellFirst.ok) {
       return { ok: true };
@@ -126,7 +157,8 @@ export async function runAllEmulatorStartStrategies(
       emulatorPath,
       sdkPath,
       listName,
-      targetEmulator
+      targetEmulator,
+      nativeBootMode
     );
     if (shellOut.ok) {
       return { ok: true };

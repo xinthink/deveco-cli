@@ -27,7 +27,6 @@ import {
   runEmulatorLicenseAccept,
   runEmulatorLicenseView,
 } from '../utils/emulator-license.js';
-
 const SERIAL_PARAM_KEYS = [
   'ohos.qemu.hvd.name',
   'const.product.name',
@@ -105,6 +104,7 @@ const EMULATOR_LIST_TABLE_HEADERS = [
   'Status',
   'Serial',
   'Device Type',
+  'OS Version',
 ] as const;
 
 function buildEmulatorListRow(
@@ -118,6 +118,7 @@ function buildEmulatorListRow(
       effectiveRunning ? 'running' : 'stopped',
       serial ?? '-',
       emu.deviceType ?? '-',
+      emu.osVersion ?? '-',
     ],
     highlight: effectiveRunning,
   };
@@ -326,11 +327,6 @@ async function isEmulatorPresentByHdcName(
   return hvds.some((hvd) => normalizeListNameKey(hvd) === targetKey);
 }
 
-/**
- * Poll `hdc list targets` until the named emulator reaches the desired
- * presence state (appeared / disappeared), or until the timeout is reached.
- * Returns true when confirmed, false on timeout.
- */
 async function waitForEmulatorHdcState(
   hdcPath: string,
   name: string,

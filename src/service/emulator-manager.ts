@@ -103,7 +103,8 @@ export class EmulatorManager {
       this.sdkPath,
       listName,
       targetEmulator,
-      (args) => this.executeEmulatorDetached(args)
+      (args) => this.executeEmulatorDetached(args),
+      'snapshot'
     );
     if (outcome.ok) {
       return 'started';
