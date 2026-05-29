@@ -24,7 +24,6 @@ import {
 } from '../skills/mcp-installer';
 import { AGENT_MCP_CONFIG } from '../config/mcp';
 import { InitOptions, SkillOperationResult } from '../types/skills';
-import { ToolProvider } from '../utils/tool-provider';
 
 const DEVECO_CLI_SKILL_NAME = 'deveco-cli';
 
@@ -71,53 +70,39 @@ async function executeSkillInstallations(
 }
 
 /**
- * 获取 DevEco Studio 路径（未安装时返回 undefined）
- */
-async function resolveDevecoPath(): Promise<string | undefined> {
-  try {
-    const toolProvider = await ToolProvider.new();
-    return toolProvider.devecoStudioPath;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
  * 项目级 MCP 安装：对 targets 中所有 agent 安装项目级配置
  */
 async function installProjectLevelMcp(
   targets: Awaited<ReturnType<typeof resolveInstallationTargets>>,
   resolvedProject: string,
-  devecoPath: string | undefined,
   force: boolean
 ): Promise<Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[]> {
   const results: Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[] = [];
   for (const { project, agent } of targets.projectAgents) {
-    const result = await installMcpConfigToAgentProject(agent, project, devecoPath, force);
+    const result = await installMcpConfigToAgentProject(agent, project, force);
     results.push(result);
   }
   for (const agentName of targets.agents) {
-    const result = await installMcpConfigToAgentProject(agentName, resolvedProject, devecoPath, force);
+    const result = await installMcpConfigToAgentProject(agentName, resolvedProject, force);
     results.push(result);
   }
   return results;
 }
 
 /**
- * 全局 MCP 安装：只给 supportsGlobal 的 agent 配置全局 MCP
+ * 全局 MCP 安装：给所有 agent 配置全局 MCP
  */
 async function installGlobalMcp(
   agentNames: string[],
-  devecoPath: string | undefined,
   force: boolean
 ): Promise<Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[]> {
   const results: Awaited<ReturnType<typeof installMcpConfigToAgentGlobal>>[] = [];
   for (const agentName of agentNames) {
     const agentConfig = AGENT_MCP_CONFIG[agentName];
-    if (!agentConfig || !agentConfig.supportsGlobal) {
+    if (!agentConfig) {
       continue;
     }
-    const result = await installMcpConfigToAgentGlobal(agentName, process.cwd(), devecoPath, force);
+    const result = await installMcpConfigToAgentGlobal(agentName, process.cwd(), force);
     results.push(result);
   }
   return results;
@@ -127,9 +112,9 @@ async function installGlobalMcp(
  * 执行 MCP 配置安装（仅 --mcp 时触发）
  *
  * 场景逻辑：
- * 1. devecocli init --mcp             → 全局 MCP（opencode/cursor），其余 agent 合并报错提示需要 --project
- * 2. devecocli init --mcp --project   → 只安装项目级 MCP（所有 agent 都支持项目级）
- * 3. devecocli init --mcp --force     → 全局 MCP + 覆盖已有配置；其余合并报错
+ * 1. devecocli init --mcp             → 全局 MCP（所有 agent 写入各自全局目录）
+ * 2. devecocli init --mcp --project   → 项目级 MCP（所有 agent 写入各自项目目录）
+ * 3. devecocli init --mcp --force     → 全局 MCP + 覆盖已有配置
  * --force 只改变覆盖行为，不改变全局/项目级模式。
  */
 async function executeMcpInstallations(
@@ -137,29 +122,15 @@ async function executeMcpInstallations(
   resolvedProject: string | undefined,
   options: InitOptions
 ): Promise<void> {
-  const devecoPath = await resolveDevecoPath();
   const force = options.force ?? false;
 
   const mcpResults = resolvedProject
-    ? await installProjectLevelMcp(targets, resolvedProject, devecoPath, force)
-    : await installGlobalMcp(targets.agents, devecoPath, force);
+    ? await installProjectLevelMcp(targets, resolvedProject, force)
+    : await installGlobalMcp(targets.agents, force);
 
   if (mcpResults.length > 0) {
     console.log(cyan('MCP Configuration:'));
     summarizeMcpResults(mcpResults);
-  }
-
-  if (!resolvedProject) {
-    const projectOnlyNames = targets.agents.filter(name => {
-      const config = AGENT_MCP_CONFIG[name];
-      return config && !config.supportsGlobal;
-    });
-    if (projectOnlyNames.length > 0) {
-      const displayNames = projectOnlyNames.map(name => AGENT_MCP_CONFIG[name].displayName);
-      console.error(
-        red(`${displayNames.join(' ')} need project path. Use --project to configure project-level MCP: devecocli init --mcp --project <path> --agent ${projectOnlyNames[0]}`)
-      );
-    }
   }
 }
 
