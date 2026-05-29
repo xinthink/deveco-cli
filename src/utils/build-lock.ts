@@ -46,8 +46,8 @@ async function acquireFileLock(
   const lockOptions: LockOptions = {
     lockfilePath: lockFilePath(projectRoot),
     realpath: false,
-    stale: 60_000,
-    update: 15_000,
+    stale: 5_000,
+    update: 2_000,
     onCompromised: () => abortController.abort(),
   };
 
