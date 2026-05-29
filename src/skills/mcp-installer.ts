@@ -108,7 +108,6 @@ function removeMcpServerConfig(
 export async function installMcpConfigToAgentGlobal(
   agentName: string,
   projectPath: string,
-  devecoPath?: string,
   force: boolean = false
 ): Promise<McpConfigResult> {
   const agentConfig = AGENT_MCP_CONFIG[agentName];
@@ -143,7 +142,7 @@ export async function installMcpConfigToAgentGlobal(
     }
 
     // 全局模式：不传 projectPath，让 buildMcpConfigForAgent 使用默认值（'.' 或 '${workspaceFolder}'）
-    const serverConfig = buildMcpConfigForAgent(agentConfig, undefined, devecoPath);
+    const serverConfig = buildMcpConfigForAgent(agentConfig, undefined);
     addMcpServerConfig(config, agentConfig.mcpServersKey, MCP_SERVER_NAME, serverConfig as unknown as Record<string, unknown>, force);
 
     await writeJsonConfig(agentConfig.globalConfigPath, config);
@@ -169,7 +168,6 @@ export async function installMcpConfigToAgentGlobal(
 export async function installMcpConfigToAgentProject(
   agentName: string,
   projectPath: string,
-  devecoPath?: string,
   force: boolean = false
 ): Promise<McpConfigResult> {
   const agentConfig = AGENT_MCP_CONFIG[agentName];
@@ -200,7 +198,7 @@ export async function installMcpConfigToAgentProject(
     }
 
     // 项目级模式：直接传入项目绝对路径作为 PROJECT_PATH，不用 '.' 或 '${workspaceFolder}'
-    const serverConfig = buildMcpConfigForAgent(agentConfig, projectPath, devecoPath);
+    const serverConfig = buildMcpConfigForAgent(agentConfig, projectPath);
     addMcpServerConfig(config, agentConfig.mcpServersKey, MCP_SERVER_NAME, serverConfig as unknown as Record<string, unknown>, force);
 
     await writeJsonConfig(configFile, config);
