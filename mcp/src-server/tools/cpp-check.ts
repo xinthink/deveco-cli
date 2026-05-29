@@ -17,13 +17,35 @@ import {
   normalizePath,
   smartFindToolPath,
   toFileUri,
+  COMPILE_COMMANDS_RELATIVE_SEGMENTS,
+  devecoStudioContentRoot,
 } from '../utils/common.js';
 import { mcpLog } from '../utils/mcp-logger.js';
+import { ModuleInfoParse } from '../lsp/parse/ModuleInfoParse.js';
+import { executeBuildCommand } from '../lsp/sync/buildProject.js';
 
 /** initialize / 单文件诊断的超时（毫秒）。 */
 const INIT_TIMEOUT_MS = 60 * 1000;
 const DIAGNOSTIC_TIMEOUT_MS = 30 * 1000;
-const REQUEST_TIMEOUT_MS = 10 * 1000;
+
+/** Document sync methods that should be queued in wrapper mode. */
+const DOCUMENT_SYNC_METHODS = new Set([
+  'textDocument/didOpen',
+  'textDocument/didChange',
+  'textDocument/didClose',
+  'textDocument/didSave',
+]);
+
+/** Poll interval for checking compile_commands.json availability. */
+const POLL_INTERVAL_MS = 1_000;
+
+/** Wrapper state machine states. */
+type WrapperState =
+  | 'preInitialize'
+  | 'waitingForDatabase'
+  | 'startingBackend'
+  | 'proxying'
+  | 'shuttingDown';
 
 type JsonValue =
   | null
@@ -54,47 +76,106 @@ interface DiagnosticWaiter {
   timer: NodeJS.Timeout;
 }
 
+/** build-profile.json5 中的模块信息 */
+interface ModuleInfo {
+  name: string;
+  srcPath: string;
+  type?: string;
+}
+
+/** compile_commands.json 中的单条编译命令 */
+interface CompileCommand {
+  directory: string;
+  command?: string;
+  file?: string;
+  output?: string;
+}
+
 /**
- * 简化版 clangd LSP 客户端：
- * - 通过 stdio + Content-Length 帧与 clangd 通信；
- * - 维护 `pendingRequests`（id → resolver）与 `diagnosticWaiters`（fileUri → resolver）；
- * - `checkFile(filePath)` 发 `textDocument/didOpen`、等 `publishDiagnostics`、再发 `didClose`。
+ * 内联 wrapper 模式的 clangd LSP 客户端：
+ *
+ * 不需要单独的 wrapper 进程/文件：
+ *
+ * - **Wrapper 模式**（`waitingForDatabase`）：客户端先完成假握手（`initialize` 立即返回），
+ *   缓存 document sync 通知，等 compile_commands.json 出现后再连接真正的 clangd。
+ * - **Proxying 模式**（`proxying`）：clangd 就绪后，所有通信直接转发，
+ *   行为与原来的直连 clangd 客户端一致。
+ *
+ * 状态机：preInitialize → waitingForDatabase → startingBackend → proxying → shuttingDown
  */
 class ClangdLspClient {
-  private buffer: Buffer = Buffer.alloc(0);
+  // --- LSP protocol fields ---
   private nextRequestId: number = 1;
   private readonly pendingRequests = new Map<number, PendingRequest>();
   private readonly diagnosticWaiters = new Map<string, DiagnosticWaiter>();
   private fileCheckLock: Promise<void> = Promise.resolve();
   private closed: boolean = false;
 
-  constructor(
-    private readonly stdin: NodeJS.WritableStream,
-    private readonly stdout: NodeJS.ReadableStream
-  ) {
-    this.stdout.on('data', (chunk: Buffer) => this.handleData(chunk));
-    this.stdout.on('error', (err) => {
-      mcpLog.warn(`[CppCheck] clangd stdout error: ${err}`);
-      this.failAll(new Error(`clangd stdout error: ${err}`));
-    });
-    this.stdout.on('end', () => {
-      this.failAll(new Error('C++ language server connection closed'));
-    });
+  // --- Wrapper state management ---
+  private wrapperState: WrapperState = 'preInitialize';
+  private queuedDocumentNotifications: LspMessage[] = [];
+  private backendReady: boolean = false;
+  private projectPath: string | null = null;
+
+  // --- Clangd process streams (added via connectClangdProcess) ---
+  private clangdStdin: NodeJS.WritableStream | null = null;
+  private clangdStdout: NodeJS.ReadableStream | null = null;
+  private clangdBuffer: Buffer = Buffer.alloc(0);
+
+  constructor() {
+    // Wrapper mode: no clangd streams initially.
+    // The clangd process is connected later via connectClangdProcess().
+  }
+
+  /** Whether the client has been closed (for CppCheckTool polling to check). */
+  isClosed(): boolean {
+    return this.closed;
   }
 
   /**
-   * 发送 `initialize` 请求 + `initialized` 通知。
-   * 与 Rust 实现保持一致：rootUri / workspaceFolders 都填工程根。
+   * 假握手：立即返回，不发送任何消息到 clangd。
+   * 客户端可以先完成 LSP 握手，不必等 clangd 真正启动。
    */
   async initialize(projectPath: string): Promise<void> {
-    const normalizedRoot = normalizePath(projectPath);
+    this.projectPath = projectPath;
+    this.wrapperState = 'waitingForDatabase';
+  }
+
+  /**
+   * 连接到真正的 clangd 进程。发送真实的 `initialize` 请求，
+   * 等待响应后转发缓存的通知，切换到 proxying 模式。
+   */
+  async connectClangdProcess(
+    stdin: NodeJS.WritableStream,
+    stdout: NodeJS.ReadableStream
+  ): Promise<void> {
+    if (this.closed) {
+      throw new Error('Client is already closed');
+    }
+
+    this.clangdStdin = stdin;
+    this.clangdStdout = stdout;
+    this.wrapperState = 'startingBackend';
+
+    // Set up clangd stdout listener
+    this.clangdStdout.on('data', (chunk: Buffer) => this.handleClangdData(chunk));
+    this.clangdStdout.on('error', (err) => {
+      mcpLog.warn(`[CppCheck] clangd stdout error: ${err}`);
+      this.failAll(new Error(`clangd stdout error: ${err}`));
+    });
+    this.clangdStdout.on('end', () => {
+      this.failAll(new Error('C++ language server connection closed'));
+    });
+
+    // Send real initialize to clangd
+    const normalizedRoot = normalizePath(this.projectPath!);
     const rootUri = toFileUri(normalizedRoot);
     const workspaceName = path.basename(normalizedRoot) || 'workspace';
 
     const params: JsonValue = {
       processId: null,
       clientInfo: {
-        name: 'codegenie-mcp-server',
+        name: 'devecocli-mcp-server',
         version: process.env.npm_package_version ?? '0.0.1',
       },
       rootPath: normalizedRoot,
@@ -103,15 +184,51 @@ class ClangdLspClient {
       capabilities: {},
     };
 
-    await this.sendRequest('initialize', params, INIT_TIMEOUT_MS);
-    await this.sendNotification('initialized', {});
+    await this.sendRequestToClangd('initialize', params, INIT_TIMEOUT_MS);
+    await this.sendNotificationToClangd('initialized', {});
+
+    // Mark backend as ready
+    this.backendReady = true;
+    this.wrapperState = 'proxying';
+
+    // Forward queued document notifications
+    for (const notification of this.queuedDocumentNotifications) {
+      await this.writeToClangd(notification);
+    }
+    this.queuedDocumentNotifications.length = 0;
+
+    mcpLog.info('[CppCheck] clangd backend ready, switched to proxying mode');
+  }
+
+  /**
+   * 等待 clangd 后端就绪（带超时）。
+   * 在 wrapper 模式下阻塞直到 connectClangdProcess() 完成；
+   * 在 proxying 模式下立即返回。
+   */
+  private async waitForBackendReady(): Promise<void> {
+    if (this.backendReady) {
+      return;
+    }
+
+    const maxWait = INIT_TIMEOUT_MS;
+    const start = Date.now();
+    while (!this.backendReady && !this.closed && Date.now() - start < maxWait) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
+    }
+
+    if (!this.backendReady) {
+      throw new Error('Timed out waiting for clangd backend to be ready');
+    }
   }
 
   /**
    * 对单个文件触发诊断：didOpen → 等 publishDiagnostics → didClose。
    * 同一时刻只允许一个文件被检查（避免多文件 publishDiagnostics 混在一起）。
+   * 在 wrapper 模式下会先等待 clangd 后端就绪。
    */
   async checkFile(filePath: string): Promise<JsonValue[]> {
+    await this.waitForBackendReady();
+
     const release = await this.acquireFileCheckLock();
     try {
       return await this.doCheckFile(filePath);
@@ -172,36 +289,71 @@ class ClangdLspClient {
 
   /**
    * shutdown → exit 通知 → 关闭 stdin。优雅停止；调用方仍然需要负责终止 clangd 进程。
+   * 同时处理 wrapper 模式（无 clangd 进程）和 proxying 模式（有真实 clangd）。
    */
   async close(): Promise<void> {
     if (this.closed) {
       return;
     }
     this.closed = true;
+    this.wrapperState = 'shuttingDown';
 
-    try {
-      await this.sendRequest('shutdown', null, 3000);
-    } catch (err) {
-      mcpLog.warn(`[CppCheck] shutdown request failed: ${err}`);
-    }
-    try {
-      await this.sendNotification('exit', null);
-    } catch (err) {
-      mcpLog.warn(`[CppCheck] exit notification failed: ${err}`);
-    }
-    try {
-      this.stdin.end();
-    } catch (err) {
-      mcpLog.warn(`[CppCheck] stdin.end() failed: ${err}`);
+    if (this.backendReady && this.clangdStdin) {
+      try {
+        await this.sendRequestToClangd('shutdown', null, 3000);
+      } catch (err) {
+        mcpLog.warn(`[CppCheck] shutdown request failed: ${err}`);
+      }
+      try {
+        await this.sendNotificationToClangd('exit', null);
+      } catch (err) {
+        mcpLog.warn(`[CppCheck] exit notification failed: ${err}`);
+      }
+      try {
+        this.clangdStdin.end();
+      } catch (err) {
+        mcpLog.warn(`[CppCheck] stdin.end() failed: ${err}`);
+      }
     }
   }
 
-  // ---------- internal: LSP protocol ----------
+  // ---------- internal: LSP protocol (wrapper-aware) ----------
 
-  private async sendRequest(
+  /**
+   * 发送通知。在 wrapper 模式下缓存 document sync 通知；
+   * 在 proxying 模式下直接发送到 clangd。
+   */
+  private async sendNotification(method: string, params: JsonValue | null): Promise<void> {
+    const msg: LspMessage = {
+      jsonrpc: '2.0',
+      method,
+      params: params ?? undefined,
+    };
+
+    if (this.backendReady && this.clangdStdin) {
+      await this.writeToClangd(msg);
+      return;
+    }
+
+    // Wrapper mode: cache document sync notifications
+    if (DOCUMENT_SYNC_METHODS.has(method)) {
+      this.queuedDocumentNotifications.push(msg);
+    }
+    // Other notifications in wrapper mode: silently drop
+  }
+
+  private async closeFile(fileUri: string): Promise<void> {
+    await this.sendNotification('textDocument/didClose', {
+      textDocument: { uri: fileUri },
+    });
+  }
+
+  // ---------- internal: direct clangd communication ----------
+
+  private async sendRequestToClangd(
     method: string,
     params: JsonValue | null,
-    timeoutMs: number = REQUEST_TIMEOUT_MS
+    timeoutMs: number
   ): Promise<JsonValue> {
     const id = this.nextRequestId++;
     return new Promise<JsonValue>((resolve, reject) => {
@@ -212,7 +364,7 @@ class ClangdLspClient {
       }, timeoutMs);
       this.pendingRequests.set(id, { resolve, reject, timer });
 
-      this.writeMessage({
+      this.writeToClangd({
         jsonrpc: '2.0',
         id,
         method,
@@ -226,24 +378,19 @@ class ClangdLspClient {
     });
   }
 
-  private async sendNotification(
-    method: string,
-    params: JsonValue | null
-  ): Promise<void> {
-    await this.writeMessage({
+  private async sendNotificationToClangd(method: string, params: JsonValue | null): Promise<void> {
+    await this.writeToClangd({
       jsonrpc: '2.0',
       method,
       params: params ?? undefined,
     });
   }
 
-  private async closeFile(fileUri: string): Promise<void> {
-    await this.sendNotification('textDocument/didClose', {
-      textDocument: { uri: fileUri },
-    });
-  }
+  private async writeToClangd(msg: LspMessage): Promise<void> {
+    if (!this.clangdStdin) {
+      throw new Error('clangd stdin not available');
+    }
 
-  private writeMessage(msg: LspMessage): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       let body: string;
       try {
@@ -271,41 +418,43 @@ class ClangdLspClient {
         }
       };
 
-      const flushed = this.stdin.write(Buffer.concat([header, content]), (err) => {
+      const flushed = this.clangdStdin!.write(Buffer.concat([header, content]), (err) => {
         if (err) {
           settle(err);
+        } else if (!settled) {
+          settle();
         }
       });
       if (flushed) {
         settle();
       } else {
-        this.stdin.once('drain', () => settle());
+        const onDrain = (): void => settle();
+        this.clangdStdin!.once('drain', onDrain);
       }
     });
   }
 
-  private handleData(chunk: Buffer): void {
-    this.buffer = this.buffer.length === 0 ? chunk : Buffer.concat([this.buffer, chunk]);
+  private handleClangdData(chunk: Buffer): void {
+    this.clangdBuffer = this.clangdBuffer.length === 0 ? chunk : Buffer.concat([this.clangdBuffer, chunk]);
 
     while (true) {
-      const headerEnd = this.buffer.indexOf('\r\n\r\n');
+      const headerEnd = this.clangdBuffer.indexOf('\r\n\r\n');
       if (headerEnd < 0) {
         return;
       }
-      const headerText = this.buffer.slice(0, headerEnd).toString('ascii');
+      const headerText = this.clangdBuffer.slice(0, headerEnd).toString('ascii');
       const lengthMatch = /content-length:\s*(\d+)/i.exec(headerText);
       if (!lengthMatch) {
-        // 头部不合法 → 丢弃这部分（与 Rust 实现遇到无法解析时类似）。
-        this.buffer = this.buffer.slice(headerEnd + 4);
+        this.clangdBuffer = this.clangdBuffer.slice(headerEnd + 4);
         continue;
       }
       const contentLength = parseInt(lengthMatch[1], 10);
       const totalLength = headerEnd + 4 + contentLength;
-      if (this.buffer.length < totalLength) {
-        return; // 等更多数据
+      if (this.clangdBuffer.length < totalLength) {
+        return;
       }
-      const body = this.buffer.slice(headerEnd + 4, totalLength).toString('utf8');
-      this.buffer = this.buffer.slice(totalLength);
+      const body = this.clangdBuffer.slice(headerEnd + 4, totalLength).toString('utf8');
+      this.clangdBuffer = this.clangdBuffer.slice(totalLength);
       try {
         const msg = JSON.parse(body) as LspMessage;
         this.dispatchMessage(msg);
@@ -366,7 +515,7 @@ class ClangdLspClient {
   }
 
   /**
-   * 简易"互斥锁"：保证 `checkFile` 之间串行执行（与 Rust 端的 `file_check_lock` 等价）。
+   * 简易"互斥锁"：保证 `checkFile` 之间串行执行。
    */
   private async acquireFileCheckLock(): Promise<() => void> {
     const previous = this.fileCheckLock;
@@ -399,17 +548,280 @@ function normalizeClangdUri(uri: string): string {
   return uri;
 }
 
+// ---------- C/C++ file detection helpers ----------
+
+/** 判断给定文件路径是否是 C/C++ 源/头文件（不含 .ipp/.ixx/.inl/.inc/.tpp 等辅助扩展名）。 */
+function isCppFile(filePath: string): boolean {
+  const ext = path.extname(filePath).replace(/^\./, '').toLowerCase();
+  return [
+    'c', 'cpp', 'cxx', 'cc', 'h', 'hpp', 'hxx', 'hh', 'c++', 'h++',
+  ].includes(ext);
+}
+
+/** 判断单个目录条目是否包含 C++ 信号（.cxx 子目录、递归子目录含 C++、或自身是 C++ 文件）。 */
+function entryHasCppSignal(modulePath: string, entry: fs.Dirent): boolean {
+  const fullPath = path.join(modulePath, entry.name);
+  if (entry.isDirectory()) {
+    return entry.name === '.cxx' || hasCppFiles(fullPath);
+  }
+  return isCppFile(fullPath);
+}
+
+/** 递归检查目录是否包含 C++ 文件或 .cxx 子目录。 */
+function hasCppFiles(modulePath: string): boolean {
+  if (!fs.existsSync(modulePath)) {
+    return false;
+  }
+  try {
+    const entries = fs.readdirSync(modulePath, { withFileTypes: true });
+    return entries.some((entry) => entryHasCppSignal(modulePath, entry));
+  } catch {
+    // ignore permission errors
+  }
+  return false;
+}
+
+/** 查找项目中含有 C++ 文件的模块。 */
+function findCppModules(projectPath: string): ModuleInfo[] {
+  const parser = new ModuleInfoParse(projectPath);
+  const allModules = parser.getAllModuleInfo();
+  const cppModules: ModuleInfo[] = [];
+  for (const module of allModules) {
+    const normalizedSrcPath = module.srcPath.replace(/^\.\//, '');
+    const modulePath = path.join(projectPath, normalizedSrcPath);
+    if (hasCppFiles(modulePath)) {
+      cppModules.push(module);
+    }
+  }
+  return cppModules;
+}
+
+// ---------- compile_commands.json helpers ----------
+
+/** 查找所有模块下的 compile_commands.json 文件。 */
+function findCompileCommandsFiles(projectPath: string): string[] {
+  const results: string[] = [];
+  const parser = new ModuleInfoParse(projectPath);
+  const modules = parser.getAllModuleInfo();
+
+  for (const module of modules) {
+    const normalizedSrcPath = module.srcPath.replace(/^\.\//, '');
+    const cxxPath = path.join(projectPath, normalizedSrcPath, '.cxx');
+
+    if (!fs.existsSync(cxxPath)) {
+      continue;
+    }
+
+    findCompileCommandsRecursive(cxxPath, results);
+  }
+
+  return results;
+}
+
+/** 递归查找目录下的 compile_commands.json 文件。 */
+function findCompileCommandsRecursive(dir: string, results: string[]): void {
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        findCompileCommandsRecursive(fullPath, results);
+      } else if (entry.name === 'compile_commands.json') {
+        results.push(fullPath);
+      }
+    }
+  } catch {
+    // ignore permission errors
+  }
+}
+
+/** 合并多个 compile_commands.json 文件的内容。 */
+function mergeCompileCommands(files: string[]): CompileCommand[] {
+  const merged: CompileCommand[] = [];
+  for (const filePath of files) {
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const parsed = JSON.parse(content) as CompileCommand[];
+      merged.push(...parsed);
+    } catch {
+      // skip invalid files
+    }
+  }
+  return merged;
+}
+
+/** 将合并后的 compile_commands 写入标准位置。 */
+function writeCompileCommands(projectPath: string, commands: CompileCommand[]): void {
+  const targetDir = path.join(projectPath, ...COMPILE_COMMANDS_RELATIVE_SEGMENTS.slice(0, -1));
+  fs.mkdirSync(targetDir, { recursive: true });
+  const targetPath = path.join(targetDir, 'compile_commands.json');
+  fs.writeFileSync(targetPath, JSON.stringify(commands, null, 2), 'utf8');
+}
+
+/** 查找所有模块下的 compile_commands.json 并合并写入。 */
+function findAndMergeCompileCommands(projectPath: string): void {
+  const compileCommandsFiles = findCompileCommandsFiles(projectPath);
+
+  if (compileCommandsFiles.length > 0) {
+    const merged = mergeCompileCommands(compileCommandsFiles);
+    writeCompileCommands(projectPath, merged);
+    mcpLog.info(
+      `[CppCheck] compile_commands.json 已生成，共 ${merged.length} 条编译命令`
+    );
+  } else {
+    mcpLog.warn('[CppCheck] 未找到任何 compile_commands.json 文件');
+  }
+}
+
+/**
+ * 检查待检查的 C++ 文件是否被 compile_commands.json 覆盖。
+ * 返回 true 表示全部覆盖，false 表示有文件未被覆盖需要重新初始化。
+ */
+function buildCoveredFileSet(commands: CompileCommand[]): Set<string> {
+  const coveredFiles = new Set<string>();
+  for (const cmd of commands) {
+    if (!cmd.file) {
+      continue;
+    }
+    try {
+      coveredFiles.add(fs.realpathSync(cmd.file));
+    } catch {
+      coveredFiles.add(cmd.file);
+    }
+  }
+  return coveredFiles;
+}
+
+function isFileCoveredBySet(file: string, coveredFiles: Set<string>): boolean {
+  try {
+    const canonical = fs.realpathSync(file);
+    if (!coveredFiles.has(canonical)) {
+      mcpLog.info(
+        `[CppCheck] File not covered by compile_commands.json: ${file}`
+      );
+      return false;
+    }
+  } catch {
+    // file doesn't exist, will be caught by collectValidFiles
+  }
+  return true;
+}
+
+function checkFilesCoveredByCompileCommands(
+  compileCommandsPath: string,
+  filesToCheck: string[]
+): boolean {
+  if (!fs.existsSync(compileCommandsPath)) {
+    return false;
+  }
+
+  try {
+    const content = fs.readFileSync(compileCommandsPath, 'utf8');
+    const commands = JSON.parse(content) as CompileCommand[];
+    const coveredFiles = buildCoveredFileSet(commands);
+    for (const file of filesToCheck) {
+      if (!isFileCoveredBySet(file, coveredFiles)) {
+        return false;
+      }
+    }
+    return true;
+  } catch (err) {
+    mcpLog.warn(`[CppCheck] Failed to read/parse compile_commands.json: ${err}`);
+    return false;
+  }
+}
+
+// ---------- C++ project initialization (compileNative) ----------
+
+/**
+ * 执行 compileNative 构建以生成 compile_commands.json。
+ */
+function runCompileNative(
+  projectPath: string,
+  devecoPath: string,
+  cppModules: ModuleInfo[]
+): void {
+  const sdkPath = path.join(devecoStudioContentRoot(devecoPath), 'sdk');
+  const osType = process.platform === 'win32' ? 'Windows'
+    : process.platform === 'darwin' ? 'Mac'
+    : 'Linux';
+
+  // 推导 node 和 hvigor 路径
+  const nodePath = process.execPath || 'node';
+  const toolsDir = path.join(devecoStudioContentRoot(devecoPath), 'tools');
+  mcpLog.info(`CppCheck devecoPath: ${devecoPath}, contentRoot: ${devecoStudioContentRoot(devecoPath)}, sdkPath: ${sdkPath}, toolsDir: ${toolsDir}`);
+  const hvigorPath = process.platform === 'win32'
+    ? path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.bat')
+    : path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.js');
+
+  for (const module of cppModules) {
+    const hvigorArgs = [
+      '--mode', 'module',
+      '-p', `module=${module.name}`,
+      '-p', 'product=default',
+      'compileNative',
+      '--analyze=normal',
+      '--parallel',
+      '--incremental',
+      '--no-daemon',
+    ].join(' ');
+
+    mcpLog.info(`[CppCheck] Running compileNative for module: ${module.name}`);
+
+    const result = executeBuildCommand(
+      projectPath,
+      nodePath,
+      hvigorPath,
+      sdkPath,
+      hvigorArgs,
+      osType
+    );
+
+    if (result.success) {
+      mcpLog.info(`[CppCheck] compileNative ${module.name} 成功`);
+    } else {
+      mcpLog.warn(`[CppCheck] compileNative ${module.name} 失败: ${result.output}`);
+    }
+  }
+}
+
+/**
+ * 完整的 C++ 工程初始化流程：
+ * 1. 查找含 C++ 的模块
+ * 2. 对每个模块执行 compileNative
+ * 3. 合并 compile_commands.json
+ */
+function initializeCppProject(projectPath: string, devecoPath: string): void {
+  const cppModules = findCppModules(projectPath);
+
+  if (cppModules.length === 0) {
+    mcpLog.info('[CppCheck] 未发现含C++的模块，跳过初始化');
+    return;
+  }
+
+  mcpLog.info(
+    `[CppCheck] 发现 ${cppModules.length} 个含C++的模块: ${cppModules.map((m) => m.name).join(', ')}`
+  );
+
+  runCompileNative(projectPath, devecoPath, cppModules);
+  findAndMergeCompileCommands(projectPath);
+}
+
 export class CppCheckTool {
   private projectPath: string;
   /** DevEco Studio 安装路径；构造时可选，initialize 时若为空将自动查找。 */
   private devecoPath: string | null;
-  private clangdPath: string | null = null;
 
   private clangdProcess: ChildProcessWithoutNullStreams | null = null;
   private client: ClangdLspClient | null = null;
   private initializedProjectPath: string | null = null;
   private initializing: boolean = false;
   private initPromise: Promise<void> | null = null;
+
+  /** Poll handle for checking compile_commands.json availability (matching Rust's poll mechanism). */
+  private pollHandle: NodeJS.Timeout | null = null;
+  /** Whether the clangd backend is connected and ready (matching Rust's backendReady). */
+  private backendReady: boolean = false;
 
   constructor(projectPath: string, devecoPath?: string | null) {
     this.projectPath = projectPath;
@@ -462,7 +874,7 @@ export class CppCheckTool {
 
     let client: ClangdLspClient;
     try {
-      client = await this.ensureInitialized();
+      client = await this.ensureInitializedWithFiles(cppFiles);
     } catch (err) {
       errors.push((err as Error).message);
       return {
@@ -526,18 +938,81 @@ export class CppCheckTool {
   }
 
   /**
-   * 检查并初始化 LSP。若已经为当前 `projectPath` 初始化好，直接复用。
-   * 否则：校验 compile_commands.json 存在 → spawn clangd → initialize。
+   * 带文件覆盖检查的初始化：
+   * 如果待检查的文件未被 compile_commands.json 覆盖，则重新执行 compileNative。
+   * 与 Rust 版 `ensure_initialized_with_files` 保持一致。
    */
-  private async ensureInitialized(): Promise<ClangdLspClient> {
-    if (this.client && this.initializedProjectPath) {
-      const normalized = normalizePath(this.projectPath);
-      if (this.initializedProjectPath === normalized && this.clangdProcess && !this.clangdProcess.killed) {
-        return this.client;
+  private async ensureInitializedWithFiles(filesToCheck: string[]): Promise<ClangdLspClient> {
+    const normalizedProjectPath = normalizePath(this.projectPath);
+    const needsInit = this.prepareCppCheck(normalizedProjectPath, filesToCheck);
+
+    if (needsInit) {
+      // 需要重新初始化：先关闭现有客户端
+      if (this.client && this.initializedProjectPath) {
+        mcpLog.info('[CppCheck] Re-initializing C++ project due to file changes');
+        await this.shutdown();
       }
-      await this.shutdown();
+
+      // 执行 C++ 工程初始化（compileNative + 合并 compile_commands）
+      const devecoPath = this.devecoPath ?? findDevEcoPath();
+      if (!devecoPath) {
+        throw new Error('DevEco Studio installation path not found');
+      }
+      this.devecoPath = devecoPath;
+      initializeCppProject(normalizedProjectPath, devecoPath);
+    } else {
+      // 不需要重新初始化：检查是否已有可复用的客户端
+      if (this.client && this.initializedProjectPath) {
+        const normalized = normalizePath(this.projectPath);
+        if (this.initializedProjectPath === normalized) {
+          // 客户端存在且项目路径匹配——返回它，即使 clangd 还没连上
+          // checkFile() 内部有 waitForBackendReady() 会等 clangd 就绪
+          return this.client;
+        }
+        // 项目路径变了——关闭并重新初始化
+        await this.shutdown();
+      }
     }
 
+    return this.doEnsureInitialized();
+  }
+
+  /**
+   * 检查是否需要进行 C++ 初始化。
+   * 返回 true 表示需要初始化，false 表示可以直接检查。
+   * 与 Rust 版 `prepare_cpp_check` 保持一致。
+   */
+  private prepareCppCheck(projectPath: string, filesToCheck: string[]): boolean {
+    const ccPath = compileCommandsPath(projectPath);
+
+    // 1. compile_commands.json 不存在 → 需要初始化
+    if (!fs.existsSync(ccPath)) {
+      mcpLog.info('[CppCheck] compile_commands.json not found, needs initialization');
+      return true;
+    }
+
+    // 2. 检查是否存在 cpp_modules
+    const cppModules = findCppModules(projectPath);
+    if (cppModules.length === 0) {
+      mcpLog.info('[CppCheck] No cpp modules found, no initialization needed');
+      return false;
+    }
+
+    // 3. 检查传入文件是否被 compile_commands.json 覆盖
+    const covered = checkFilesCoveredByCompileCommands(ccPath, filesToCheck);
+    if (!covered) {
+      mcpLog.info('[CppCheck] Files not fully covered by compile_commands.json, needs initialization');
+      return true;
+    }
+
+    mcpLog.info('[CppCheck] All files covered, no initialization needed');
+    return false;
+  }
+
+  /**
+   * 执行 LSP 客户端初始化（内部方法，不含文件覆盖检查）。
+   */
+  private async doEnsureInitialized(): Promise<ClangdLspClient> {
     if (this.initPromise) {
       await this.initPromise;
       if (this.client) {
@@ -557,37 +1032,35 @@ export class CppCheckTool {
     return this.client;
   }
 
+  /**
+   * 两阶段初始化（与 Rust 版 `do_initialize` + wrapper 的 `startBackend` 一致）：
+   *
+   * Phase 1: 创建 ClangdLspClient（wrapper 模式），假握手立即完成。
+   * Phase 2: 轮询 compile_commands.json，出现后 spawn clangd 并连接。
+   */
   private async doInitialize(): Promise<void> {
-    const { normalizedRoot, compileCommandsDir, clangdPath } =
-      this.resolveProjectAndTools();
+    const normalizedRoot = this.resolveProjectRoot();
+
+    // Phase 1: Create client in wrapper mode (fake initialize)
+    this.client = new ClangdLspClient();
+    await this.client.initialize(normalizedRoot);
+    this.initializedProjectPath = normalizedRoot;
+
     mcpLog.info(
-      `[CppCheck] Starting clangd for workspace: ${normalizedRoot} (clangd=${clangdPath})`
+      `[CppCheck] Client initialized in wrapper mode for workspace: ${normalizedRoot}`
     );
 
-    const child = this.spawnClangd(clangdPath, normalizedRoot, compileCommandsDir);
-    this.clangdProcess = child;
-    this.client = new ClangdLspClient(child.stdin, child.stdout);
-
-    try {
-      await this.client.initialize(normalizedRoot);
-    } catch (err) {
-      await this.shutdown();
-      throw err;
-    }
-
-    this.initializedProjectPath = normalizedRoot;
-    mcpLog.info(`[CppCheck] clangd initialized for workspace: ${normalizedRoot}`);
+    // Phase 2: Start polling for compile_commands.json
+    // When it appears, spawn clangd and connect
+    this.startPollingForClangd(normalizedRoot);
   }
 
   /**
-   * 校验并解析：Harmony 工程根、`compile_commands.json` 目录、DevEco 安装目录、clangd 可执行文件。
-   * 任一环节失败抛错。成功时副作用：更新 `this.projectPath` / `this.devecoPath` / `this.clangdPath`。
+   * 校验并解析 Harmony 工程根路径。
+   * 与 Rust 版不同，不再在此处检查 compile_commands.json 或 clangd 路径——
+   * 这些在 clangd 实际 spawn 时才需要（由 resolveClangdPaths 处理）。
    */
-  private resolveProjectAndTools(): {
-    normalizedRoot: string;
-    compileCommandsDir: string;
-    clangdPath: string;
-  } {
+  private resolveProjectRoot(): string {
     const harmonyRoot = findHarmonyProject(this.projectPath);
     if (!harmonyRoot) {
       throw new Error(
@@ -595,15 +1068,89 @@ export class CppCheckTool {
       );
     }
     this.projectPath = harmonyRoot;
-    const normalizedRoot = normalizePath(harmonyRoot);
+    return normalizePath(harmonyRoot);
+  }
 
+  /**
+   * 轮询 compile_commands.json 是否出现，出现后 spawn clangd 并连接。
+   * 与 Rust wrapper 的 `startPolling` + `startBackend` 行为一致。
+   */
+  private startPollingForClangd(normalizedRoot: string): void {
     const ccPath = compileCommandsPath(normalizedRoot);
-    if (!fs.existsSync(ccPath)) {
-      throw new Error(
-        'C++工程未初始化，请先使用 project_sync 工具进行同步，同步完成后再次执行 cpp 文件检查'
-      );
+
+    // Check immediately - if DB already exists, spawn clangd right away
+    if (fs.existsSync(ccPath)) {
+      mcpLog.info('[CppCheck] compile_commands.json found, spawning clangd immediately');
+      this.spawnAndConnectClangd(normalizedRoot).catch((err) => {
+        mcpLog.error(`[CppCheck] Immediate clangd spawn failed: ${err}`);
+      });
+      return;
     }
 
+    mcpLog.info('[CppCheck] compile_commands.json not found, starting poll...');
+
+    // Poll every POLL_INTERVAL_MS (matching Rust's POLL_INTERVAL_MS = 1000)
+    this.pollHandle = setInterval(() => {
+      if (!this.client || this.client.isClosed() || this.backendReady) {
+        // Stop polling if client is gone/closed or backend is already ready
+        this.stopPolling();
+        return;
+      }
+
+      if (fs.existsSync(ccPath)) {
+        this.stopPolling();
+        mcpLog.info('[CppCheck] compile_commands.json found via poll, spawning clangd...');
+        this.spawnAndConnectClangd(normalizedRoot).catch((err) => {
+          mcpLog.error(`[CppCheck] Clangd spawn from poll failed: ${err}`);
+        });
+      }
+    }, POLL_INTERVAL_MS);
+  }
+
+  private stopPolling(): void {
+    if (this.pollHandle) {
+      clearInterval(this.pollHandle);
+      this.pollHandle = null;
+    }
+  }
+
+  /**
+   * Spawn clangd 进程并连接到 ClangdLspClient。
+   * 与 Rust 版的 `LspProcessManager::start` + `CppLspClient::from_stdio` + `client.initialize` 一致，
+   * 但这里 clangd 的 initialize 由 ClangdLspClient.connectClangdProcess() 内部发送。
+   */
+  private async spawnAndConnectClangd(normalizedRoot: string): Promise<void> {
+    const { clangdPath, compileCommandsDir } = this.resolveClangdPaths(normalizedRoot);
+
+    mcpLog.info(
+      `[CppCheck] Starting clangd for workspace: ${normalizedRoot} (clangd=${clangdPath})`
+    );
+
+    const child = this.spawnClangd(clangdPath, normalizedRoot, compileCommandsDir);
+    this.clangdProcess = child;
+
+    try {
+      await this.client!.connectClangdProcess(child.stdin, child.stdout);
+      this.backendReady = true;
+      mcpLog.info(`[CppCheck] clangd connected for workspace: ${normalizedRoot}`);
+    } catch (err) {
+      mcpLog.error(`[CppCheck] Failed to connect clangd: ${err}`);
+      // Clean up the failed process
+      if (this.clangdProcess && !this.clangdProcess.killed) {
+        try {
+          this.clangdProcess.kill();
+        } catch {}
+        this.clangdProcess = null;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * 解析 clangd 可执行文件路径和 compile_commands 目录。
+   * 仅在 clangd 实际需要 spawn 时调用（不在初始化阶段调用）。
+   */
+  private resolveClangdPaths(normalizedRoot: string): { clangdPath: string; compileCommandsDir: string } {
     const devecoPath = this.devecoPath ?? findDevEcoPath();
     if (!devecoPath) {
       throw new Error('DevEco Studio installation path not found');
@@ -614,9 +1161,11 @@ export class CppCheckTool {
     if (!clangdPath) {
       throw new Error('clangd executable not found inside DevEco Studio SDK');
     }
-    this.clangdPath = clangdPath;
 
-    return { normalizedRoot, compileCommandsDir: path.dirname(ccPath), clangdPath };
+    const ccPath = compileCommandsPath(normalizedRoot);
+    const compileCommandsDir = path.dirname(ccPath);
+
+    return { clangdPath, compileCommandsDir };
   }
 
   /**
@@ -648,8 +1197,8 @@ export class CppCheckTool {
       );
       if (this.clangdProcess === child) {
         this.clangdProcess = null;
-        this.client = null;
-        this.initializedProjectPath = null;
+        this.backendReady = false;
+        // Don't null out client — it can be re-connected to a new clangd process
       }
     });
     child.on('error', (err) => {
@@ -691,13 +1240,18 @@ export class CppCheckTool {
 
   /**
    * 关闭 clangd 进程与 LSP 客户端。幂等。
+   * 同时清理轮询 handle（与 Rust 版的 `stopPolling` 一致）。
    */
   async shutdown(): Promise<void> {
+    // Stop polling
+    this.stopPolling();
+
     const client = this.client;
     const child = this.clangdProcess;
     this.client = null;
     this.clangdProcess = null;
     this.initializedProjectPath = null;
+    this.backendReady = false;
 
     if (client) {
       try {

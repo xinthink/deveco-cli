@@ -7,6 +7,7 @@ import { ToolProvider } from '../utils/tool-provider.js';
 import { HilogAdapter } from '../utils/hilog-adapter.js';
 import { CommonUtils } from '../utils/common-utils.js';
 import { cyan, red } from 'colorette';
+import ora from 'ora';
 import { debugLog } from '../utils/logger.js';
 
 interface LogOptions {
@@ -47,6 +48,43 @@ function validateLogTimeRange(options: LogOptions): void {
   CommonUtils.assertRelativeTimeRange(options.from, options.to);
 }
 
+async function fetchLogsByOptions(
+  service: HilogAdapter,
+  deviceId: string,
+  options: LogOptions,
+  fromSeconds?: number,
+  toSeconds?: number
+): Promise<string> {
+  return options.crash
+    ? await service.getCrashLog(deviceId, options.bundleName)
+    : await service.getHilog(deviceId, {
+        level: options.level,
+        bundleName: options.bundleName,
+        keyword: options.keyword,
+        isFollow: options.follow ? true : false,
+        tail: options.tail,
+        fromSeconds,
+        toSeconds,
+      });
+}
+
+function postProcessCrashLogs(
+  logs: string,
+  options: LogOptions,
+  fromSeconds?: number,
+  toSeconds?: number
+): string {
+  const windowFiltered = CommonUtils.filterLogsByRelativeWindow(
+    logs,
+    fromSeconds,
+    toSeconds
+  );
+  if (!options.tail) {
+    return windowFiltered;
+  }
+  return CommonUtils.getLastLines(windowFiltered, options.tail);
+}
+
 const logCommand = new Command('log')
   .description('Obtain device application logs')
   .configureOutput({
@@ -74,7 +112,16 @@ const logCommand = new Command('log')
   });
 
 async function handleLogCommand(options: LogOptions) {
+  const spinner = ora({
+    text: 'Preparing log request…',
+    color: 'cyan',
+  });
+  const stopAndClearSpinner = () => {
+    spinner.stop();
+    spinner.clear();
+  };
   try {
+    spinner.start();
     validateLogTimeRange(options);
     const fromSeconds = options.from;
     const toSeconds = options.to;
@@ -84,6 +131,7 @@ async function handleLogCommand(options: LogOptions) {
 
     const deviceId = await service.selectDevice(options.device);
     if (!deviceId) {
+      stopAndClearSpinner();
       process.exit(1);
     }
 
@@ -91,33 +139,29 @@ async function handleLogCommand(options: LogOptions) {
     debugLog(cyan(`type: ${options.crash ? 'Crash logs' : 'Common logs'}`));
     debugLog(cyan('Obtaining logs ...'));
 
-    let logs = options.crash
-      ? await service.getCrashLog(deviceId, options.bundleName)
-      : await service.getHilog(deviceId, {
-          level: options.level,
-          bundleName: options.bundleName,
-          keyword: options.keyword,
-          isFollow: options.follow ? true : false,
-          tail: options.tail,
-          fromSeconds,
-          toSeconds,
-        });
+    spinner.text = 'Fetching logs…';
+    if (options.follow) {
+      stopAndClearSpinner();
+    }
+
+    let logs = await fetchLogsByOptions(
+      service,
+      deviceId,
+      options,
+      fromSeconds,
+      toSeconds
+    );
+    stopAndClearSpinner();
 
     if (options.crash && logs) {
-      logs = CommonUtils.filterLogsByRelativeWindow(
-        logs,
-        fromSeconds,
-        toSeconds
-      );
-      if (options.tail) {
-        logs = CommonUtils.getLastLines(logs, options.tail);
-      }
+      logs = postProcessCrashLogs(logs, options, fromSeconds, toSeconds);
     }
 
     if (logs) {
       console.log(logs);
     }
   } catch (error) {
+    stopAndClearSpinner();
     console.error(red((error as Error).message));
     process.exit(1);
   }

@@ -31,10 +31,10 @@ async function startStdioMcpServer(): Promise<void> {
     process.exit(0);
   };
 
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
   if (process.platform === 'win32') {
-    process.on('SIGBREAK', shutdown);
+    process.once('SIGBREAK', shutdown);
   }
 
   try {
@@ -45,15 +45,15 @@ async function startStdioMcpServer(): Promise<void> {
   }
 }
 
-const startCommand = new Command('start').description(
-  'Start auxiliary services bundled with deveco-cli'
+const serveCommand = new Command('serve').description(
+  'Host bundled auxiliary protocol servers'
 );
 
-startCommand
+serveCommand
   .command('mcp')
   .description('Start a local stdio-based MCP server')
   .action(async () => {
     await startStdioMcpServer();
   });
 
-export default startCommand;
+export default serveCommand;

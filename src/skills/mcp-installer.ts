@@ -27,13 +27,17 @@ export interface McpConfigResult extends SkillOperationResult {
 async function readJsonConfig(filePath: string): Promise<Record<string, unknown>> {
   try {
     const content = await fsp.readFile(filePath, 'utf8');
+    if (content.trim() === '') {
+      // 文件存在但内容为空，返回空对象
+      return {};
+    }
     return JSON.parse(content) as Record<string, unknown>;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       // 文件不存在，返回空对象，后续写入时会创建新文件
       return {};
     }
-    throw new Error(`Failed to read config file ${filePath}: ${(err as Error).message}`);
+    throw new Error(`Failed to read config file ${filePath}: ${(err as Error).message}`, { cause: err });
   }
 }
 
@@ -92,6 +96,7 @@ function removeMcpServerConfig(
     return false;
   }
   // 使用 spread 语法移除属性，避免 delete 操作符
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { [serverName]: _, ...rest } = mcpServers;
   config[mcpServersKey] = rest;
   return true;
@@ -103,7 +108,6 @@ function removeMcpServerConfig(
 export async function installMcpConfigToAgentGlobal(
   agentName: string,
   projectPath: string,
-  devecoPath?: string,
   force: boolean = false
 ): Promise<McpConfigResult> {
   const agentConfig = AGENT_MCP_CONFIG[agentName];
@@ -138,7 +142,7 @@ export async function installMcpConfigToAgentGlobal(
     }
 
     // 全局模式：不传 projectPath，让 buildMcpConfigForAgent 使用默认值（'.' 或 '${workspaceFolder}'）
-    const serverConfig = buildMcpConfigForAgent(agentConfig, undefined, devecoPath);
+    const serverConfig = buildMcpConfigForAgent(agentConfig, undefined);
     addMcpServerConfig(config, agentConfig.mcpServersKey, MCP_SERVER_NAME, serverConfig as unknown as Record<string, unknown>, force);
 
     await writeJsonConfig(agentConfig.globalConfigPath, config);
@@ -164,7 +168,6 @@ export async function installMcpConfigToAgentGlobal(
 export async function installMcpConfigToAgentProject(
   agentName: string,
   projectPath: string,
-  devecoPath?: string,
   force: boolean = false
 ): Promise<McpConfigResult> {
   const agentConfig = AGENT_MCP_CONFIG[agentName];
@@ -175,7 +178,10 @@ export async function installMcpConfigToAgentProject(
     };
   }
 
-  const configFile = path.join(projectPath, agentConfig.projectConfigPath);
+  // projectConfigPath 为绝对路径时直接使用（cursor/codebuddy/qoder），否则与 projectPath 拼接
+  const configFile = path.isAbsolute(agentConfig.projectConfigPath)
+    ? agentConfig.projectConfigPath
+    : path.join(projectPath, agentConfig.projectConfigPath);
 
   try {
     const config = await readJsonConfig(configFile);
@@ -192,7 +198,7 @@ export async function installMcpConfigToAgentProject(
     }
 
     // 项目级模式：直接传入项目绝对路径作为 PROJECT_PATH，不用 '.' 或 '${workspaceFolder}'
-    const serverConfig = buildMcpConfigForAgent(agentConfig, projectPath, devecoPath);
+    const serverConfig = buildMcpConfigForAgent(agentConfig, projectPath);
     addMcpServerConfig(config, agentConfig.mcpServersKey, MCP_SERVER_NAME, serverConfig as unknown as Record<string, unknown>, force);
 
     await writeJsonConfig(configFile, config);
@@ -265,7 +271,10 @@ export async function removeMcpConfigFromAgentProject(
     return { success: false, error: `Unknown agent: ${agentName}` };
   }
 
-  const configFile = path.join(projectPath, agentConfig.projectConfigPath);
+  // projectConfigPath 为绝对路径时直接使用，否则与 projectPath 拼接
+  const configFile = path.isAbsolute(agentConfig.projectConfigPath)
+    ? agentConfig.projectConfigPath
+    : path.join(projectPath, agentConfig.projectConfigPath);
 
   try {
     const config = await readJsonConfig(configFile);
@@ -313,6 +322,13 @@ export function summarizeMcpResults(results: McpConfigResult[]): void {
   console.log(`  Success: ${successCount}`);
   console.log(`  Skipped: ${skippedCount}`);
   console.log(`  Failed: ${failedCount}`);
+
+  // 打印失败详情
+  for (const r of results) {
+    if (!r.success && r.error) {
+      console.error(`  - ${r.agentName ?? 'unknown'}: ${r.error}`);
+    }
+  }
 
   if (failedCount > 0) {
     process.exitCode = 1;

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { Command } from 'commander';
-import { green, red } from 'colorette';
+import { green, red, yellow } from 'colorette';
 import { Project } from '../utils/project.js';
 import { ToolProvider } from '../utils/tool-provider.js';
 import { HvigorAdapter } from '../utils/hvigor-adapter.js';
@@ -190,7 +190,7 @@ const buildCommand = new Command('build')
     try {
       const currentDir = process.cwd();
       const project = Project.discover(currentDir);
-
+      console.warn(yellow('Please ensure the project source is trustworthy before proceeding.'));
       const toolProvider = await ToolProvider.new();
 
       validateProjectConfig(project, options);
@@ -250,7 +250,7 @@ buildCommand
     try {
       const currentDir = process.cwd();
       const project = Project.discover(currentDir);
-
+      console.warn(yellow('Please ensure the project source is trustworthy before proceeding.'));
       const toolProvider = await ToolProvider.new();
 
       const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);

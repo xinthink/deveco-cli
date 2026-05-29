@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { Command } from 'commander';
-import { green, red } from 'colorette';
+import { green, red, yellow } from 'colorette';
 import { Project } from '../utils/project.js';
 import { ToolProvider } from '../utils/tool-provider.js';
 import { HdcAdapter } from '../utils/hdc-adapter.js';
@@ -90,10 +90,9 @@ function resolveArtifacts(
   productName: string
 ): string[] {
   const artifactsToInstall: string[] = [];
-  const hspModules = new Set<string>();
-  project.resolveHspDependencies(moduleName, hspModules);
+  const nonHarModules = project.collectNonHarDependentModuleList(moduleName);
 
-  for (const hsp of hspModules) {
+  for (const hsp of nonHarModules) {
     const p = project.findArtifactPath(
       hsp,
       targetName,
@@ -177,9 +176,8 @@ async function runBuildPhase(
   const ohpmAdapter = new OhpmAdapter(toolProvider, project.rootDir);
   const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
 
-  const hspModules = new Set<string>();
-  project.resolveHspDependencies(moduleName, hspModules);
-  const modulesToBuild = [moduleName, ...hspModules].map((m) => `${m}@${targetName}`);
+  const nonHarModules = project.collectNonHarDependentModuleList(moduleName);
+  const modulesToBuild = nonHarModules.map((m) => `${m}@${targetName}`);
   const moduleTasks = processModuleTasks(project, modulesToBuild);
   const buildTarget = { type: 'modules' as const, modulesToBuild, moduleTasks };
 
@@ -194,6 +192,7 @@ async function runBuildPhase(
 
 async function runActionImpl(options: RunOptions): Promise<void> {
   const project = Project.discover(process.cwd());
+  console.warn(yellow('Please ensure the project source is trustworthy before proceeding.'));
   const toolProvider = await ToolProvider.new();
 
   const moduleArg = identifyModule(project, options.module);

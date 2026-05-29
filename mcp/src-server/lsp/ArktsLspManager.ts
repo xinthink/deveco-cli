@@ -90,32 +90,24 @@ export class ArktsLspManager {
      * 处理 `arkts/syncProject`：先 ohpm install，再 hvigor sync；模型重载由 DependencyMapWatcher
      * 自动触发。无论是否有变化，结束后都通过 `arkts/syncCompleted` 通知上层。
      */
-    async handleSyncProject(): Promise<void> {
+    static async handleSyncProject(workspaceRoot: string, sdkPath?: string): Promise<boolean> {
         logger.info('[ArktsLspManager] Received arkts/syncProject');
-        const installSuccess = ohpmInstallAll(this.config.workspaceRoot, this.config.sdkPath);
+        if (!workspaceRoot || !sdkPath) {
+            logger.error('[ArktsLspManager] handleSyncProject: workspaceRoot or sdkPath is empty');
+            return false;
+        }
+        const installSuccess = await ohpmInstallAll(workspaceRoot, sdkPath);
         if (!installSuccess) {
             logger.error('[ArktsLspManager] ohpm install failed');
-            this.onMessage({
-                jsonrpc: JSONRPC_VERSION,
-                method: LSP_METHOD.ARKTS_SYNC_COMPLETED,
-                params: { success: false },
-            });
-            return;
+            return false;
         }
-        const success = syncProject(this.config.workspaceRoot, this.config.sdkPath);
+        const success = await syncProject(workspaceRoot, sdkPath);
         if (success) {
             logger.info('[ArktsLspManager] syncProject completed successfully');
         } else {
             logger.error('[ArktsLspManager] syncProject failed');
         }
-        this.onMessage({
-            jsonrpc: JSONRPC_VERSION,
-            method: LSP_METHOD.ARKTS_SYNC_COMPLETED,
-            params: { success },
-        });
-        if (installSuccess && success) {
-            this.maybeRetryLspAfterSuccessfulSync();
-        }
+        return success;
     }
 
     async dispose(): Promise<void> {

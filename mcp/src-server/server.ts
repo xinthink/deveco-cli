@@ -9,8 +9,23 @@ import * as path from 'path';
 import { z } from 'zod';
 import { ToolRouter, createToolRouter } from './router.js';
 import { ArktsCheckTool, CppCheckTool } from './tools/index.js';
-import { findHarmonyProject, isSupportedCppFile } from './utils/common.js';
+import { findHarmonyProject, isSupportedCppFile, smartFindToolPath, devecoStudioContentRoot } from './utils/common.js';
 import { initMcpLogger, disposeMcpLogger, flushMcpLogger, getMcpLogFilePath, mcpLog } from './utils/mcp-logger.js';
+import { ArktsLspManager } from './lsp/ArktsLspManager.js';
+
+/**
+ * 项目生命周期状态枚举
+ */
+enum ProjectLifecycle {
+  IDLE,         // 无项目（空文件夹 / 启动时未检测到）
+  DISCOVERING,  // 正在扫描/检测项目
+  SYNCING,      // 项目已发现，正在执行 ohpm install + hvigor sync
+  INITIALIZING, // sync 完成，LSP 正在初始化
+  READY,        // 完全就绪，check 工具可用
+  ERROR,        // sync 或 init 失败，可重试
+}
+
+const MAX_INIT_RETRY = 3;
 
 /**
  * MCP Server Configuration
@@ -26,7 +41,7 @@ export interface McpServerConfig {
 /**
  * MCP Server
  */
-export class CodegenieMcpServer {
+export class DevecoCliMcpServer {
   private server: McpServer;
   private toolRouter: ToolRouter;
   private config: McpServerConfig = {};
@@ -35,6 +50,15 @@ export class CodegenieMcpServer {
   private arktsCheckTool: ArktsCheckTool | null = null;
   private cppCheckTool: CppCheckTool | null = null;
 
+  // 项目生命周期状态
+  private projectState: ProjectLifecycle = ProjectLifecycle.IDLE;
+  private workspaceRoot: string = '';       // MCP 客户端提供的 workspace root，供重新扫描
+  private sdkPath: string = '';             // 缓存 sdkPath，避免重复计算
+  private initPromise: Promise<void> | null = null;  // 互斥锁：保证同一时刻只有一个初始化流程在执行
+  private needsReinit: boolean = false;     // 路径变更标记：初始化运行期间 setProjectPath() 被调用时设置
+  private initRetryCount: number = 0;       // 连续初始化失败计数，超过 MAX_INIT_RETRY 后不再自动重试
+  private originalProjectPath: string = ''; // 用户原始配置的路径（findHarmonyProject 解析前），用于区分"未设置"与"设置了但未找到鸿蒙工程"
+
   constructor(config: McpServerConfig = {}) {
     this.config = config;
     
@@ -42,20 +66,26 @@ export class CodegenieMcpServer {
     initMcpLogger(config.debug ?? false);
     
     // 处理 projectPath：
-    // - '.' 或空值：使用 process.cwd() 作为起点
-    // - 其他值：使用配置的路径
     let startPath: string;
     const configuredPath = config.projectPath?.trim() ?? '';
-    if (configuredPath === '' || configuredPath === '.') {
+    this.originalProjectPath = configuredPath;
+    if (configuredPath === '.') {
       startPath = process.cwd();
+      mcpLog.info(`Constructor: configuredPath is '.', startPath: '${startPath}'`);
+    } else if (configuredPath === '') {
+      startPath = '';
+      mcpLog.info(`Constructor: configuredPath is empty, startPath remains empty`);
     } else {
       startPath = configuredPath;
+      mcpLog.info(`Constructor: using configured path as startPath: '${startPath}'`);
     }
-    this.config.projectPath = findHarmonyProject(startPath) ?? undefined;
+    const foundProject = findHarmonyProject(startPath);
+    mcpLog.info(`Constructor: findHarmonyProject('${startPath}') => ${foundProject ?? 'null'}`);
+    this.config.projectPath = foundProject ?? undefined;
     
     // Create MCP server instance
     this.server = new McpServer({
-      name: 'codegenie-mcp-server',
+      name: 'devecocli-mcp-server',
       version: '0.0.1',
     });
 
@@ -107,6 +137,7 @@ export class CodegenieMcpServer {
         ))
       : [];
     if (files.length === 0) {
+      mcpLog.warn('check tool called with empty files list');
       return {
         content: [{ type: 'text', text: '没有传入任何文件' }],
         isError: true,
@@ -114,6 +145,9 @@ export class CodegenieMcpServer {
     }
 
     const { etsFiles, cppFiles, unsupported } = classifyFiles(files);
+    if (unsupported.length > 0) {
+      mcpLog.warn(`Unsupported file types in check request: ${unsupported.join(', ')}`);
+    }
 
     const errors: string[] = unsupported.map(
       (f) => `不支持的文件类型: ${f}（仅支持 .ets 与 C/C++ 源/头文件）`
@@ -138,20 +172,77 @@ export class CodegenieMcpServer {
     };
   }
 
-  /** 调 ArkTS 工具；未就绪时返回统一错误。 */
+  /** 调 ArkTS 工具；按项目生命周期状态分流。 */
   private async callArktsCheck(files: string[]): Promise<{
     content: { type: string; text: string }[];
     isError?: boolean;
   }> {
-    if (!this.arktsCheckTool || !this.arktsCheckTool.isInitialized()) {
-      const msg = this.arktsCheckTool?.isInitializing()
-        ? 'ArkTS LSP 正在初始化中，请稍后再试'
-        : !this.config.projectPath
-          ? '没有配置工程路径，请配置PROJECT_PATH参数或者在DevEco Studio中打开项目'
-          : 'ArkTS LSP 未初始化，请尝试重新初始化';
-      return { content: [{ type: 'text', text: msg }], isError: true };
+    switch (this.projectState) {
+      case ProjectLifecycle.IDLE:
+        return this.handleIdleCheck();
+      case ProjectLifecycle.DISCOVERING:
+      case ProjectLifecycle.SYNCING:
+        mcpLog.warn(`ArkTS check rejected: project is ${ProjectLifecycle[this.projectState]}, files: ${files.join(', ')}`);
+        return { content: [{ type: 'text', text: '项目正在同步中，请3秒后重试' }], isError: true };
+      case ProjectLifecycle.INITIALIZING:
+        mcpLog.warn(`ArkTS check rejected: LSP is initializing, files: ${files.join(', ')}`);
+        return { content: [{ type: 'text', text: 'ArkTS LSP 正在初始化中，请3秒后重试' }], isError: true };
+      case ProjectLifecycle.ERROR:
+        return this.handleErrorCheck();
+      case ProjectLifecycle.READY:
+        return this.arktsCheckTool!.handleCall({ files });
     }
-    return this.arktsCheckTool.handleCall({ files });
+  }
+
+  /** IDLE 状态下检查：触发 ensureProjectReady（项目搜索由 Phase 1 统一处理），
+   *  根据当前已有信息判断返回消息。
+   */
+  private async handleIdleCheck(): Promise<{
+    content: { type: string; text: string }[];
+    isError?: boolean;
+  }> {
+    this.ensureProjectReady();
+    if (this.config.projectPath) {
+      mcpLog.info(`Idle check: project '${this.config.projectPath}' already known, triggering init`);
+      return {
+        content: [{ type: 'text', text: '检测到鸿蒙工程，正在同步中，请3秒后重试' }],
+        isError: true
+      };
+    }
+    if (this.workspaceRoot || this.originalProjectPath) {
+      mcpLog.info(`Idle check: no project path yet, will try from '${this.workspaceRoot}' or '${this.originalProjectPath}'`);
+      return {
+        content: [{ type: 'text', text: '正在初始化, 请3秒后重试' }],
+        isError: true
+      };
+    }
+    mcpLog.warn(`Idle check: no search candidates available`);
+    return {
+      content: [{ type: 'text', text: '未检测到鸿蒙工程，请确认项目目录是否正确，或在项目中创建工程后重试' }],
+      isError: true
+    };
+  }
+
+  /** ERROR 状态下检查：自动重试（含冷却机制防止无限循环）。
+   *  项目搜索由 ensureProjectReady Phase 1 统一处理，此处仅判断重试次数。
+   */
+  private async handleErrorCheck(): Promise<{
+    content: { type: string; text: string }[];
+    isError?: boolean;
+  }> {
+    if (this.initRetryCount >= MAX_INIT_RETRY) {
+      mcpLog.error(`Init retry limit reached (${this.initRetryCount}/${MAX_INIT_RETRY}), will not auto-retry`);
+      return {
+        content: [{ type: 'text', text: '项目初始化多次失败，请检查项目配置后重启 MCP Server' }],
+        isError: true
+      };
+    }
+    mcpLog.info(`Error check: auto-retrying (${this.initRetryCount}/${MAX_INIT_RETRY})`);
+    this.ensureProjectReady();
+    return {
+      content: [{ type: 'text', text: '项目初始化失败，正在自动重试，请5秒后重试' }],
+      isError: true
+    };
   }
 
   /** 调 C/C++ 工具；未就绪时返回统一错误。 */
@@ -163,6 +254,7 @@ export class CodegenieMcpServer {
       const msg = this.config.projectPath
         ? 'C++ LSP 未就绪，请稍后重试'
         : '没有配置工程路径，请配置PROJECT_PATH参数或者在DevEco Studio中打开项目';
+      mcpLog.warn(`C++ check rejected: ${msg}, files: ${files.join(', ')}`);
       return { content: [{ type: 'text', text: msg }], isError: true };
     }
     return this.cppCheckTool.handleCall({ files });
@@ -189,37 +281,61 @@ export class CodegenieMcpServer {
   }
 
   /**
-   * Update project path
+   * Update project path — 路径变更时重置状态并自动重新初始化
    */
   setProjectPath(projectPath: string): void {
     this.config.projectPath = projectPath;
-    process.env.PROJECT_PATH = projectPath;
 
-    // Reset ArktsCheckTool if project path changes
+    // 清理旧 Tool（无论是否有初始化在运行，都需要清理）
     if (this.arktsCheckTool) {
-      this.arktsCheckTool.shutdown().catch(() => {});
+      this.arktsCheckTool.shutdown().catch(err => {
+        mcpLog.warn('Failed to shutdown ArktsCheckTool during setProjectPath:', err);
+      });
       this.arktsCheckTool = null;
     }
-    // Reset CppCheckTool if project path changes
     if (this.cppCheckTool) {
-      this.cppCheckTool.shutdown().catch(() => {});
+      this.cppCheckTool.shutdown().catch(err => {
+        mcpLog.warn('Failed to shutdown CppCheckTool during setProjectPath:', err);
+      });
       this.cppCheckTool = null;
+    }
+
+    // 关键：处理两种情况
+    if (this.initPromise) {
+      // 初始化正在运行中（SYNCING/INITIALIZING）：
+      // 不能直接重置状态（会导致运行中的 doEnsureProjectReady() 完成后覆盖状态），
+      // 也不能调 ensureProjectReady()（initPromise 互斥会直接返回）。
+      // 设置 needsReinit 标记，让 ensureProjectReady() 完成后自动重新初始化。
+      //
+      // 时序说明：shutdown 是立即执行的，即使 doEnsureProjectReady() 正在运行中。
+      // doEnsureProjectReady() Phase 3 创建的新 arktsCheckTool 也会被此处 shutdown。
+      // 最终 arktsCheckTool = null，needsReinit 触发的重新初始化会从 IDLE 状态重建所有 Tool。
+      this.needsReinit = true;
+      mcpLog.info('Project path changed while init is running, will reinit after current init completes');
+    } else {
+      // 没有初始化在运行：直接重置状态并触发
+      this.projectState = ProjectLifecycle.IDLE;
+      this.ensureProjectReady().catch(err => {
+        mcpLog.warn('Failed to re-init project after setProjectPath:', err);
+      });
     }
   }
 
   /**
-   * Start the MCP server with stdio transport
+   * Start the MCP server with stdio transport.
+   *
+   * project_path 优先级：
+   *  1. 环境变量 PROJECT_PATH（构造时已解析）
+   *  2. MCP 客户端 listRoots 返回的 workspace root
+   *  3. 无 project path → LSP 初始化跳过
    */
   async start(): Promise<void> {
-    // Register tools to server
+    // Phase 1: 协议就绪（毫秒级）
     this.toolRouter.registerToServer(this.server);
-
-    // Connect with stdio transport
     const transport = new StdioServerTransport();
-    await this.server.connect(transport);
+    await this.server.connect(transport);          // ← 立刻完成，MCP 连接就绪
 
-    mcpLog.info('codegenie-mcp-server started');
-    
+    mcpLog.info('devecocli-mcp-server started');
     // 非 debug 模式下，打印日志文件路径
     if (!this.config.debug) {
       const logPath = getMcpLogFilePath();
@@ -228,11 +344,134 @@ export class CodegenieMcpServer {
       }
     }
 
-    // Initialize ArktsCheckTool LSP (best-effort)
-    await this.initializeArktsCheck();
+    this.setupStdinCloseHandler();
 
-    // CppCheckTool 采用懒加载：仅在 projectPath 已配置时构造，clangd 首次调用时才 spawn。
+    // Phase 2: 尝试获取 workspace root（只负责发现路径，不触发初始化）
+    if (!this.config.projectPath) {
+      const clientRoot = await this.getProjectRootFromClient();
+      if (clientRoot) {
+        this.workspaceRoot = clientRoot;
+        const harmonyRoot = findHarmonyProject(clientRoot);
+        if (harmonyRoot) {
+          mcpLog.info(`Detected project path from client root: ${harmonyRoot}`);
+          this.config.projectPath = harmonyRoot;
+          this.sdkPath = this.computeSdkPath();
+        } else {
+          mcpLog.warn(`Client root '${clientRoot}' is not a Harmony project`);
+        }
+      } else if (this.originalProjectPath) {
+        mcpLog.warn(`PROJECT_PATH '${this.originalProjectPath}' was provided but no Harmony project was found in it`);
+      } else {
+        mcpLog.info('project path is empty (no PROJECT_PATH env and client did not provide roots)');
+      }
+    } else {
+      this.workspaceRoot = this.config.projectPath;
+    }
+
+    // Phase 3: 后台触发项目初始化（fire-and-forget，不阻塞）
+    this.ensureProjectReady().catch(err => {
+      mcpLog.warn('Background project init failed:', err);
+    });
+
+    // CppCheckTool 仍为懒初始化，不受影响
     this.initializeCppCheck();
+  }
+
+  /**
+   * 从 MCP 客户端获取 workspace root。
+   *
+   * 参考 Rust 版 lib.rs 中 `get_project_root_from_client` 的实现：
+   * 调用 `listRoots()` 获取客户端提供的 workspace roots，取第一个 root 的 URI，
+   * 解析为本地文件路径。
+   */
+  private async getProjectRootFromClient(): Promise<string | null> {
+    try {
+      const result = await this.server.server.listRoots();
+      const firstRoot = result.roots?.[0];
+      if (!firstRoot) {
+        mcpLog.warn('Client did not provide any roots');
+        return null;
+      }
+
+      const uri = firstRoot.uri;
+      return this.resolveFileUri(uri);
+    } catch (err) {
+      mcpLog.warn('Failed to list roots from client:', err);
+      return null;
+    }
+  }
+
+  /**
+   * 将 URI 解析为本地文件路径。
+   *
+   * 处理以下格式：
+   *  - `file:///C:/Users/project` (Windows) → `C:/Users/project`
+   *  - `file:///Users/project` (macOS/Linux) → `/Users/project`
+   *  - 非 file:// URI → 原样返回
+   */
+  private resolveFileUri(uri: string): string | null {
+    // 尝试使用 URL API 解析
+    try {
+      const url = new URL(uri);
+      if (url.protocol === 'file:') {
+        // URL API 的 pathname 在 Windows 上是 `/C:/Users/project`，
+        // 需要去掉前导斜杠
+        const pathname = url.pathname;
+        if (process.platform === 'win32' && /^\/[A-Za-z]:/.test(pathname)) {
+          return pathname.substring(1);
+        }
+        return pathname;
+      }
+    } catch (err) {
+      mcpLog.warn('Failed to parse URI with URL API, falling back to manual parsing:', err);
+      // URL 解析失败，走手动解析
+    }
+
+    // 手动解析 file:// URI
+    if (uri.startsWith('file://')) {
+      let filePath = uri.substring('file://'.length);
+
+      // URL 解码（处理 %20 等编码字符）
+      filePath = decodeURIComponent(filePath);
+
+      // Windows: file:///C:/Users/project → C:/Users/project
+      if (process.platform === 'win32' && filePath.startsWith('/') && /^[A-Za-z]:/.test(filePath.substring(1))) {
+        filePath = filePath.substring(1);
+      }
+
+      return filePath;
+    }
+
+    // 非 file:// URI，原样返回
+    return uri;
+  }
+
+  /**
+   * 监听 stdin close/end 事件，当 MCP 客户端断开连接后自动触发 shutdown 并退出进程。
+   */
+  private setupStdinCloseHandler(): void {
+    let shutdownTriggered = false;
+
+    const triggerShutdown = (): void => {
+      if (shutdownTriggered) {
+        return;
+      }
+      shutdownTriggered = true;
+      mcpLog.info('stdin closed (MCP client disconnected), shutting down...');
+
+      this.shutdown()
+        .then(() => {
+          mcpLog.info('shutdown completed, exiting process');
+          process.exit(0);
+        })
+        .catch((err) => {
+          mcpLog.error('shutdown failed:', err);
+          process.exit(1);
+        });
+    };
+
+    process.stdin.on('end', triggerShutdown);
+    process.stdin.on('close', triggerShutdown);
   }
 
   /**
@@ -254,34 +493,110 @@ export class CodegenieMcpServer {
   }
 
   /**
-   * Initialize ArktsCheckTool LSP client.
+   * 统一入口：互斥 + 内部按状态分流。
+   * - initPromise 为 null → 无初始化正在进行，可以进入
+   * - initPromise 非 null → 已有初始化正在进行，直接返回（幂等）
+   * - 内部 doEnsureProjectReady() 根据当前状态决定行为路径
    */
-  private async initializeArktsCheck(): Promise<void> {
-    const projectPath = this.config.projectPath;
-    if (!projectPath) {
-      mcpLog.warn('LSP initialization skipped: project path is not configured');
+  private async ensureProjectReady(): Promise<void> {
+    // 互斥：已有初始化正在进行，直接返回
+    if (this.initPromise) {
       return;
     }
 
-    mcpLog.info('Initializing ArkTS LSP...');
-
-    this.arktsCheckTool = new ArktsCheckTool(
-      projectPath,
-      this.config.devecoPath ?? null,
-      this.config.nodeMaxOldSpaceSize
-    );
-
+    this.initPromise = this.doEnsureProjectReady();
     try {
-      await this.arktsCheckTool.initialize();
-      mcpLog.info('ArkTS LSP initialized successfully');
-    } catch (err) {
-      mcpLog.error('ArkTS LSP initialization failed:', err);
-      this.arktsCheckTool = null;
+      await this.initPromise;
+    } finally {
+      this.initPromise = null;
+    }
+
+    // 完成后检查是否有路径变更待处理（setProjectPath 在初始化运行期间被调用的情况）
+    if (this.needsReinit) {
+      this.needsReinit = false;
+      this.projectState = ProjectLifecycle.IDLE;
+      this.ensureProjectReady().catch(err => {
+        mcpLog.warn('Failed to re-init project after needsReinit:', err);
+      });
     }
   }
 
+  private discoverProject(): boolean {
+    const needsDiscovery = (this.projectState === ProjectLifecycle.IDLE || this.projectState === ProjectLifecycle.ERROR)
+      && !this.config.projectPath;
+    if (!needsDiscovery) {
+      return true;
+    }
+    this.projectState = ProjectLifecycle.DISCOVERING;
+    let found = this.workspaceRoot ? findHarmonyProject(this.workspaceRoot) : null;
+    if (!found && this.originalProjectPath) {
+      found = findHarmonyProject(this.originalProjectPath);
+      if (found) {
+        mcpLog.info(`Phase 1 found Harmony project from original config: ${found}`);
+      }
+    }
+    if (!found) {
+      this.projectState = ProjectLifecycle.IDLE;
+      return false;
+    }
+    this.config.projectPath = found;
+    this.sdkPath = this.computeSdkPath();
+    this.initRetryCount = 0;
+    return true;
+  }
+
+  private async doEnsureProjectReady(): Promise<void> {
+    if (!this.discoverProject()) {
+      return;
+    }
+
+    if (!this.sdkPath) {
+      this.sdkPath = this.computeSdkPath();
+    }
+    this.projectState = ProjectLifecycle.SYNCING;
+    mcpLog.info('Starting project sync...');
+    const syncOk = await ArktsLspManager.handleSyncProject(
+      this.config.projectPath!,
+      this.sdkPath
+    );
+
+    if (!syncOk) {
+      mcpLog.error('Project sync failed');
+      this.initRetryCount++;
+      this.projectState = ProjectLifecycle.ERROR;
+      return;
+    }
+
+    this.projectState = ProjectLifecycle.INITIALIZING;
+    this.arktsCheckTool = new ArktsCheckTool(
+      this.config.projectPath!,
+      this.config.devecoPath ?? null,
+      this.config.nodeMaxOldSpaceSize
+    );
+    try {
+      await this.arktsCheckTool.initialize();
+      this.projectState = ProjectLifecycle.READY;
+      this.initRetryCount = 0;
+      mcpLog.info('Project fully initialized, check tool is available');
+    } catch (err) {
+      mcpLog.error('LSP initialization failed:', err);
+      this.arktsCheckTool = null;
+      this.initRetryCount++;
+      this.projectState = ProjectLifecycle.ERROR;
+    }
+  }
+
+  /** 纯计算函数：从 devecoPath 计算 sdkPath，不修改 config */
+  private computeSdkPath(): string {
+    // smartFindToolPath 只在 devecoPath 为空时才执行搜索，
+    // 已有值时直接返回，不会覆盖用户显式设置的路径
+    const resolvedDevecoPath = smartFindToolPath(this.config.devecoPath ?? '');
+    const contentRoot = devecoStudioContentRoot(resolvedDevecoPath);
+    return path.join(contentRoot, 'sdk');
+  }
+
   /**
-   * Shutdown the server
+   * Shutdown the server: 关闭所有 LSP 子进程、MCP Server 连接、日志。
    */
   async shutdown(): Promise<void> {
     if (this.arktsCheckTool) {
@@ -290,7 +605,14 @@ export class CodegenieMcpServer {
     if (this.cppCheckTool) {
       await this.cppCheckTool.shutdown();
     }
-    mcpLog.info('codegenie-mcp-server stopped');
+
+    try {
+      await this.server.close();
+    } catch (err) {
+      mcpLog.warn('Failed to close MCP server connection:', err);
+    }
+
+    mcpLog.info('devecocli-mcp-server stopped');
     flushMcpLogger();
     disposeMcpLogger();
   }
@@ -338,6 +660,6 @@ function classifyFiles(files: string[]): {
 /**
  * Create a new MCP server
  */
-export function createMcpServer(config: McpServerConfig = {}): CodegenieMcpServer {
-  return new CodegenieMcpServer(config);
+export function createMcpServer(config: McpServerConfig = {}): DevecoCliMcpServer {
+  return new DevecoCliMcpServer(config);
 }

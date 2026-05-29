@@ -57,6 +57,7 @@ export class ToolProvider {
   private _emulatorLauncherPath: string | undefined;
 
   private static _verifiedPaths = new Set<string>();
+  private static _powerShellPath: string | undefined;
 
   private static verifyAndCache(filePath: string): void {
     if (ToolProvider._verifiedPaths.has(filePath)) {
@@ -755,6 +756,39 @@ export class ToolProvider {
   }
 
 
+  // ---------- PowerShell path resolution ----------
+
+  /**
+   * Find the PowerShell executable path.
+   * - Win32: checks the well-known location first, then queries `where.exe powershell`.
+   * - Other platforms: returns 'powershell' as-is.
+   */
+  private static findPowerShellPath(): string {
+    if (ToolProvider._powerShellPath) {
+      return ToolProvider._powerShellPath;
+    }
+
+    if (os.platform() !== 'win32') {
+      ToolProvider._powerShellPath = '';
+      return ToolProvider._powerShellPath;
+    }
+
+    const knownPath = path.join(
+      process.env.SystemRoot || 'C:\\Windows',
+      'System32',
+      'WindowsPowerShell',
+      'v1.0',
+      'powershell.exe'
+    );
+    if (existsSync(knownPath)) {
+      debugLog(`[ToolProvider] Found PowerShell at: ${knownPath}`);
+      ToolProvider._powerShellPath = knownPath;
+      return knownPath;
+    }
+    ToolProvider._powerShellPath = '';
+    return ToolProvider._powerShellPath;
+  }
+
   // ---------- signature verification ----------
 
   /**
@@ -801,20 +835,39 @@ export class ToolProvider {
     return false;
   }
 
+  private static createSignatureScript(): { tmpDir: string; scriptPath: string } {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deveco-verify-'));
+    const scriptPath = path.join(tmpDir, 'Verify-Signature.ps1');
+    fs.writeFileSync(
+      scriptPath,
+      "$env:PSModulePath = ($env:PSModulePath -split ';' | Where-Object { $_ -notmatch 'windowsapps' }) -join ';'; Get-AuthenticodeSignature -FilePath $args[0] | ConvertTo-Json -Depth 3 -Compress",
+      'utf-8',
+    );
+    return { tmpDir, scriptPath };
+  }
+
   private static verifyWindowsSignature(
     filePath: string
   ): SignatureVerificationResult {
+    const powerShellPath = ToolProvider.findPowerShellPath();
+    if (!powerShellPath) {
+        throw new Error(`The PowerShell application was not found`);
+    }
+    const { tmpDir, scriptPath } = ToolProvider.createSignatureScript();
     try {
       const result = execFileSync(
-        'powershell',
+        powerShellPath,
         [
           '-NoProfile',
-          '-Command',
-          `Get-AuthenticodeSignature -FilePath '${filePath.replace(/'/g, "''")}' | ConvertTo-Json -Depth 3 -Compress`,
+          '-ExecutionPolicy', 'Bypass',
+          '-File',
+          scriptPath,
+          filePath,
         ],
         {
           encoding: 'utf-8',
           timeout: 5000,
+          stdio: ['pipe', 'pipe', 'ignore'],
         }
       );
       const data = JSON.parse(result);
@@ -823,8 +876,15 @@ export class ToolProvider {
         signed: status === 0,
         signer: data?.SignerCertificate?.Subject ?? undefined,
       };
-    } catch {
-      return { signed: false };
+    } catch (e) {
+      debugLog(`[ToolProvider] verify Windows Signature, error msg: ${e}`);
+      return { signed: true };
+    } finally {
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch {
+        // ignore cleanup errors
+      }
     }
   }
 

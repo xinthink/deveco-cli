@@ -99,8 +99,6 @@ export class EmulatorManager {
     }
 
     const outcome = await runAllEmulatorStartStrategies(
-      this.emulatorPath,
-      this.sdkPath,
       listName,
       targetEmulator,
       (args) => this.executeEmulatorDetached(args),

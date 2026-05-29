@@ -312,7 +312,7 @@ function firstExistingPath(candidates: string[]): string | null {
  * (Windows -> `<root>`, macOS -> `<root>/Contents`). The result is the
  * directory that should contain `plugins/`, `sdk/`, `tools/` etc.
  */
-function devecoStudioContentRoot(dir: string): string {
+export function devecoStudioContentRoot(dir: string): string {
   if (process.platform === 'darwin') {
     return path.join(dir, 'Contents');
   }
@@ -587,20 +587,20 @@ export function diagnosticUriCandidates(uri: string): string[] {
 
 /**
  * 获取 MCP server 日志根目录。
- *  - Windows: `%LOCALAPPDATA%/codegenie-mcp-server/logs`
- *  - macOS:   `~/Library/Logs/codegenie-mcp-server`
- *  - Linux:   `~/.local/share/codegenie-mcp-server/logs`
+ *  - Windows: `%LOCALAPPDATA%/devecocli-mcp-server/logs`
+ *  - macOS:   `~/Library/Logs/devecocli-mcp-server`
+ *  - Linux:   `~/.local/share/devecocli-mcp-server/logs`
  */
 export function getMcpLogDirectory(): string {
   if (process.platform === 'win32') {
     const localAppData =
       process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local');
-    return path.join(localAppData, 'codegenie-mcp-server', 'logs');
+    return path.join(localAppData, 'devecocli-mcp-server', 'logs');
   }
   if (process.platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Logs', 'codegenie-mcp-server');
+    return path.join(os.homedir(), 'Library', 'Logs', 'devecocli-mcp-server');
   }
-  return path.join(os.homedir(), '.local', 'share', 'codegenie-mcp-server', 'logs');
+  return path.join(os.homedir(), '.local', 'share', 'devecocli-mcp-server', 'logs');
 }
 
 /**
@@ -732,4 +732,23 @@ function removeIfExpired(full: string, now: number, maxAgeMs: number, logTag: st
   } catch (e) {
     console.error(`${logTag} Failed to remove expired dir ${full}: ${e}`);
   }
+}
+
+export function findNodePath(sdk: string): string {
+    const toolsDir = sdk.replace(/sdk\/?$/i, 'tools');
+    const nodeBin = process.platform === 'win32' ? 'node.exe' : 'node';
+
+    let nodePath = path.join(toolsDir, 'node', nodeBin);
+    if (fs.existsSync(nodePath)) {
+        return nodePath;
+    }
+
+    if (process.platform !== 'win32') {
+        nodePath = path.join(toolsDir, 'node', 'bin', 'node');
+        if (fs.existsSync(nodePath)) {
+            return nodePath;
+        }
+    }
+
+    return process.execPath ?? 'node';
 }

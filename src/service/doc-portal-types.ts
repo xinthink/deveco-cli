@@ -87,5 +87,5 @@ export const CATALOG_TITLES: Record<CatalogName, string> = {
   'best-practices': '最佳实践',
   'harmonyos-faqs': 'FAQ',
   'harmonyos-releases': '版本说明',
-  'harmonyos-roadmap': '版本预告',
+  'harmonyos-roadmap': '变更预告',
 };

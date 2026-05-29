@@ -32,17 +32,17 @@ function validateOneOf<T extends string>(...allowed: T[]): (value: string) => T 
 }
 
 function validatePositiveInt(value: string): number {
-  const parsed = parseInt(value, 10);
-  if (isNaN(parsed) || parsed <= 0) {
+  const num = Number(value);
+  if (!Number.isInteger(num) || num <= 0) {
     throw new InvalidArgumentError('Must be a positive integer');
   }
-  return parsed;
+  return num;
 }
 
 const validateSearchFormat = validateOneOf<'json' | 'default'>('json', 'default');
 const validateCatalogFormat = validateOneOf<'json' | 'default'>('json', 'default');
 
-const docCommand = new Command('doc').description(
+const docCommand = new Command('docs').description(
   'Search and read Harmony documentation from local docs directory'
 );
 
@@ -57,6 +57,10 @@ docCommand
       const normalizedKeywords = keywords.map(k => k.trim()).filter(k => k);
       if (normalizedKeywords.length === 0) {
         console.error(red('Keywords cannot be empty'));
+        process.exit(1);
+      }
+      if (normalizedKeywords.length > 10) {
+        console.error(red('Keywords cannot exceed 10'));
         process.exit(1);
       }
 
