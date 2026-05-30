@@ -102,6 +102,12 @@ function tryParseListJson(output: string): EmulatorInfo[] | null {
           'DeviceType',
           'devicetype',
         ]);
+        const osVersion = pickStringField(item, [
+          'os.osVersion',
+          'osVersion',
+          'OsVersion',
+          'OSVersion',
+        ]);
         return {
           name: (item.name || item.Name || '') as string,
           isRunning:
@@ -116,6 +122,7 @@ function tryParseListJson(output: string): EmulatorInfo[] | null {
           ]),
           uuid: uuid || undefined,
           deviceType: deviceType || undefined,
+          osVersion: osVersion || undefined,
         };
       })
       .filter((emu: EmulatorInfo) => emu.name);
@@ -127,7 +134,7 @@ function tryParseListJson(output: string): EmulatorInfo[] | null {
 function parseListText(output: string): EmulatorInfo[] {
   const emulators: EmulatorInfo[] = [];
   const fieldRegex =
-    /^(name|isrunning|instancepath|path|imageroot|devicetype)\s*:\s*(.+)/gim;
+    /^(name|isrunning|instancepath|path|imageroot|devicetype|os\.osversion)\s*:\s*(.+)/gim;
 
   let current: EmulatorInfo | null = null;
   let match;
@@ -151,6 +158,8 @@ function parseListText(output: string): EmulatorInfo[] {
         current.imageRoot = value.trim();
       } else if (k === 'devicetype') {
         current.deviceType = value.trim();
+      } else if (k === 'os.osversion') {
+        current.osVersion = value.trim();
       }
     }
   }

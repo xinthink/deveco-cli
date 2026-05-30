@@ -5,6 +5,8 @@
 import * as path from 'path';
 import type { EmulatorInfo } from './emulator-types.js';
 
+type EmulatorNativeBootMode = 'snapshot';
+
 function dedupeArgLists(lists: string[][]): string[][] {
   const seen = new Set<string>();
   const out: string[][] = [];
@@ -43,20 +45,38 @@ function collectEmulatorImageSources(
   return imageSources;
 }
 
+function withBootMode(
+  args: string[],
+  nativeBootMode?: EmulatorNativeBootMode
+): string[] {
+  if (!nativeBootMode) {
+    return args;
+  }
+  return [...args, '-bootmode', nativeBootMode];
+}
+
 /**
  * Prefer bare `-start <name>`; fall back to `-hvd <name> -path <deployedParent>
- * [-imageRoot …]` when list details supply paths.
+ * [-imageRoot …] [-bootmode …]` when list details supply paths.
  */
 export function buildEmulatorStartArgCandidates(
   listName: string,
-  emulator: EmulatorInfo
+  emulator: EmulatorInfo,
+  nativeBootMode?: EmulatorNativeBootMode
 ): string[][] {
-  const candidates: string[][] = [['-start', listName]];
+  const candidates: string[][] = [
+    withBootMode(['-start', listName], nativeBootMode),
+  ];
 
   const pathVal = resolveEmulatorDeployedParentDir(emulator);
   if (pathVal) {
     for (const imageArgs of collectEmulatorImageSources(emulator.imageRoot)) {
-      candidates.push(['-hvd', listName, '-path', pathVal, ...imageArgs]);
+      candidates.push(
+        withBootMode(
+          ['-hvd', listName, '-path', pathVal, ...imageArgs],
+          nativeBootMode
+        )
+      );
     }
   }
 
@@ -66,10 +86,15 @@ export function buildEmulatorStartArgCandidates(
 export async function runAllEmulatorStartStrategies(
   listName: string,
   targetEmulator: EmulatorInfo,
-  executeEmulatorDetached: (args: string[]) => Promise<void>
+  executeEmulatorDetached: (args: string[]) => Promise<void>,
+  nativeBootMode?: EmulatorNativeBootMode
 ): Promise<{ ok: true } | { ok: false; lastError: Error }> {
   let lastError: Error = new Error('No start strategy ran');
-  const candidates = buildEmulatorStartArgCandidates(listName, targetEmulator);
+  const candidates = buildEmulatorStartArgCandidates(
+    listName,
+    targetEmulator,
+    nativeBootMode
+  );
 
   for (const args of candidates) {
     try {

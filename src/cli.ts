@@ -9,6 +9,7 @@ import { bootstrap } from 'global-agent';
 bootstrap();
 
 import { program } from 'commander';
+import { red } from 'colorette';
 import buildCommand from './commands/build.js';
 import runCommand from './commands/run.js';
 import updateCommand from './commands/update.js';
@@ -66,6 +67,11 @@ program.hook('preAction', async (_thisCommand, actionCommand) => {
 });
 
 program.parseAsync(process.argv).catch((err) => {
-  console.error(err);
+  const message =
+    err instanceof Error ? err.message : String(err ?? 'Unknown error');
+  console.error(red(`Error: ${message}`));
+  if (process.env.DEVECO_CLI_DEBUG === '1' && err instanceof Error && err.stack) {
+    console.error(err.stack);
+  }
   process.exit(1);
 });

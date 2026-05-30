@@ -101,7 +101,8 @@ export class EmulatorManager {
     const outcome = await runAllEmulatorStartStrategies(
       listName,
       targetEmulator,
-      (args) => this.executeEmulatorDetached(args)
+      (args) => this.executeEmulatorDetached(args),
+      'snapshot'
     );
     if (outcome.ok) {
       return 'started';
