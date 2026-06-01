@@ -901,7 +901,7 @@ emulatorCommand
       console.log(green(`Emulator "${deletedName}" deleted successfully.`));
     } catch (error) {
       const e = error as Error & { stdout?: string; stderr?: string };
-      console.error(red(`Failed to delete emulator: ${e.message}`));
+      console.error(red(e.message));
       if (e.stdout) {
         console.error(gray(e.stdout));
       }
