@@ -355,6 +355,24 @@ export class Project {
       );
     }
 
+    this.validatePackageName(packageName);
+
     return { packageName, isSigned };
+  }
+
+private validatePackageName(packageName: string): void {
+    const basename = path.basename(packageName);
+    
+    if (basename !== packageName) {
+      throw new Error(
+        `Invalid package name: contains path characters. Expected filename only, got '${packageName}'`
+      );
+    }
+    
+    if (!basename.endsWith('.hap') && !basename.endsWith('.hsp')) {
+      throw new Error(
+        `Invalid package name: must be a .hap or .hsp file. Got '${basename}'`
+      );
+    }
   }
 }
