@@ -2,8 +2,9 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { debugLog } from './logger';
+import * as fs from 'fs';
 import * as path from 'path';
+import { debugLog } from './logger';
 
 export class CommonUtils {
   private static readonly ASCII_CONTROL_MAX = 31;
@@ -286,10 +287,58 @@ export class CommonUtils {
     const normalizedRoot = path.normalize(rootDir);
     const rel = path.relative(normalizedRoot, absolutePath);
     const firstSegment = rel.split(path.sep)[0];
-  
+
     if (firstSegment === '..' || path.isAbsolute(rel)) {
       throw new Error(`Path escapes project root: ${absolutePath}`);
     }
     return absolutePath;
+  }
+
+  private static isPathEscaping(relative: string): boolean {
+    const normalized = relative.replace(/\\/g, '/');
+    return normalized === '..' || normalized.startsWith('../') || path.isAbsolute(relative);
+  }
+
+  static isPathContained(
+    inputPath: string,
+    projectRoot: string
+  ): { contained: boolean; reason?: string } {
+    const resolvedPath = path.resolve(projectRoot, inputPath);
+    const relative = path.relative(projectRoot, resolvedPath);
+    if (CommonUtils.isPathEscaping(relative)) {
+      return { contained: false, reason: `Path escapes project root directory: ${inputPath}` };
+    }
+
+    return { contained: true };
+  }
+
+  static isPathContainedWithSymlink(
+    inputPath: string,
+    projectRoot: string
+  ): { contained: boolean; reason?: string } {
+    if (path.isAbsolute(inputPath)) {
+      return { contained: false, reason: `Absolute path is not allowed: ${inputPath}` };
+    }
+    const initialCheck = CommonUtils.isPathContained(inputPath, projectRoot);
+    if (!initialCheck.contained) {
+      return initialCheck;
+    }
+
+    let realProjectRoot: string;
+    try {
+      realProjectRoot = fs.realpathSync(projectRoot);
+    } catch {
+      return { contained: false, reason: `Project root directory does not exist or cannot be resolved: ${projectRoot}` };
+    }
+
+    const resolvedPath = path.resolve(realProjectRoot, inputPath);
+    let realResolvedPath: string;
+    try {
+      realResolvedPath = fs.realpathSync(resolvedPath);
+    } catch {
+      return { contained: false, reason: `Path does not exist or cannot be resolved: ${resolvedPath}` };
+    }
+
+    return CommonUtils.isPathContained(realResolvedPath, realProjectRoot);
   }
 }

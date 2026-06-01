@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { ToolRouter, createToolRouter } from './router.js';
 import { ArktsCheckTool, CppCheckTool } from './tools/index.js';
 import { findHarmonyProject, isSupportedCppFile, smartFindToolPath, devecoStudioContentRoot } from './utils/common.js';
+import { CommonUtils } from '../../src/utils/common-utils.js';
 import { initMcpLogger, disposeMcpLogger, flushMcpLogger, getMcpLogFilePath, mcpLog } from './utils/mcp-logger.js';
 import { ArktsLspManager } from './lsp/ArktsLspManager.js';
 
@@ -126,6 +127,44 @@ export class DevecoCliMcpServer {
   }
 
   /**
+   * 路径 containment 校验：
+   * - 有 projectPath 时：对每个文件做 isPathContained 检查
+   * - 无 projectPath 时：仅拒绝绝对路径
+   * 通过返回 null，失败返回错误响应。
+   */
+  private validateContainment(
+    files: string[]
+  ): { content: { type: string; text: string }[]; isError: boolean } | null {
+    const projectPath = this.config.projectPath;
+    if (projectPath) {
+      const containmentErrors: string[] = [];
+      for (const file of files) {
+        const result = CommonUtils.isPathContainedWithSymlink(file, projectPath);
+        if (!result.contained) {
+          mcpLog.warn(`Containment check failed: ${result.reason}`);
+          containmentErrors.push(result.reason!);
+        }
+      }
+      if (containmentErrors.length > 0) {
+        return {
+          content: [{ type: 'text', text: containmentErrors.join('\n') }],
+          isError: true,
+        };
+      }
+      return null;
+    }
+    const absolutePaths = files.filter((f) => path.isAbsolute(f));
+    if (absolutePaths.length > 0) {
+      mcpLog.warn(`Absolute paths rejected (no project root): ${absolutePaths.join(', ')}`);
+      return {
+        content: [{ type: 'text', text: absolutePaths.map((f) => `不允许使用绝对路径: ${f}`).join('\n') }],
+        isError: true,
+      };
+    }
+    return null;
+  }
+
+  /**
    * `check` 工具的统一入口：按文件扩展名分桶，分别调对应 LSP 工具，再合并结果。
    */
   private async handleCheckCall(
@@ -142,6 +181,11 @@ export class DevecoCliMcpServer {
         content: [{ type: 'text', text: '没有传入任何文件' }],
         isError: true,
       };
+    }
+
+    const containmentResult = this.validateContainment(files);
+    if (containmentResult) {
+      return containmentResult;
     }
 
     const { etsFiles, cppFiles, unsupported } = classifyFiles(files);
