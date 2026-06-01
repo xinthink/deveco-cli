@@ -456,11 +456,9 @@ export class EmulatorManager {
       target.isRunning === true ||
       (await this.isAlreadyRunning(listName, target))
     ) {
-      try {
-        await this.executeEmulator(['-stop', listName]);
-      } catch {
-        // Ignore stop failure; proceed to delete the emulator anyway.
-      }
+      throw new Error(
+        `Failed to delete device: ${listName}\nThe device may be running.`
+      );
     }
 
     await this.runEmulatorChecked(['-delete', listName, '-force'], {
