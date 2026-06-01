@@ -226,7 +226,7 @@ export class Project {
           relativePath = relativePath.substring(5);
         }
 
-        const depDir = path.resolve(this.rootDir, moduleNode.srcPath, relativePath);
+        const depDir = CommonUtils.resolvePathWithinRoot(moduleDir, relativePath);
         const depModule = this.profile.modules.find(
           (m) => path.resolve(this.rootDir, m.srcPath) === depDir
         );
