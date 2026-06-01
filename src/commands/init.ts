@@ -127,7 +127,7 @@ async function executeMcpInstallations(
   if (options.agent) {
     const specifiedAgents = options.agent.split(',').map(a => a.trim());
     if (specifiedAgents.includes('qoder')) {
-      throw new Error('Qoder does not support MCP configuration. Use other agents (opencode, trae-cn, cursor, codebuddy).');
+      throw new Error('Qoder does not support MCP configuration via DevEco CLI. Use other agents (opencode, trae-cn, cursor, codebuddy).');
     }
   }
 
