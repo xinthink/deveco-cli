@@ -17,7 +17,6 @@ import {
   normalizeDiagnosticUri,
   normalizePath,
   sleep,
-  smartFindToolPath,
   toFileUri,
   toStandardPath,
   devecoStudioContentRoot,
@@ -32,6 +31,7 @@ const DIAGNOSTIC_TIMEOUT_MS = 2 * 60 * 1000; // 诊断等待 2 分钟
 const INIT_INITIAL_TIMEOUT_MS = 5 * 60 * 1000; // 初始化总等待 5 分钟
 const INIT_RESET_TIMEOUT_MS = 3 * 60 * 1000; // 收到 indexingProgress 后重置为 3 分钟
 const INDEX_DIR_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // index 目录最大保留 7 天
+const LOG_DIR_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000; // log 目录最大保留 5 天
 
 type DiagnosticResolver = (value: unknown) => void;
 
@@ -119,10 +119,11 @@ export class ArktsCheckTool {
     const normalizedProjectRoot = normalizePath(harmonyRoot);
     const { logPath, indexPath } = this.getLogAndIndexPath(normalizedProjectRoot);
 
-    // 异步清理过期 index 目录
-    setImmediate(() =>
-      cleanupOldSiblingDirs(indexPath, INDEX_DIR_MAX_AGE_MS, '[ArkTS-Check]')
-    );
+    // 异步清理过期 index 和 log 目录
+    setImmediate(() => {
+      cleanupOldSiblingDirs(indexPath, INDEX_DIR_MAX_AGE_MS, '[ArkTS-Check]');
+      cleanupOldSiblingDirs(logPath, LOG_DIR_MAX_AGE_MS, '[ArkTS-Check]');
+    });
 
     // 把 logPath 注册给 lsp 内部的 logger（仅用于供 ace-server 子进程作为 --logger-path）。
     initializeLogger(logPath);
