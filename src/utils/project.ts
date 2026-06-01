@@ -324,7 +324,8 @@ export class Project {
     segments: string[]
   ): string {
     const srcDir = CommonUtils.resolvePathWithinRoot(this.rootDir, srcPath);
-    return path.join(srcDir, 'build', product, ...segments);
+    const finalPath = path.resolve(srcDir, 'build', product, ...segments);
+    return CommonUtils.ensurePathWithinRoot(this.rootDir, finalPath);
   }
 
   private parseOutputMetadata(

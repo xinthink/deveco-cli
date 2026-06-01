@@ -276,17 +276,20 @@ export class CommonUtils {
    */
   static resolvePathWithinRoot(rootDir: string, relativePath: string): string {
     if (path.isAbsolute(relativePath)) {
-      throw new Error (
-        `Absolute paths are not allowed: ${relativePath}`
-      );
+      throw new Error(`Absolute paths are not allowed: ${relativePath}`);
     }
-    const resolve = path.resolve(rootDir, relativePath);
-    const rel = path.relative(rootDir, resolve);
-    if (rel.startsWith('..') || path.isAbsolute(rel)) {
-      throw new Error (
-        `Path escapes project root: ${relativePath}`
-      );
+    const resolve = path.resolve(path.normalize(rootDir), relativePath);
+    return CommonUtils.ensurePathWithinRoot(rootDir, resolve);
+  }
+
+  static ensurePathWithinRoot(rootDir: string, absolutePath: string): string {
+    const normalizedRoot = path.normalize(rootDir);
+    const rel = path.relative(normalizedRoot, absolutePath);
+    const firstSegment = rel.split(path.sep)[0];
+  
+    if (firstSegment === '..' || path.isAbsolute(rel)) {
+      throw new Error(`Path escapes project root: ${absolutePath}`);
     }
-    return resolve;
+    return absolutePath;
   }
 }
