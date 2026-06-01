@@ -5,6 +5,7 @@
 import fs from 'fs';
 import * as path from 'path';
 import json5 from 'json5';
+import { CommonUtils } from './common-utils.js';
 
 export interface ProductNode {
   name: string;
@@ -95,7 +96,7 @@ export class Project {
       );
     }
 
-    const moduleDir = path.join(this.rootDir, moduleNode.srcPath);
+    const moduleDir = CommonUtils.resolvePathWithinRoot(this.rootDir, moduleNode.srcPath);
     const moduleJsonPath = path.join(moduleDir, 'src', 'main', 'module.json5');
 
     if (!fs.existsSync(moduleJsonPath)) {
@@ -123,7 +124,7 @@ export class Project {
       );
     }
 
-    const moduleDir = path.join(this.rootDir, moduleNode.srcPath);
+    const moduleDir = CommonUtils.resolvePathWithinRoot(this.rootDir, moduleNode.srcPath);
     const profilePath = path.join(moduleDir, 'build-profile.json5');
 
     if (!fs.existsSync(profilePath)) {
@@ -165,7 +166,7 @@ export class Project {
       return 'EntryAbility';
     }
 
-    const moduleDir = path.join(this.rootDir, moduleNode.srcPath);
+    const moduleDir = CommonUtils.resolvePathWithinRoot(this.rootDir, moduleNode.srcPath);
     const moduleJsonPath = path.join(moduleDir, 'src', 'main', 'module.json5');
 
     if (!fs.existsSync(moduleJsonPath)) {
@@ -197,7 +198,8 @@ export class Project {
       return [];
     }
 
-    const pkgPath = path.join(this.rootDir, moduleNode.srcPath, 'oh-package.json5');
+    const moduleDir = CommonUtils.resolvePathWithinRoot(this.rootDir, moduleNode.srcPath);
+    const pkgPath = path.join(moduleDir, 'oh-package.json5');
     if (!fs.existsSync(pkgPath)) {
       return [];
     }
@@ -321,7 +323,8 @@ export class Project {
     product: string,
     segments: string[]
   ): string {
-    return path.join(this.rootDir, srcPath, 'build', product, ...segments);
+    const srcDir = CommonUtils.resolvePathWithinRoot(this.rootDir, srcPath);
+    return path.join(srcDir, 'build', product, ...segments);
   }
 
   private parseOutputMetadata(

@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { debugLog } from './logger';
+import * as path from 'path';
 
 export class CommonUtils {
   private static readonly ASCII_CONTROL_MAX = 31;
@@ -264,5 +265,28 @@ export class CommonUtils {
     if (!/^[DIWEF]$/.test(level)) {
       throw new Error(`Invalid log level: ${level}`);
     }
+  }
+
+  /**
+   * 在指定根目录下安全解析相对路径，防止路径穿越攻击
+   *
+   * @param rootDir - 根目录绝对路径
+   * @param relativePath - 待解析的相对路径（不可为绝对路径）
+   * @returns 拼接后的绝对路径
+   */
+  static resolvePathWithinRoot(rootDir: string, relativePath: string): string {
+    if (path.isAbsolute(relativePath)) {
+      throw new Error (
+        `Absolute paths are not allowed: ${relativePath}`
+      );
+    }
+    const resolve = path.resolve(rootDir, relativePath);
+    const rel = path.relative(rootDir, resolve);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) {
+      throw new Error (
+        `Path escapes project root: ${relativePath}`
+      );
+    }
+    return resolve;
   }
 }
