@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import ora from 'ora';
 import type { CatalogName } from './doc-portal-types.js';
 import { CATALOG_TITLES } from './doc-portal-types.js';
+import { CommonUtils } from '../utils/common-utils.js';
 
 const APP_NAME: string = 'deveco-cli';
 const DOCS_DIR_NAME: string = 'docs';
@@ -307,11 +308,10 @@ export class LocalDocService {
 
   async readDocument(relativePath: string): Promise<string> {
     await this.ensureInitialized();
-
-    const candidates = [
-      path.join(this.docsDir, relativePath),
-      path.join(this.docsDir, `${relativePath}.md`),
-    ];
+    const rawCandidates = [relativePath, `${relativePath}.md`];
+    const candidates = rawCandidates
+      .filter((c) => CommonUtils.isPathContainedWithSymlink(c, this.docsDir).contained)
+      .map((c) => path.join(this.docsDir, c));
 
     for (const candidate of candidates) {
       try {
@@ -330,7 +330,7 @@ export class LocalDocService {
     }
 
     const relativeToDocs = path.relative(this.docsDir, filePath);
-    if (!relativeToDocs || relativeToDocs.startsWith('..')) {
+    if (!relativeToDocs || relativeToDocs.startsWith('..') || path.isAbsolute(relativeToDocs)) {
       return null;
     }
 
