@@ -119,17 +119,24 @@ export function findHarmonyProject(startPath: string): string | null {
 
   const resolvedPath = path.resolve(startPath);
 
-  if (!fs.existsSync(resolvedPath)) {
+  let realResolvedPath: string;
+  try {
+    realResolvedPath = fs.realpathSync(resolvedPath);
+  } catch {
+    realResolvedPath = resolvedPath;
+  }
+
+  if (!fs.existsSync(realResolvedPath)) {
     return null;
   }
 
   // 1. Check self
-  if (isHarmonyosProject(resolvedPath)) {
-    return resolvedPath;
+  if (isHarmonyosProject(realResolvedPath)) {
+    return realResolvedPath;
   }
 
   // 2. Check ancestors (up to 3 levels)
-  let current = resolvedPath;
+  let current = realResolvedPath;
   for (let i = 1; i <= 3; i++) {
     const parent = path.dirname(current);
     if (parent === current) {
@@ -142,8 +149,8 @@ export function findHarmonyProject(startPath: string): string | null {
   }
 
   // 3. Check descendants (BFS, depth limit 3)
-  if (fs.statSync(resolvedPath).isDirectory()) {
-    const found = searchHarmonyProject(resolvedPath, 0, MAX_SEARCH_DEPTH);
+  if (fs.statSync(realResolvedPath).isDirectory()) {
+    const found = searchHarmonyProject(realResolvedPath, 0, MAX_SEARCH_DEPTH);
     if (found) {
       return found;
     }
