@@ -11,7 +11,7 @@
   </p>
 </div>
 
-`devecocli` 将 DevEco Studio 工具链统一封装为一个 CLI，内置 `ohpm`、`hvigor`、`hdc`、`emulator`、`hilog`，同时集成 HMOS 技能安装、项目脚手架、本地 HarmonyOS 文档检索和 MCP 服务。
+`devecocli` 将 DevEco Studio 工具链统一封装为一个 CLI，内置 `ohpm`、`hvigor`、`hdc`、`emulator`、`hilog`，同时集成 HarmonyOS 技能安装、项目脚手架、本地 HarmonyOS 文档检索和 MCP 服务。
 
 通过单一命令行工具即可完成创建、构建、安装、运行、日志查看、文档检索与 AI Agent 集成等开发流程，无需手动配置 `PATH`、`DEVECO_SDK_HOME` 或 `JAVA_HOME`。
 
@@ -95,7 +95,7 @@ opencode
 | `devecocli log`           | 查看 `hilog` 或崩溃日志                          |
 | `devecocli docs search`   | 搜索本地 HarmonyOS 文档                         |
 | `devecocli init`          | 安装内置技能或配置 MCP                             |
-| `devecocli skills`        | 管理 HMOS 技能市场中的技能                          |
+| `devecocli skills`        | 管理 HarmonyOS 技能市场中的技能                          |
 
 ## 详细使用指南
 
@@ -137,12 +137,12 @@ Commands:
   update                 Update deveco-cli to the latest version
   device                 Manage connected devices
   emulator               Manage emulator instances
-  skills                 Manage HMOS skills
+  skills                 Manage HarmonyOS skills
   log [options]          Obtain device application logs
   create [options]       Scaffold a new HarmonyOS application project
   init [options]         Install the deveco-cli skill or configure the deveco-mcp server into AI agents
   serve                  Host bundled auxiliary protocol servers
-  docs [options]         Search and read Harmony documentation from local docs directory
+  docs [options]         Search and read HarmonyOS documentation from local docs directory
   help [command]         display help for command
 ```
 
@@ -154,9 +154,9 @@ Commands:
 | 设备管理  | `device`   | `list` / `view`                                                       | 查看当前连接设备与详情                             |
 | 模拟器   | `emulator` | `list` / `start` / `stop` / `create` / `delete` / `image` / `license` | 管理本地模拟器实例与系统镜像                          |
 | 日志诊断  | `log`      | -                                                                     | 获取 `hilog` 与崩溃日志                        |
-| 文档检索  | `docs`     | `search` / `read` / `catalog`                                         | 检索本地 Harmony 文档                         |
+| 文档检索  | `docs`     | `search` / `read` / `catalog`                                         | 检索本地 HarmonyOS 文档                         |
 | 技能初始化 | `init`     | -                                                                     | 安装内置 `deveco-cli` 技能或配置 `deveco-mcp`    |
-| 技能管理  | `skills`   | `list` / `find` / `add` / `remove`                                    | 管理 HMOS 技能市场中的技能                        |
+| 技能管理  | `skills`   | `list` / `find` / `add` / `remove`                                    | 管理 HarmonyOS 技能市场中的技能                        |
 | 辅助服务  | `serve`    | `mcp`                                                                 | 启动内置辅助服务                                |
 | 自更新   | `update`   | -                                                                     | 升级到最新版本                                 |
 
@@ -379,7 +379,7 @@ devecocli docs catalog
 ### 什么时候用 `init`、`skills`、`serve`
 
 - `init`：推荐新用户使用，用于安装内置 `deveco-cli` 技能或配置 `deveco-mcp`
-- `skills`：用于管理 HMOS 技能市场中的技能
+- `skills`：用于管理 HarmonyOS 技能市场中的技能
 - `serve`：用于启动内置辅助服务，当前仅有 `serve mcp`
 
 ### `init`

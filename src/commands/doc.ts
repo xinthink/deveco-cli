@@ -43,7 +43,7 @@ const validateSearchFormat = validateOneOf<'json' | 'default'>('json', 'default'
 const validateCatalogFormat = validateOneOf<'json' | 'default'>('json', 'default');
 
 const docCommand = new Command('docs').description(
-  'Search and read Harmony documentation from local docs directory'
+  'Search and read HarmonyOS documentation from local docs directory'
 );
 
 docCommand

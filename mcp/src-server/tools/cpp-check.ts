@@ -1064,7 +1064,7 @@ export class CppCheckTool {
     const harmonyRoot = findHarmonyProject(this.projectPath);
     if (!harmonyRoot) {
       throw new Error(
-        `Failed to find Harmony project from path: ${this.projectPath}`
+        `Failed to find HarmonyOS project from path: ${this.projectPath}`
       );
     }
     this.projectPath = harmonyRoot;

@@ -152,7 +152,7 @@ export class DeviceManager {
       const matches: { device: DeviceInfo; name: string }[] = [];
       for (const d of devices) {
         const name = await this.getDeviceName(d.serial);
-        if (name.toLowerCase().includes(needle)) {
+        if (name.toLowerCase() === needle) {
           matches.push({ device: d, name });
         }
       }

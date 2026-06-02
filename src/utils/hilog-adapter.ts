@@ -92,7 +92,7 @@ export class HilogAdapter {
     deviceArg: string
   ): ConnectedDevice | undefined {
     return connectedDevices.find(
-      (d) => d.serial === deviceArg || d.name.includes(deviceArg)
+      (d) => d.serial === deviceArg || d.name === deviceArg
     );
   }
 
