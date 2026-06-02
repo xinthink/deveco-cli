@@ -401,10 +401,10 @@ export class DevecoCliMcpServer {
           this.config.projectPath = harmonyRoot;
           this.sdkPath = this.computeSdkPath();
         } else {
-          mcpLog.warn(`Client root '${clientRoot}' is not a Harmony project`);
+          mcpLog.warn(`Client root '${clientRoot}' is not a HarmonyOS project`);
         }
       } else if (this.originalProjectPath) {
-        mcpLog.warn(`PROJECT_PATH '${this.originalProjectPath}' was provided but no Harmony project was found in it`);
+        mcpLog.warn(`PROJECT_PATH '${this.originalProjectPath}' was provided but no HarmonyOS project was found in it`);
       } else {
         mcpLog.info('project path is empty (no PROJECT_PATH env and client did not provide roots)');
       }
@@ -576,7 +576,7 @@ export class DevecoCliMcpServer {
     if (!found && this.originalProjectPath) {
       found = findHarmonyProject(this.originalProjectPath);
       if (found) {
-        mcpLog.info(`Phase 1 found Harmony project from original config: ${found}`);
+        mcpLog.info(`Phase 1 found HarmonyOS project from original config: ${found}`);
       }
     }
     if (!found) {

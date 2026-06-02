@@ -379,12 +379,12 @@ async function removeSkill(
 }
 
 // 创建主命令
-const skillsCommand = new Command('skills').description('Manage HMOS skills');
+const skillsCommand = new Command('skills').description('Manage HarmonyOS skills');
 
 // 添加 list 子命令
 skillsCommand
   .command('list')
-  .description('List all available HMOS skills')
+  .description('List all available HarmonyOS skills')
   .option(
     '-l, --long',
     'Show detailed information including description and installation status'
