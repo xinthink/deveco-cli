@@ -192,6 +192,21 @@ export class Project {
     }
   }
 
+  public validateProduct(product: string): void {
+    if (!/^[\da-zA-Z_-]+$/.test(product)) {
+      throw new Error(
+        `Invalid product name '${product}'. Product names must only contain letters, digits, underscores, and hyphens.`
+      );
+    }
+    const productExists = this.profile.app.products?.some((p) => p.name === product);
+    if (!productExists) {
+      const availableProducts = this.profile.app.products?.map((p) => p.name).join(', ') || 'none';
+      throw new Error(
+        `Product '${product}' not found in project configuration. Available products: ${availableProducts}`
+      );
+    }
+  }
+
   public getModuleDependencies(moduleName: string): string[] {
     const moduleNode = this.profile.modules.find((m) => m.name === moduleName);
     if (!moduleNode) {
@@ -272,6 +287,8 @@ export class Project {
     isEmulator: boolean,
     product = 'default'
   ): string {
+    this.validateProduct(product);
+
     const moduleNode = this.profile.modules.find((m) => m.name === moduleName);
     if (!moduleNode) {
       throw new Error(`Module '${moduleName}' not found`);

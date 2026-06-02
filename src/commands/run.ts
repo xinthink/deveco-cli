@@ -213,6 +213,7 @@ async function runActionImpl(options: RunOptions): Promise<void> {
     targetDeviceId.includes('localhost');
 
   const productName = options.product || 'default';
+  project.validateProduct(productName); 
   const buildMode = options.buildMode || 'debug';
 
   if (!options.skipBuild) {
