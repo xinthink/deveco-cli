@@ -19,14 +19,7 @@ interface BuildOptions {
 function validateProjectConfig(project: Project, options: BuildOptions) {
   // Validate product
   if (options.product) {
-    const found = project.profile.app.products.some(
-      (p) => p.name === options.product
-    );
-    if (!found) {
-      throw new Error(
-        `Product '${options.product}' not found in project build-profile.json5.`
-      );
-    }
+    project.validateProduct(options.product);
   }
 
   // Validate build mode
