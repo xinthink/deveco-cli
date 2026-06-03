@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+COMMIT_SOURCE="$2"
+if [ "$COMMIT_SOURCE" = "merge" ] || [ "$COMMIT_SOURCE" = "squash" ]; then
+  exit 0
+fi
+USER_NAME="${GIT_COMMITTER_NAME:-$(git config user.name | tr -d '\n\r')}"
+USER_EMAIL="${GIT_COMMITTER_EMAIL:-$(git config user.email | tr -d '\n\r')}"
+if [ -z "$USER_NAME" ] || [ -z "$USER_EMAIL" ]; then
+  echo "Error: git user.name or user.email is not configured" >&2
+  exit 1
+fi
+SOB="Signed-off-by: $USER_NAME <$USER_EMAIL>"
+if grep -q "^Signed-off-by:" "$1"; then
+  exit 0
+fi
+echo "" >> "$1"
+echo "$SOB" >> "$1"
