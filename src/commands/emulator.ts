@@ -280,7 +280,6 @@ async function listAction(
       hvdSerialMap
     );
     console.log(renderTable(EMULATOR_LIST_TABLE_HEADERS, rows));
-    console.log('');
   } catch (error) {
     exitWithListCommandError(
       spinner,
@@ -439,7 +438,6 @@ async function stopAction(
 
   const anyFailed = reportSettledFailures(results, identifiers, 'stop');
 
-  console.log('');
   if (anyFailed) {
     process.exit(1);
   }

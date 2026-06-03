@@ -106,7 +106,6 @@ async function listAction(
     } else {
       printDeviceListTable(entries);
     }
-    console.log('');
   } catch (error) {
     exitWithListCommandError(
       spinner,
@@ -155,16 +154,12 @@ async function viewAction(
     const deviceName = await deviceManager.getDeviceName(info.serial);
     console.log(`  Serial:      ${info.serial}`);
     console.log(`  Device Name: ${deviceName}`);
-    console.log(
-      `  Status:      ${info.status === 'device' ? 'connected' : info.status}`
-    );
     if (detail.deviceType) {
       console.log(`  Device Type: ${detail.deviceType}`);
     }
     if (detail.osVersion) {
       console.log(`  OS Version:  ${detail.osVersion}`);
     }
-    console.log('');
   } catch (error) {
     console.error(
       red(`Failed to show device details: ${(error as Error).message}`)
