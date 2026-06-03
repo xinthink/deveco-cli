@@ -736,23 +736,18 @@ function checkFilesCoveredByCompileCommands(
 /**
  * 执行 compileNative 构建以生成 compile_commands.json。
  */
-function runCompileNative(
+async function runCompileNative(
   projectPath: string,
   devecoPath: string,
   cppModules: ModuleInfo[]
-): void {
+): Promise<void> {
   const sdkPath = path.join(devecoStudioContentRoot(devecoPath), 'sdk');
-  const osType = process.platform === 'win32' ? 'Windows'
-    : process.platform === 'darwin' ? 'Mac'
-    : 'Linux';
 
   // 推导 node 和 hvigor 路径
   const nodePath = process.execPath || 'node';
   const toolsDir = path.join(devecoStudioContentRoot(devecoPath), 'tools');
   mcpLog.info(`CppCheck devecoPath: ${devecoPath}, contentRoot: ${devecoStudioContentRoot(devecoPath)}, sdkPath: ${sdkPath}, toolsDir: ${toolsDir}`);
-  const hvigorPath = process.platform === 'win32'
-    ? path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.bat')
-    : path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.js');
+  const hvigorPath = path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.js');
 
   for (const module of cppModules) {
     const hvigorArgs = [
@@ -768,13 +763,12 @@ function runCompileNative(
 
     mcpLog.info(`[CppCheck] Running compileNative for module: ${module.name}`);
 
-    const result = executeBuildCommand(
+    const result = await executeBuildCommand(
       projectPath,
       nodePath,
       hvigorPath,
       sdkPath,
-      hvigorArgs,
-      osType
+      hvigorArgs
     );
 
     if (result.success) {
@@ -791,7 +785,7 @@ function runCompileNative(
  * 2. 对每个模块执行 compileNative
  * 3. 合并 compile_commands.json
  */
-function initializeCppProject(projectPath: string, devecoPath: string): void {
+async function initializeCppProject(projectPath: string, devecoPath: string): Promise<void> {
   const cppModules = findCppModules(projectPath);
 
   if (cppModules.length === 0) {
@@ -803,7 +797,7 @@ function initializeCppProject(projectPath: string, devecoPath: string): void {
     `[CppCheck] 发现 ${cppModules.length} 个含C++的模块: ${cppModules.map((m) => m.name).join(', ')}`
   );
 
-  runCompileNative(projectPath, devecoPath, cppModules);
+  await runCompileNative(projectPath, devecoPath, cppModules);
   findAndMergeCompileCommands(projectPath);
 }
 
@@ -959,7 +953,7 @@ export class CppCheckTool {
         throw new Error('DevEco Studio installation path not found');
       }
       this.devecoPath = devecoPath;
-      initializeCppProject(normalizedProjectPath, devecoPath);
+      await initializeCppProject(normalizedProjectPath, devecoPath);
     } else {
       // 不需要重新初始化：检查是否已有可复用的客户端
       if (this.client && this.initializedProjectPath) {
@@ -1139,7 +1133,7 @@ export class CppCheckTool {
       if (this.clangdProcess && !this.clangdProcess.killed) {
         try {
           this.clangdProcess.kill();
-        } catch {}
+        } catch { /* already exiting error path */ }
         this.clangdProcess = null;
       }
       throw err;

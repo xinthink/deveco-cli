@@ -27,16 +27,20 @@ function buildCommand(
     return [nodePath, [hvigorPath, ...args]];
 }
 
-function collectChildOutput(child: ChildProcess): { stdout: string; stderr: string } {
-    let stdout = '';
-    let stderr = '';
+function collectChildOutput(child: ChildProcess): { stdout: string[]; stderr: string[] } {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
     child.stdout?.on('data', (data: Buffer | string) => {
-        stdout += data.toString();
+        stdout.push(data.toString());
     });
     child.stderr?.on('data', (data: Buffer | string) => {
-        stderr += data.toString();
+        stderr.push(data.toString());
     });
     return { stdout, stderr };
+}
+
+function joinOutput(buffers: string[]): string {
+    return buffers.join('');
 }
 
 function resolveBuildResult(code: number | null, signal: string | null, output: string): BuildResult {
@@ -65,7 +69,7 @@ function spawnBuildProcess(
 
         const timeout = setTimeout(() => {
             child.kill();
-            const output = [stdout, stderr].filter(Boolean).join('\n').trim();
+            const output = [joinOutput(stdout), joinOutput(stderr)].filter(Boolean).join('\n').trim();
             resolve({
                 success: false,
                 output: 'Build process timeout after 10 minutes.\nOutput so far:\n' + output,
@@ -75,7 +79,7 @@ function spawnBuildProcess(
 
         child.on('close', (code, signal) => {
             clearTimeout(timeout);
-            const output = [stdout, stderr].filter(Boolean).join('\n').trim() || '';
+            const output = [joinOutput(stdout), joinOutput(stderr)].filter(Boolean).join('\n').trim() || '';
             resolve(resolveBuildResult(code, signal, output));
         });
 
@@ -98,7 +102,7 @@ export async function executeBuildCommand(
 ): Promise<BuildResult> {
     const env = { ...process.env, DEVECO_SDK_HOME: sdkPath };
     const cmdParts = buildCommand(nodePath, hvigorPath, hvigorArgs);
-    return spawnBuildProcess(cmdParts, projectPath, env);
+    return await spawnBuildProcess(cmdParts, projectPath, env);
 }
 
 function getEnvConfig(sdkPath: string): Record<string, string> {
