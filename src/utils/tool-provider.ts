@@ -348,17 +348,101 @@ export class ToolProvider {
     return undefined;
   }
 
-  /** Prefer CFBundleShortVersionString, then CFBundleVersion (build number). */
+  private static extractCompactBuildCode(value: string): string | undefined {
+    const last = value.split('.').at(-1);
+    if (last !== undefined && /^\d+$/.test(last)) {
+      return last;
+    }
+    return undefined;
+  }
+
+  private static compactPrefixFromShortVersion(
+    shortVersion: string
+  ): string | undefined {
+    const segments = shortVersion.split('.').slice(0, 3);
+    if (segments.length < 3 || !segments.every((s) => /^\d+$/.test(s))) {
+      return undefined;
+    }
+    return segments.join('');
+  }
+  private static extractFourthSegmentMatchingShortVersion(
+    shortVersion: string,
+    bundleVersionValue: string
+  ): string | undefined {
+    const prefix =
+      ToolProvider.compactPrefixFromShortVersion(shortVersion);
+    const compactCode =
+      ToolProvider.extractCompactBuildCode(bundleVersionValue);
+    if (prefix === undefined || compactCode === undefined) {
+      return undefined;
+    }
+    if (!compactCode.startsWith(prefix)) {
+      debugLog(
+        `[ToolProvider] CFBundleVersion suffix ${compactCode} does not match short-version prefix ${prefix} (${shortVersion})`
+      );
+      return undefined;
+    }
+    const fourth = compactCode.slice(prefix.length);
+    if (fourth.length === 0 || !/^\d+$/.test(fourth)) {
+      return undefined;
+    }
+    return fourth;
+  }
+
+  private static readMacFourthSegmentFromPlist(
+    plistPath: string,
+    shortVersion: string
+  ): string | undefined {
+    const bundleVersion = ToolProvider.readMacInfoPlistKey(
+      plistPath,
+      'CFBundleVersion'
+    );
+    if (bundleVersion !== undefined) {
+      const fromBundle = ToolProvider.extractFourthSegmentMatchingShortVersion(
+        shortVersion,
+        bundleVersion
+      );
+      if (fromBundle !== undefined) {
+        return fromBundle;
+      }
+    }
+
+    const infoString = ToolProvider.readMacInfoPlistKey(
+      plistPath,
+      'CFBundleGetInfoString'
+    );
+    if (infoString === undefined) {
+      return undefined;
+    }
+    const buildMatch = infoString.match(/DS-[\d.]+/);
+    if (buildMatch === null) {
+      return undefined;
+    }
+    return ToolProvider.extractFourthSegmentMatchingShortVersion(
+      shortVersion,
+      buildMatch[0]
+    );
+  }
+
   private static parseMacInfoPlistVersion(
     installRoot: string
   ): string | undefined {
     const plistPath = ToolProvider.macInfoPlistPath(installRoot);
-    return (
-      ToolProvider.readMacInfoPlistKey(
-        plistPath,
-        'CFBundleShortVersionString'
-      ) ?? ToolProvider.readMacInfoPlistKey(plistPath, 'CFBundleVersion')
+    const shortVersion = ToolProvider.readMacInfoPlistKey(
+      plistPath,
+      'CFBundleShortVersionString'
     );
+    if (shortVersion !== undefined) {
+      const fourthSegment = ToolProvider.readMacFourthSegmentFromPlist(
+        plistPath,
+        shortVersion
+      );
+      if (fourthSegment !== undefined) {
+        return `${shortVersion}.${fourthSegment}`;
+      }
+      return shortVersion;
+    }
+    return ToolProvider.readMacInfoPlistKey(plistPath, 'CFBundleVersion');
   }
 
   private static parseProductInfoVersion(
