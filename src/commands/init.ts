@@ -127,7 +127,7 @@ async function executeMcpInstallations(
   if (options.agent) {
     const specifiedAgents = options.agent.split(',').map(a => a.trim());
     if (specifiedAgents.includes('qoder')) {
-      throw new Error('Qoder does not support MCP configuration via DevEco CLI. Use other agents (opencode, trae-cn, cursor, codebuddy).');
+      throw new Error('Qoder does not support MCP configuration via DevEco CLI. Use other supported agents instead.');
     }
   }
 
@@ -205,7 +205,7 @@ const initCommand = new Command('init')
   .description('Install the deveco-cli skill or configure the deveco-mcp server into AI agents')
   .option(
     '--agent <agents>',
-    'Target agents, comma-separated (e.g. opencode,trae-cn,cursor,qoder,codebuddy); installs to all available agents if omitted'
+    'Target agents, comma-separated; installs to all available agents if omitted'
   )
   .option(
     '--project <path>',

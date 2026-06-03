@@ -6,6 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import { cyan } from 'colorette';
+import * as TOML from 'smol-toml';
 import {
   AGENT_MCP_CONFIG,
   AgentMcpConfig,
@@ -29,28 +30,43 @@ async function readJsonConfig(filePath: string): Promise<Record<string, unknown>
   try {
     const content = await fsp.readFile(filePath, 'utf8');
     if (content.trim() === '') {
-      // 文件存在但内容为空，返回空对象
       return {};
     }
     return JSON.parse(content) as Record<string, unknown>;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      // 文件不存在，返回空对象，后续写入时会创建新文件
       return {};
     }
     throw new Error(`Failed to read config file ${filePath}: ${(err as Error).message}`, { cause: err });
   }
 }
 
-/**
- * 写入 JSON 配置文件。
- * 注意：此函数会保留已有配置中的所有字段，只修改 mcpServers 部分。
- * 如果文件不存在，会自动创建目录和文件。
- */
+async function readTomlConfig(filePath: string): Promise<Record<string, unknown>> {
+  try {
+    const content = await fsp.readFile(filePath, 'utf8');
+    if (content.trim() === '') {
+      return {};
+    }
+    return TOML.parse(content) as Record<string, unknown>;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return {};
+    }
+    throw new Error(`Failed to read TOML config file ${filePath}: ${(err as Error).message}`, { cause: err });
+  }
+}
+
 async function writeJsonConfig(filePath: string, config: Record<string, unknown>): Promise<void> {
   const dir = path.dirname(filePath);
   await fsp.mkdir(dir, { recursive: true });
   const content = JSON.stringify(config, null, 2);
+  await fsp.writeFile(filePath, content, 'utf8');
+}
+
+async function writeTomlConfig(filePath: string, config: Record<string, unknown>): Promise<void> {
+  const dir = path.dirname(filePath);
+  await fsp.mkdir(dir, { recursive: true });
+  const content = TOML.stringify(config);
   await fsp.writeFile(filePath, content, 'utf8');
 }
 
@@ -96,11 +112,31 @@ function removeMcpServerConfig(
   if (!(serverName in mcpServers)) {
     return false;
   }
-  // 使用 spread 语法移除属性，避免 delete 操作符
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { [serverName]: _, ...rest } = mcpServers;
   config[mcpServersKey] = rest;
   return true;
+}
+
+async function readConfig(
+  agentConfig: AgentMcpConfig,
+  filePath: string
+): Promise<Record<string, unknown>> {
+  if (agentConfig.format === 'codex') {
+    return readTomlConfig(filePath);
+  }
+  return readJsonConfig(filePath);
+}
+
+async function writeConfig(
+  agentConfig: AgentMcpConfig,
+  filePath: string,
+  config: Record<string, unknown>
+): Promise<void> {
+  if (agentConfig.format === 'codex') {
+    return writeTomlConfig(filePath, config);
+  }
+  return writeJsonConfig(filePath, config);
 }
 
 /**
@@ -120,8 +156,6 @@ export async function installMcpConfigToAgentGlobal(
   }
 
   if (!agentConfig.supportsGlobal) {
-    // 不支持全局 MCP 配置的 agent，不应被调用到这里
-    // init.ts 中已经做了报错提示，这里作为安全兜底
     return {
       success: false,
       error: `${agentConfig.displayName} does not support global MCP configuration. Use --project to configure project-level MCP.`,
@@ -129,7 +163,7 @@ export async function installMcpConfigToAgentGlobal(
   }
 
   try {
-    const config = await readJsonConfig(agentConfig.globalConfigPath);
+    const config = await readConfig(agentConfig, agentConfig.globalConfigPath);
 
     if (isMcpServerConfigured(config, agentConfig.mcpServersKey, MCP_SERVER_NAME) && !force) {
       console.log(`MCP server ${MCP_SERVER_NAME} already configured in ${agentConfig.globalConfigPath}`);
@@ -142,11 +176,10 @@ export async function installMcpConfigToAgentGlobal(
       };
     }
 
-    // 全局模式：不传 projectPath，让 buildMcpConfigForAgent 使用默认值（'.' 或 '${workspaceFolder}'）
     const serverConfig = buildMcpConfigForAgent(agentConfig, undefined);
     addMcpServerConfig(config, agentConfig.mcpServersKey, MCP_SERVER_NAME, serverConfig as unknown as Record<string, unknown>, force);
 
-    await writeJsonConfig(agentConfig.globalConfigPath, config);
+    await writeConfig(agentConfig, agentConfig.globalConfigPath, config);
     console.log(`MCP server ${MCP_SERVER_NAME} configured in ${agentConfig.globalConfigPath}`);
 
     return {
@@ -179,13 +212,12 @@ export async function installMcpConfigToAgentProject(
     };
   }
 
-  // projectConfigPath 为绝对路径时直接使用（cursor/codebuddy/qoder），否则与 projectPath 拼接
   const configFile = path.isAbsolute(agentConfig.projectConfigPath)
     ? agentConfig.projectConfigPath
     : path.join(projectPath, agentConfig.projectConfigPath);
 
   try {
-    const config = await readJsonConfig(configFile);
+    const config = await readConfig(agentConfig, configFile);
 
     if (isMcpServerConfigured(config, agentConfig.mcpServersKey, MCP_SERVER_NAME) && !force) {
       console.log(`MCP server ${MCP_SERVER_NAME} already configured in ${configFile}`);
@@ -198,11 +230,10 @@ export async function installMcpConfigToAgentProject(
       };
     }
 
-    // 项目级模式：直接传入项目绝对路径作为 PROJECT_PATH，不用 '.' 或 '${workspaceFolder}'
     const serverConfig = buildMcpConfigForAgent(agentConfig, projectPath);
     addMcpServerConfig(config, agentConfig.mcpServersKey, MCP_SERVER_NAME, serverConfig as unknown as Record<string, unknown>, force);
 
-    await writeJsonConfig(configFile, config);
+    await writeConfig(agentConfig, configFile, config);
     console.log(`MCP server ${MCP_SERVER_NAME} configured in ${configFile}`);
 
     return {
@@ -233,7 +264,7 @@ export async function removeMcpConfigFromAgentGlobal(agentName: string): Promise
   }
 
   try {
-    const config = await readJsonConfig(agentConfig.globalConfigPath);
+    const config = await readConfig(agentConfig, agentConfig.globalConfigPath);
 
     if (!removeMcpServerConfig(config, agentConfig.mcpServersKey, MCP_SERVER_NAME)) {
       console.log(`MCP server ${MCP_SERVER_NAME} not found in ${agentConfig.globalConfigPath}`);
@@ -246,7 +277,7 @@ export async function removeMcpConfigFromAgentGlobal(agentName: string): Promise
       };
     }
 
-    await writeJsonConfig(agentConfig.globalConfigPath, config);
+    await writeConfig(agentConfig, agentConfig.globalConfigPath, config);
     console.log(`MCP server ${MCP_SERVER_NAME} removed from ${agentConfig.globalConfigPath}`);
 
     return {
@@ -272,13 +303,12 @@ export async function removeMcpConfigFromAgentProject(
     return { success: false, error: `Unknown agent: ${agentName}` };
   }
 
-  // projectConfigPath 为绝对路径时直接使用，否则与 projectPath 拼接
   const configFile = path.isAbsolute(agentConfig.projectConfigPath)
     ? agentConfig.projectConfigPath
     : path.join(projectPath, agentConfig.projectConfigPath);
 
   try {
-    const config = await readJsonConfig(configFile);
+    const config = await readConfig(agentConfig, configFile);
 
     if (!removeMcpServerConfig(config, agentConfig.mcpServersKey, MCP_SERVER_NAME)) {
       console.log(`MCP server ${MCP_SERVER_NAME} not found in ${configFile}`);
@@ -291,7 +321,7 @@ export async function removeMcpConfigFromAgentProject(
       };
     }
 
-    await writeJsonConfig(configFile, config);
+    await writeConfig(agentConfig, configFile, config);
     console.log(`MCP server ${MCP_SERVER_NAME} removed from ${configFile}`);
 
     return {
@@ -324,7 +354,6 @@ export function summarizeMcpResults(results: McpConfigResult[]): void {
   console.log(`  Skipped: ${skippedCount}`);
   console.log(`  Failed: ${failedCount}`);
 
-  // 打印失败详情
   for (const r of results) {
     if (!r.success && r.error) {
       console.error(`  - ${r.agentName ?? 'unknown'}: ${r.error}`);
