@@ -48,4 +48,12 @@ export const AGENT_SKILLS_CONFIG = {
     path: '.qoder/skills',
     displayName: 'qoder',
   },
+  'claude-code': {
+    path: '.claude/skills',
+    displayName: 'claude-code',
+  },
+  codex: {
+    path: '.codex/skills',
+    displayName: 'codex',
+  },
 } as const;

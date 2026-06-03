@@ -40,6 +40,8 @@ export interface McpServerConfig {
   args?: string[];
   /** 环境变量 */
   env?: Record<string, string>;
+  /** 是否启用 */
+  enabled?: boolean;
 }
 
 /**
@@ -59,11 +61,11 @@ export interface AgentMcpConfig {
   /** 配置文件中 MCP servers 的 JSON key */
   mcpServersKey: string;
   /** 配置格式类型 */
-  format: 'standard' | 'opencode';
+  format: 'standard' | 'opencode' | 'claude-code' | 'codex';
 }
 
 /** 支持全局 MCP 配置的 agent 名称列表 */
-export const GLOBAL_MCP_AGENTS = ['opencode', 'cursor'];
+export const GLOBAL_MCP_AGENTS = ['opencode', 'cursor', 'claude-code', 'codex'];
 
 /**
  * 各 AI Agent 的 MCP 配置信息
@@ -153,6 +155,38 @@ export const AGENT_MCP_CONFIG: Record<string, AgentMcpConfig> = {
     mcpServersKey: 'mcpServers',
     format: 'standard',
   },
+
+  /**
+   * Claude Code - 支持全局 + 项目级
+   * 全局：~/.claude.json（user scope，mcpServers 在顶层）
+   * 项目级：<project>/.mcp.json（project scope，团队共享）
+   * 全局模式使用 PROJECT_PATH: '.'
+   */
+  'claude-code': {
+    name: 'claude-code',
+    displayName: 'Claude Code',
+    supportsGlobal: true,
+    globalConfigPath: path.join(homedir(), '.claude.json'),
+    projectConfigPath: '.mcp.json',
+    mcpServersKey: 'mcpServers',
+    format: 'claude-code',
+  },
+
+  /**
+   * Codex - 支持全局 + 项目级
+   * 全局：~/.codex/config.toml
+   * 项目级：<project>/.codex/config.toml
+   * Codex 使用 TOML 格式配置，MCP servers 写入 [mcp_servers.<name>] 表
+   */
+  codex: {
+    name: 'codex',
+    displayName: 'Codex',
+    supportsGlobal: true,
+    globalConfigPath: path.join(homedir(), '.codex', 'config.toml'),
+    projectConfigPath: '.codex/config.toml',
+    mcpServersKey: 'mcp_servers',
+    format: 'codex',
+  },
 };
 
 /**
@@ -172,6 +206,28 @@ export function buildOpenCodeMcpConfig(
     type: 'local',
     command: ['devecocli', 'serve', 'mcp'],
     environment,
+    enabled: true,
+  };
+}
+
+/**
+ * 构建 Local Stdio MCP Server 配置
+ * 用于不支持 ${workspaceFolder} 变量替换的 AI agent（如 Claude Code），
+ * - 全局模式：PROJECT_PATH = '.'（MCP server 从 process.cwd() 自动检测项目）
+ * - 项目级模式（有 --project）：PROJECT_PATH 直接写入项目绝对路径
+ */
+export function buildLocalStdioMcpConfig(
+  projectPath?: string
+): McpServerConfig {
+  const env: Record<string, string> = {
+    PROJECT_PATH: projectPath ?? '.',
+  };
+
+  return {
+    type: 'stdio',
+    command: 'devecocli',
+    args: ['serve', 'mcp'],
+    env,
     enabled: true,
   };
 }
@@ -208,6 +264,12 @@ export function buildMcpConfigForAgent(
 ): McpServerConfig | OpenCodeMcpConfig {
   if (agentConfig.format === 'opencode') {
     return buildOpenCodeMcpConfig(projectPath);
+  }
+  if (agentConfig.format === 'claude-code') {
+    return buildLocalStdioMcpConfig(projectPath);
+  }
+  if (agentConfig.format === 'codex') {
+    return buildLocalStdioMcpConfig(projectPath);
   }
   return buildMcpServerConfig(projectPath);
 }

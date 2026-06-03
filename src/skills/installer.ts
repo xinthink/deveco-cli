@@ -161,7 +161,7 @@ export async function extractSkill(
 /**
  * 检查 agent 是否存在
  * 检查指定的 agent 是否在配置中，以及其根目录是否存在
- * @param agentName - agent 名称（如 'claude', 'opencode' 等）
+ * @param agentName - agent 名称（如 'claude-code', 'opencode' 等）
  * @returns 如果 agent 在配置中且根目录存在则返回 true，否则返回 false
  */
 export async function checkAgentExists(agentName: string): Promise<boolean> {
