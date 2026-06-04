@@ -92,14 +92,21 @@ export const AGENT_MCP_CONFIG: Record<string, AgentMcpConfig> = {
 
   /**
    * Trae-CN - 支持全局 + 项目级
-   * 全局：~/.config/trae-cn/mcp.json
+   * 全局：
+   *   Windows: %APPDATA%/Trae CN/User/mcp.json
+   *   macOS: ~/Library/Application Support/Trae CN/User/mcp.json
    * 项目级：<project>/.trae/mcp.json
    */
   'trae-cn': {
     name: 'trae-cn',
     displayName: 'Trae-CN',
     supportsGlobal: true,
-    globalConfigPath: path.join(homedir(), '.config', 'trae-cn', 'mcp.json'),
+    globalConfigPath: path.join(
+      process.platform === 'win32'
+        ? path.join(process.env.APPDATA ?? path.join(homedir(), 'AppData', 'Roaming'), 'Trae CN', 'User')
+        : path.join(homedir(), 'Library', 'Application Support', 'Trae CN', 'User'),
+      'mcp.json'
+    ),
     projectConfigPath: '.trae/mcp.json',
     mcpServersKey: 'mcpServers',
     format: 'standard',
