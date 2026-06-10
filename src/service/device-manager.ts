@@ -37,6 +37,7 @@ const ENTRY_PARAM_KEYS = [
   'const.product.model',
   'const.product.brand',
   'const.product.devicetype',
+  'const.build.product',
 ] as const;
 
 export class DeviceManager {
@@ -119,6 +120,10 @@ export class DeviceManager {
     if (productModel && productModel !== 'emulator') {
       const brand = params.get('const.product.brand');
       return this.stripBrandPrefix(productModel, brand);
+    }
+    const buildProduct = params.get('const.build.product');
+    if (buildProduct && buildProduct !== 'emulator') {
+      return buildProduct;
     }
     return undefined;
   }

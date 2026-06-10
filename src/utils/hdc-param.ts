@@ -19,12 +19,15 @@ const TRANSIENT_PATTERNS: RegExp[] = [
   /please wait for several seconds and try again/i,
   /device offline/i,
   /\[E0+04\]/i,
+  /not connected/i,
 ];
 
 const FATAL_PATTERNS: RegExp[] = [
   /\[fail\]/i,
   /\bfail!/i,
   /not found/i,
+  /permission denied/i,
+  /device unauthorized/i,
 ];
 
 export function classifyHdcOutput(text: string | undefined): HdcOutputClass {
@@ -155,14 +158,34 @@ export async function tryGetHdcShellParams(
   const command =
     paramKeys.map((k) => `param get ${k}`).join(`; echo ${BATCH_DELIM}; `) +
     `; echo ${BATCH_DELIM}`;
+
+  // On Mac/Linux, hdc shell sometimes behaves better with explicit quotes
+  // when multiple commands are joined by semicolons.
   const result = await runHdcWithRetry(hdcPath, [
     '-t',
     deviceId,
     'shell',
     command,
   ]);
-  if (result.exitCode !== 0) {
-    return new Map();
+
+  if (result.exitCode === 0) {
+    const map = parseBatchedParamSegments(result.stdout, paramKeys);
+    if (map.size > 0) {
+      return map;
+    }
   }
-  return parseBatchedParamSegments(result.stdout, paramKeys);
+
+  // Fallback: try individual keys if the batched command failed or returned nothing.
+  // This is slower but more reliable on flaky connections or specific hdc versions.
+  debugLog(
+    `Batched param fetch failed (exit=${result.exitCode}), falling back to individual calls for ${deviceId}`
+  );
+  const fallbackMap = new Map<string, string>();
+  for (const key of paramKeys) {
+    const val = await tryGetHdcShellParam(hdcPath, deviceId, key);
+    if (val) {
+      fallbackMap.set(key, val);
+    }
+  }
+  return fallbackMap;
 }
