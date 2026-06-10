@@ -4,11 +4,12 @@
  */
 
 import { LspServerProxy } from './LspServerProxy.js';
-import { ConfigFileWatcher, ConfigChangeEvent, ConfigChangeKind } from './watcher/ConfigFileWatcher.js';
+import { ConfigFileWatcher, ConfigChangeEvent } from './watcher/ConfigFileWatcher.js';
 import { DependencyMapWatcher, ReloadEvent } from './watcher/DependencyMapWatcher.js';
 import { syncProject } from './sync/buildProject.js';
 import { ohpmInstallAll } from './sync/ohpmInstall.js';
-import { LspMessage, LspNotification, LspRequest, EtsFileItem } from './types.js';
+import { tryWithBuildLock } from '../../../src/utils/build-lock.js';
+import { LspMessage, LspRequest, EtsFileItem } from './types.js';
 import { JSONRPC_VERSION, LSP_METHOD } from './constant.js';
 import { ArkTsProxyError } from './ArkTsProxyError.js';
 import { ModuleDependencyInfo } from './model/ModuleDependencyInfo.js';
@@ -19,6 +20,11 @@ export interface ModuleSetItem {
     dependencies: Record<string, ModuleDependencyInfo>;
     dynamicDependencies: Record<string, ModuleDependencyInfo>;
 }
+
+export type SyncResult =
+    | { status: 'success' }
+    | { status: 'failed'; reason: string }
+    | { status: 'skipped'; reason: string };
 
 export interface ArktsLspManagerConfig {
     sdkPath: string;
@@ -47,6 +53,7 @@ export class ArktsLspManager {
     private isInitialized: boolean = false;
     private lastEditorOpenFiles: EtsFileItem[] = [];
     private onMessage: (msg: LspMessage) => void = () => {};
+    private onConfigChanged: (() => void) | null = null;
     /** dispose 仅执行一次 */
     private disposeOnce: Promise<void> | null = null;
 
@@ -87,27 +94,42 @@ export class ArktsLspManager {
     }
 
     /**
-     * 处理 `arkts/syncProject`：先 ohpm install，再 hvigor sync；模型重载由 DependencyMapWatcher
-     * 自动触发。无论是否有变化，结束后都通过 `arkts/syncCompleted` 通知上层。
+     * 处理 `arkts/syncProject`：原子性尝试获取构建锁后执行 ohpm install + hvigor sync。
+     * 模型重载由 DependencyMapWatcher 自动触发。
+     *
+     * 锁策略：
+     * - 原子性尝试获取锁（无重试），若其他进程已持有构建锁则返回 skipped
+     * - 消除 isBuildLocked + withBuildLock 之间的 TOCTOU 竞态
      */
-    static async handleSyncProject(workspaceRoot: string, sdkPath?: string): Promise<boolean> {
+    static async handleSyncProject(workspaceRoot: string, sdkPath?: string): Promise<SyncResult> {
         logger.info('[ArktsLspManager] Received arkts/syncProject');
         if (!workspaceRoot || !sdkPath) {
             logger.error('[ArktsLspManager] handleSyncProject: workspaceRoot or sdkPath is empty');
-            return false;
+            return { status: 'failed', reason: 'workspaceRoot or sdkPath is empty' };
         }
-        const installSuccess = await ohpmInstallAll(workspaceRoot, sdkPath);
-        if (!installSuccess) {
-            logger.error('[ArktsLspManager] ohpm install failed');
-            return false;
+        const result = await tryWithBuildLock(
+            workspaceRoot,
+            async () => {
+                const installSuccess = await ohpmInstallAll(workspaceRoot, sdkPath);
+                if (!installSuccess) {
+                    logger.error('[ArktsLspManager] ohpm install failed');
+                    return { status: 'failed' as const, reason: 'ohpm install failed' };
+                }
+                const success = await syncProject(workspaceRoot, sdkPath);
+                if (success) {
+                    logger.info('[ArktsLspManager] syncProject completed successfully');
+                    return { status: 'success' as const };
+                } else {
+                    logger.error('[ArktsLspManager] syncProject failed');
+                    return { status: 'failed' as const, reason: 'hvigor sync failed' };
+                }
+            },
+        );
+        if (!result.acquired) {
+            logger.info('[ArktsLspManager] Build lock held by another process, skipping sync');
+            return { status: 'skipped', reason: 'build lock held by another process' };
         }
-        const success = await syncProject(workspaceRoot, sdkPath);
-        if (success) {
-            logger.info('[ArktsLspManager] syncProject completed successfully');
-        } else {
-            logger.error('[ArktsLspManager] syncProject failed');
-        }
-        return success;
+        return result.result;
     }
 
     async dispose(): Promise<void> {
@@ -243,29 +265,17 @@ export class ArktsLspManager {
         this.depMapWatcher.start();
     }
 
+    /**
+     * 注册配置文件变化回调。
+     * 当 ConfigFileWatcher 检测到 oh-package.json5 或 build-profile.json5 变化时调用，
+     * 由 server 层设置 needsResync 标志位，在下次 check 时触发重新 sync。
+     */
+    setOnConfigChanged(callback: () => void): void {
+        this.onConfigChanged = callback;
+    }
+
     private handleConfigChanged(event: ConfigChangeEvent): void {
-        logger.info(`[ArktsLspManager] Config file changed: ${event.filePath}`);
-        try {
-            const changeSignal = event.kind ?? ConfigChangeKind.OhPackageChanged;
-            const notification: LspNotification = {
-                jsonrpc: JSONRPC_VERSION,
-                method: LSP_METHOD.WORKSPACE_DID_CHANGE_CONFIGURATION,
-                params: {
-                    relativePath: event.relativePath,
-                    timestamp: event.timestamp,
-                    changeSource: event.source,
-                    changeSignal,
-                    ...(event.filePath && { filePath: event.filePath }),
-                    ...(event.fileName !== undefined && { fileName: event.fileName }),
-                    ...(event.moduleName !== undefined && { moduleName: event.moduleName }),
-                    ...(event.removedModuleName !== undefined && {
-                        removedModuleName: event.removedModuleName,
-                    }),
-                },
-            };
-            this.onMessage(notification);
-        } catch (e) {
-            logger.error(`[ArktsLspManager] Failed to handle config change: ${e instanceof Error ? e.message : String(e)}`);
-        }
+        logger.info(`[ArktsLspManager] Config file changed: ${event.filePath}, notifying server`);
+        this.onConfigChanged?.();
     }
 }

@@ -13,6 +13,7 @@ import { findHarmonyProject, isSupportedCppFile, smartFindToolPath, devecoStudio
 import { CommonUtils } from '../../src/utils/common-utils.js';
 import { initMcpLogger, disposeMcpLogger, flushMcpLogger, getMcpLogFilePath, mcpLog } from './utils/mcp-logger.js';
 import { ArktsLspManager } from './lsp/ArktsLspManager.js';
+import { checkSyncRequired } from './lsp/sync/syncGuard.js';
 
 /**
  * 项目生命周期状态枚举
@@ -27,6 +28,7 @@ enum ProjectLifecycle {
 }
 
 const MAX_INIT_RETRY = 3;
+const SYNC_SKIP_TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
  * MCP Server Configuration
@@ -37,6 +39,8 @@ export interface McpServerConfig {
   nodeMaxOldSpaceSize?: string;
   /** debug 模式：true=console输出，false=文件输出（带轮转） */
   debug?: boolean;
+  /** 强制每次启动都执行 sync（来自环境变量 DEVECO_MCP_FORCE_SYNC） */
+  forceSync?: boolean;
 }
 
 /**
@@ -59,6 +63,9 @@ export class DevecoCliMcpServer {
   private needsReinit: boolean = false;     // 路径变更标记：初始化运行期间 setProjectPath() 被调用时设置
   private initRetryCount: number = 0;       // 连续初始化失败计数，超过 MAX_INIT_RETRY 后不再自动重试
   private originalProjectPath: string = ''; // 用户原始配置的路径（findHarmonyProject 解析前），用于区分"未设置"与"设置了但未找到鸿蒙工程"
+  private configChangedTriggeredResync: boolean = false;  // 配置文件变化触发的重新同步标记，用于区分提示消息
+  private syncSkippedDueToLock: boolean = false;  // sync 因锁被占用而跳过，用于返回更精确的提示消息
+  private syncSkipStartedAt: number = 0;          // 首次因锁竞争跳过 sync 的时间戳，超过 SYNC_SKIP_TIMEOUT_MS 后进入 ERROR 状态
 
   constructor(config: McpServerConfig = {}) {
     this.config = config;
@@ -110,15 +117,15 @@ export class DevecoCliMcpServer {
       {
         name: 'check',
         description:
-          '对传入的 ArkTS (.ets) 或 C/C++ 文件进行静态语法检查并返回诊断信息。' +
-          '工具会根据文件扩展名自动选择检查器：.ets 走 ArkTS-Check，' +
-          '.c/.cc/.cpp/.cxx/.h/.hh/.hpp/.hxx 等走 clangd。',
+          'Perform static syntax analysis on HarmonyOS project source files and return structured diagnostics. ' +
+          'Supported languages: ArkTS and C/C++.',
         inputSchema: z.object({
           files: z
             .array(z.string())
+            .min(1)
             .describe(
-              '待检查的文件路径列表，可同时包含 ArkTS (.ets) 和 C/C++ 文件，' +
-                '格式为 ["src/main.ets","native/foo.cpp",...]'
+              'List of source file paths to check, relative to the project root. ' +
+                'Supports ArkTS and C/C++ files in the same call.'
             ),
         }),
       },
@@ -157,7 +164,7 @@ export class DevecoCliMcpServer {
     if (absolutePaths.length > 0) {
       mcpLog.warn(`Absolute paths rejected (no project root): ${absolutePaths.join(', ')}`);
       return {
-        content: [{ type: 'text', text: absolutePaths.map((f) => `不允许使用绝对路径: ${f}`).join('\n') }],
+        content: [{ type: 'text', text: absolutePaths.map((f) => `Absolute path is not allowed: ${f}`).join('\n') }],
         isError: true,
       };
     }
@@ -178,7 +185,7 @@ export class DevecoCliMcpServer {
     if (files.length === 0) {
       mcpLog.warn('check tool called with empty files list');
       return {
-        content: [{ type: 'text', text: '没有传入任何文件' }],
+        content: [{ type: 'text', text: 'No files provided' }],
         isError: true,
       };
     }
@@ -194,7 +201,7 @@ export class DevecoCliMcpServer {
     }
 
     const errors: string[] = unsupported.map(
-      (f) => `不支持的文件类型: ${f}（仅支持 .ets 与 C/C++ 源/头文件）`
+      (f) => `Unsupported file type: ${f} (only .ets and C/C++ source/header files are supported)`
     );
     const infos: string[] = [];
 
@@ -211,7 +218,7 @@ export class DevecoCliMcpServer {
       .join('\n')
       .trim();
     return {
-      content: [{ type: 'text', text: text || '未收集到诊断信息' }],
+      content: [{ type: 'text', text: text || 'No diagnostics collected' }],
       isError,
     };
   }
@@ -227,10 +234,10 @@ export class DevecoCliMcpServer {
       case ProjectLifecycle.DISCOVERING:
       case ProjectLifecycle.SYNCING:
         mcpLog.warn(`ArkTS check rejected: project is ${ProjectLifecycle[this.projectState]}, files: ${files.join(', ')}`);
-        return { content: [{ type: 'text', text: '项目正在同步中，请3秒后重试' }], isError: true };
+        return { content: [{ type: 'text', text: 'Project is syncing, please retry in 10 seconds' }], isError: true };
       case ProjectLifecycle.INITIALIZING:
         mcpLog.warn(`ArkTS check rejected: LSP is initializing, files: ${files.join(', ')}`);
-        return { content: [{ type: 'text', text: 'ArkTS LSP 正在初始化中，请3秒后重试' }], isError: true };
+        return { content: [{ type: 'text', text: 'ArkTS LSP is initializing, please retry in 10 seconds' }], isError: true };
       case ProjectLifecycle.ERROR:
         return this.handleErrorCheck();
       case ProjectLifecycle.READY:
@@ -247,22 +254,37 @@ export class DevecoCliMcpServer {
   }> {
     this.ensureProjectReady();
     if (this.config.projectPath) {
-      mcpLog.info(`Idle check: project '${this.config.projectPath}' already known, triggering init`);
+      let msg: string;
+      let trigger: string;
+      if (this.syncSkippedDueToLock) {
+        const elapsedSec = this.syncSkipStartedAt > 0 ? Math.round((Date.now() - this.syncSkipStartedAt) / 1000) : 0;
+        msg = `Another build process is running, sync deferred (waiting ${elapsedSec}s), please retry in 25 seconds`;
+        trigger = 'lock contention';
+        this.syncSkippedDueToLock = false;
+      } else if (this.configChangedTriggeredResync) {
+        msg = 'Config file changed, resyncing project, please retry in 10 seconds';
+        trigger = 'config changed';
+        this.configChangedTriggeredResync = false;
+      } else {
+        msg = 'HarmonyOS project detected, syncing, please retry in 10 seconds';
+        trigger = 'initial';
+      }
+      mcpLog.info(`Idle check: project '${this.config.projectPath}' already known, triggering init (${trigger})`);
       return {
-        content: [{ type: 'text', text: '检测到鸿蒙工程，正在同步中，请3秒后重试' }],
+        content: [{ type: 'text', text: msg }],
         isError: true
       };
     }
     if (this.workspaceRoot || this.originalProjectPath) {
       mcpLog.info(`Idle check: no project path yet, will try from '${this.workspaceRoot}' or '${this.originalProjectPath}'`);
       return {
-        content: [{ type: 'text', text: '正在初始化, 请3秒后重试' }],
+        content: [{ type: 'text', text: 'Initializing, please retry in 10 seconds' }],
         isError: true
       };
     }
     mcpLog.warn(`Idle check: no search candidates available`);
     return {
-      content: [{ type: 'text', text: '未检测到鸿蒙工程，请确认项目目录是否正确，或在项目中创建工程后重试' }],
+      content: [{ type: 'text', text: 'No HarmonyOS project detected. Please verify the project directory or create a project first.' }],
       isError: true
     };
   }
@@ -277,14 +299,14 @@ export class DevecoCliMcpServer {
     if (this.initRetryCount >= MAX_INIT_RETRY) {
       mcpLog.error(`Init retry limit reached (${this.initRetryCount}/${MAX_INIT_RETRY}), will not auto-retry`);
       return {
-        content: [{ type: 'text', text: '项目初始化多次失败，请检查项目配置后重启 MCP Server' }],
+        content: [{ type: 'text', text: 'Project initialization failed multiple times. Please check project configuration and restart the MCP Server.' }],
         isError: true
       };
     }
     mcpLog.info(`Error check: auto-retrying (${this.initRetryCount}/${MAX_INIT_RETRY})`);
     this.ensureProjectReady();
     return {
-      content: [{ type: 'text', text: '项目初始化失败，正在自动重试，请5秒后重试' }],
+      content: [{ type: 'text', text: 'Project initialization failed, auto-retrying, please retry in 10 seconds' }],
       isError: true
     };
   }
@@ -296,8 +318,8 @@ export class DevecoCliMcpServer {
   }> {
     if (!this.cppCheckTool) {
       const msg = this.config.projectPath
-        ? 'C++ LSP 未就绪，请稍后重试'
-        : '没有配置工程路径，请配置PROJECT_PATH参数或者在DevEco Studio中打开项目';
+        ? 'C++ LSP is not ready, please retry later'
+        : 'Project path is not configured. Set the PROJECT_PATH parameter or open a project in DevEco Studio.';
       mcpLog.warn(`C++ check rejected: ${msg}, files: ${files.join(', ')}`);
       return { content: [{ type: 'text', text: msg }], isError: true };
     }
@@ -597,17 +619,8 @@ export class DevecoCliMcpServer {
     if (!this.sdkPath) {
       this.sdkPath = this.computeSdkPath();
     }
-    this.projectState = ProjectLifecycle.SYNCING;
-    mcpLog.info('Starting project sync...');
-    const syncOk = await ArktsLspManager.handleSyncProject(
-      this.config.projectPath!,
-      this.sdkPath
-    );
 
-    if (!syncOk) {
-      mcpLog.error('Project sync failed');
-      this.initRetryCount++;
-      this.projectState = ProjectLifecycle.ERROR;
+    if (!(await this.ensureProjectSynced())) {
       return;
     }
 
@@ -617,6 +630,13 @@ export class DevecoCliMcpServer {
       this.config.devecoPath ?? null,
       this.config.nodeMaxOldSpaceSize
     );
+    // 注册配置文件变化回调：ConfigFileWatcher 检测到变化时切换状态到 IDLE 并触发重新初始化
+    this.arktsCheckTool.setOnConfigChanged(() => {
+      mcpLog.info('Config files changed, resetting to IDLE state for reinit');
+      this.configChangedTriggeredResync = true;
+      this.needsReinit = true;
+      this.projectState = ProjectLifecycle.IDLE;
+    });
     try {
       await this.arktsCheckTool.initialize();
       this.projectState = ProjectLifecycle.READY;
@@ -627,6 +647,56 @@ export class DevecoCliMcpServer {
       this.arktsCheckTool = null;
       this.initRetryCount++;
       this.projectState = ProjectLifecycle.ERROR;
+    }
+  }
+
+  private async ensureProjectSynced(): Promise<boolean> {
+    const projectPath = this.config.projectPath!;
+
+    const syncCheck = checkSyncRequired(projectPath, this.config.forceSync ?? false);
+    if (!syncCheck.required) {
+      mcpLog.info(`Sync skipped: ${syncCheck.reason}`);
+      return true;
+    }
+
+    mcpLog.info(`Sync required: ${syncCheck.reason}`);
+    return this.runSync(projectPath);
+  }
+
+  private async runSync(projectPath: string): Promise<boolean> {
+    this.projectState = ProjectLifecycle.SYNCING;
+    mcpLog.info('Starting project sync...');
+    const result = await ArktsLspManager.handleSyncProject(projectPath, this.sdkPath);
+    switch (result.status) {
+      case 'success':
+        this.syncSkippedDueToLock = false;
+        this.syncSkipStartedAt = 0;
+        return true;
+      case 'skipped': {
+        this.syncSkippedDueToLock = true;
+        if (this.syncSkipStartedAt === 0) {
+          this.syncSkipStartedAt = Date.now();
+        }
+        const elapsedMs = Date.now() - this.syncSkipStartedAt;
+        const elapsedSec = Math.round(elapsedMs / 1000);
+        if (elapsedMs >= SYNC_SKIP_TIMEOUT_MS) {
+          mcpLog.error(`Sync skipped for ${elapsedSec}s due to lock contention, giving up`);
+          this.initRetryCount++;
+          this.syncSkipStartedAt = 0;
+          this.projectState = ProjectLifecycle.ERROR;
+          return false;
+        }
+        mcpLog.warn(`Sync skipped: ${result.reason}, resetting to IDLE for retry (elapsed ${elapsedSec}s / ${SYNC_SKIP_TIMEOUT_MS / 1000}s)`);
+        this.projectState = ProjectLifecycle.IDLE;
+        return false;
+      }
+      case 'failed':
+        mcpLog.error(`Project sync failed: ${result.reason}`);
+        this.syncSkippedDueToLock = false;
+        this.syncSkipStartedAt = 0;
+        this.initRetryCount++;
+        this.projectState = ProjectLifecycle.ERROR;
+        return false;
     }
   }
 

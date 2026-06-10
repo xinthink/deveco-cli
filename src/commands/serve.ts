@@ -14,6 +14,7 @@ async function startStdioMcpServer(): Promise<void> {
   const DEVECO_PATH = process.env.DEVECO_PATH;
   const NODE_MAX_OLD_SPACE_SIZE = process.env.NODE_MAX_OLD_SPACE_SIZE || '8192';
   const DEBUG = process.env.DEBUG === 'true' || process.env.DEBUG === '1';
+  const FORCE_SYNC = process.env.DEVECO_MCP_FORCE_SYNC === '1';
 
   const toolProvider = await ToolProvider.new();
   const projectPath = PROJECT_PATH;
@@ -24,6 +25,7 @@ async function startStdioMcpServer(): Promise<void> {
     devecoPath,
     nodeMaxOldSpaceSize: NODE_MAX_OLD_SPACE_SIZE,
     debug: DEBUG,
+    forceSync: FORCE_SYNC,
   });
 
   const shutdown = async (): Promise<void> => {
