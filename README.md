@@ -762,7 +762,7 @@ npm run format
 npm run build
 ```
 
-- 架构与目录说明见 `[AGENTS.md](./AGENTS.md)`
+- 架构与目录说明见 [`AGENTS.md`](./AGENTS.md)
 - 如需参与维护，建议先阅读 `AGENTS.md` 中的约定与架构说明
 
 ## 许可证
