@@ -11,27 +11,17 @@
   </p>
 </div>
 
-`devecocli` 将 `DevEco Studio` 工具链统一封装为一个 `CLI`，内置 `ohpm`、`hvigor`、`hdc`、`emulator`、`hilog`，同时集成 HarmonyOS 技能安装、项目脚手架、本地  HarmonyOS 文档检索和 `MCP` 服务。
+`DevEco CLI` 将 `DevEco Studio` 工具链统一封装为一个 `CLI`，内置 `ohpm`、`hvigor`、`hdc`、`emulator`、`hilog`，同时集成 HarmonyOS 技能安装、项目脚手架、本地  HarmonyOS 文档检索和 `MCP` 服务。
 
-通过单一命令行工具即可完成创建、构建、安装、运行、日志查看、文档检索与 `AI` `Agent` 集成等开发流程，无需手动配置 `PATH`、`DEVECO_SDK_HOME` 或 `JAVA_HOME`。
-
-## 为什么用它
-
-- 一条命令完成 `create`、`build`、`run`、`log` 等常见开发流程
-- 自动复用 `DevEco Studio` 自带工具链，减少本地环境配置成本
-- 同时支持真机、模拟器、日志诊断和本地文档检索
-- 支持给 `opencode`、`trae-cn` 等 `AI` `Agent` 注入技能和 `MCP` 配置
-- 面向 `CLI` 工作流，也适合作为自动化脚本和 `Agent` 的底层能力
 
 ## 快速开始
 
 ### 前置要求
 
-- Node.js >= 18，推荐使用22及以上版本，
-- [DevEco Studio](https://developer.huawei.com/consumer/cn/download/) >= 6.1.0
 - 操作系统为 `macOS` 或 `Windows`
-  - **Windows**：必须是安装版本，不支持便携版或解压版。默认安装路径为 `C:\Program Files\Huawei\DevEco Studio`。
-  - **macOS**：必须安装在 `~/Applications` 或 `/Applications` 目录下，名称中包含 `deveco` 的 `.app` 即可被识别。
+- Node.js >= 18，推荐使用22及以上版本
+- [DevEco Studio](https://developer.huawei.com/consumer/cn/download/) >= 6.1.0
+  - **macOS**：必须安装在 `~/Applications` 或 `/Applications` 目录下。
 
 ### 安装
 
@@ -65,7 +55,7 @@ devecocli docs read harmonyos-guides/application-models/arkts-page-start-overvie
 
 ## AI Agent 集成
 
-`devecocli` 支持接入 `opencode`、`trae-cn` 等 `AI` `Agent`。下面以 `opencode` 为例展示最短流程：
+`DevEco CLI` 支持通过命令行将自身技能添加到 `Agent` 中。下面以 `opencode` 为例展示最短流程：
 
 ```bash
 # 1. 给 opencode 安装 deveco-cli 技能
@@ -77,6 +67,12 @@ devecocli init --mcp --agent opencode --project ./MyApp
 # 3. 进入项目并启动 opencode
 cd MyApp
 opencode
+```
+
+如果 `Agent` 不在 `--agent` 参数取值范围内，可使用 `--path` 参数进行添加，参考如下命令：
+
+```bash
+devecocli init --path D:\work\ARKTS\NewData
 ```
 
 进入 `Agent` 后可以直接描述任务，例如：
