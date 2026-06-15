@@ -260,7 +260,6 @@ async function listAction(
     if (emulators.length === 0) {
       spinner?.stop();
       console.log(yellow('  No emulator instances found.'));
-      console.log(gray('  You can create an emulator in DevEco Studio.'));
       return;
     }
 
