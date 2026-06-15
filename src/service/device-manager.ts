@@ -162,7 +162,7 @@ export class DeviceManager {
       }
       if (matches.length > 1) {
         throw new Error(
-          `Multiple devices match "${deviceSelector}". Please use a serial instead:\n` +
+          `Multiple devices match "${deviceSelector}". Use a serial instead:\n` +
             matches.map((m) => `  - ${m.name} (${m.device.serial})`).join('\n')
         );
       }

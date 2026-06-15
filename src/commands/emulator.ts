@@ -49,17 +49,17 @@ function validateEmulatorOsVersionArg(version: string): void {
   }
   if (/^\d+$/.test(v)) {
     throw new Error(
-      `--os-version "${version}" is invalid: use the full image label, e.g. HarmonyOS 5.1.1(19).`
+      `--os-version "${version}" is invalid. use the full image label, e.g. HarmonyOS 5.1.1(19).`
     );
   }
   if (!/^HarmonyOS\s+/i.test(v)) {
     if (/^HarmonyOS$/i.test(v)) {
       throw new Error(
-        '--os-version is incomplete (only "HarmonyOS"). On PowerShell/cmd, quote the full label, e.g. --os-version "HarmonyOS 6.0.1(21)"'
+        '--os-version is incomplete (only "HarmonyOS"). On PowerShell/cmd, quote the full label, e.g. --os-version "HarmonyOS 6.0.1(21)".'
       );
     }
     throw new Error(
-      `--os-version must start with "HarmonyOS " (e.g. HarmonyOS 5.1.1(19)). Got: "${version}"`
+      `Invalid --os-version "${version}". It must start with "HarmonyOS " (e.g. "HarmonyOS 5.1.1(19)").`
     );
   }
 }
@@ -78,7 +78,7 @@ function assertOsVersionAgainstDownloadedImages(
     );
     console.error(
       yellow(
-        'Run `devecocli emulator image download ...` then `devecocli emulator image list` and copy an `osVersion` string exactly.'
+        'Run `devecocli emulator image download ...` followed by `devecocli emulator image list` and then copy an `osVersion` string exactly.'
       )
     );
     throw new Error(
@@ -417,11 +417,11 @@ async function stopOneEmulator(
 
   const confirmed = await waitForEmulatorHdcState(hdcPath, name, false);
   if (confirmed) {
-    console.log(green(`Emulator "${name}" stopped successfully!`));
+    console.log(green(`Emulator "${name}" stopped successfully.`));
   } else {
     console.log(
       yellow(
-        `Emulator "${name}" stop signal was sent but the instance is still visible in hdc list targets within the timeout.`
+        `Emulator "${name}" stop signal was sent but the instance is still visible in hdc list targets within the waiting period.`
       )
     );
   }
@@ -653,13 +653,13 @@ imageCommand
 
       if (!opts.deviceType?.trim()) {
         console.error(
-          red("error: required option '--device-type <type>' not specified")
+          red("Error: missing required option '--device-type <type>'")
         );
         process.exit(1);
       }
       if (!opts.osVersion?.trim()) {
         console.error(
-          red("error: required option '--os-version <version>' not specified")
+          red("Error: misssing required option '--os-version <version>'")
         );
         process.exit(1);
       }
@@ -811,7 +811,7 @@ emulatorCommand
       throw e;
     }
     if (!names?.length) {
-      console.error(red("error: missing required argument 'names'"));
+      console.error(red("Error: missing required argument 'names'"));
       process.exit(1);
     }
     await startAction(manager, toolProvider.hdcPath, names);
@@ -825,7 +825,7 @@ emulatorCommand
   .action(async (names: string[]) => {
     const { manager, toolProvider } = await initEmulatorManager();
     if (!names?.length) {
-      console.error(red("error: missing required argument 'names'"));
+      console.error(red("Error: missing required argument 'names'"));
       process.exit(1);
     }
     await stopAction(manager, toolProvider.hdcPath, names);

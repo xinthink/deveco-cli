@@ -32,7 +32,7 @@ function detectHdcSentinel(
   const cls = classifyHdcOutput(probe);
   if (cls === 'transient') {
     return new Error(
-      `${context}: device communication channel is not ready yet. Please retry in a few seconds.`
+      `${context}: Device communication channel unavailabel. Retry in a few seconds.`
     );
   }
   if (cls === 'fatal') {
@@ -159,7 +159,7 @@ export class HilogAdapter {
     }
 
     throw new Error(
-      'Multiple devices found. Please specify a target device using `--device <name>` or `--device <serial>`.\nAvailable devices:\n' +
+      'Multiple devices found. Specify a target device using `--device <name>` or `--device <serial>`.\nAvailable devices:\n' +
         this.formatConnectedDeviceList(connectedDevices)
     );
   }
@@ -171,7 +171,7 @@ export class HilogAdapter {
     const devices = await this.deviceManager.listDevices();
     if (devices.length === 0) {
       throw new Error(
-        'No active devices found. Please start an emulator or connect a physical device.'
+        'No active devices found. Start an emulator or connect a physical device.'
       );
     }
     return devices.map((d) => d.serial);
@@ -185,7 +185,7 @@ export class HilogAdapter {
 
     if (devices.length === 0) {
       throw new Error(
-        'No active devices found. Please start an emulator or connect a physical device.'
+        'No active devices found. Start an emulator or connect a physical device.'
       );
     }
     return devices;
@@ -203,7 +203,7 @@ export class HilogAdapter {
     deviceId: string,
     bundleName: string
   ): Promise<string | null> {
-    debugLog(`Trying to get PID for bundle: ${bundleName}`);
+    debugLog(`Retrieving PID for bundle ${bundleName}`);
     CommonUtils.assertBundleName(bundleName);
 
     const result = await runHdcWithRetry(hdcPath, [
@@ -412,7 +412,7 @@ export class HilogAdapter {
       options,
       pid
     );
-    debugLog(`Ready to execute hilog command: ${command} ${args.join(' ')}`);
+    debugLog(`Ready to run hilog command: ${command} ${args.join(' ')}`);
 
     const result = await this.runHilogWithSpawnRetry(
       command,
@@ -421,7 +421,7 @@ export class HilogAdapter {
         // 一次性读取模式在结果返回后统一处理，不在流回调中输出
       },
       (error) => {
-        debugLog(`hilog once stream error callback: ${error.message}`);
+        debugLog(`Callback triggered when an error occurs during a single hilog streaming read: ${error.message}`);
       },
       () => {
         // 非 follow 场景下无需额外处理 close，等待 Promise 结束即可
@@ -460,7 +460,7 @@ export class HilogAdapter {
       pid
     );
     debugLog(
-      `Ready to execute hilog command which contain follow and tail: ${command} ${args.join(' ')}`
+      `Ready to run hilog command which contain `follow` and `tail`: ${command} ${args.join(' ')}`
     );
     const result = await this.runHilogWithSpawnRetry(
       command,
@@ -499,7 +499,7 @@ export class HilogAdapter {
 
     if (options.bundleName && !pid) {
       throw new Error(
-        `No running process found for bundle '${options.bundleName}'. Make sure the app is launched on the device before fetching logs.`
+        `No running process found for bundle '${options.bundleName}'. Ensure the app is launched on the device before fetching logs.`
       );
     }
 
@@ -583,7 +583,7 @@ export class HilogAdapter {
       `-p Faultlogger`,
     ];
 
-    debugLog(`Executing command: ${hdcPath} ${listArgs.join(' ')}`);
+    debugLog(`Running command: ${hdcPath} ${listArgs.join(' ')}`);
 
     const result = await runHdcWithRetry(hdcPath, listArgs);
     const sentinel = detectHdcSentinel(result, 'Failed to list crash logs');
@@ -660,7 +660,7 @@ export class HilogAdapter {
     }
     if (result.exitCode !== 0 && result.stderr) {
       console.error(
-        `Warning: Failed to fetch crash log content: ${result.stderr}`
+        `Warning: Failed to fetch crash logs: ${result.stderr}`
       );
     }
 

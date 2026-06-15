@@ -162,7 +162,7 @@ async function executeMcpInstallations(
 async function handleInitCommand(options: InitOptions): Promise<void> {
   // --skill 和 --mcp 互斥
   if (options.skill && options.mcp) {
-    throw new Error('Cannot use --skill and --mcp together. Use --skill for skill installation only, or --mcp for MCP configuration only.');
+    throw new Error('Cannot use `--skill` and `--mcp` together. Use `--skill` for skill installation only, or `--mcp` for MCP configuration only.');
   }
 
   const { resolvedPath, resolvedProject } = validatePathMutex(

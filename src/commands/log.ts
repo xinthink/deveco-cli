@@ -26,7 +26,7 @@ function parsePositiveInt(value: string): number {
   try {
     return CommonUtils.parsePositiveInteger(value, 'tail');
   } catch {
-    throw new InvalidArgumentError('tail must be a positive integer');
+    throw new InvalidArgumentError('`tail` must be a positive integer.');
   }
 }
 
@@ -35,14 +35,14 @@ function parseDuration(value: string, fieldName: string): number {
     return CommonUtils.parseDurationToSeconds(value, fieldName);
   } catch {
     throw new InvalidArgumentError(
-      `${fieldName} must be like 30s, 5m or 2.5m (s/m only; seconds/default must be integers)`
+      `${fieldName} must be a valid duration string (e.g.,30s, 5m or 2.5m).Supported units: s and m.when specified in seconds(with `s` or as a raw number), the value must be an integer.`
     );
   }
 }
 
 function validateLogTimeRange(options: LogOptions): void {
   if (options.to && options.follow) {
-    throw new Error('--to cannot be used with --follow');
+    throw new Error('`--to` cannot be used with `--follow`.');
   }
 
   CommonUtils.assertRelativeTimeRange(options.from, options.to);

@@ -34,7 +34,7 @@ const updateCommand = new Command('update')
       if (latest === currentVersion) {
         console.log(
           green(
-            `\n${packageName} is already up to date (version ${currentVersion})`
+            `\n${packageName} is already up to date (version ${currentVersion}.)`
           )
         );
         return;
@@ -52,7 +52,7 @@ const updateCommand = new Command('update')
 
       console.log(
         '\n' +
-          green(`${packageName} updated successfully to version ${latest}!`)
+          green(`${packageName} updated successfully to version ${latest}.`)
       );
     } catch (error) {
       const e = error as Error;

@@ -98,7 +98,7 @@ export function validatePathMutex(
   agent: string | undefined
 ): { resolvedPath: string | undefined; resolvedProject: string | undefined } {
   if (pathOpt && (project || agent)) {
-    throw new Error('Cannot use --path with --project or --agent');
+    throw new Error('Cannot use `--path` with `--project` or `--agent`');
   }
   return {
     resolvedPath: pathOpt ? resolvePath(pathOpt) : undefined,
@@ -145,8 +145,8 @@ export async function resolveInstallationTargets(
   // 检查是否有有效的安装目标
   if (!customPath && agents.length === 0 && projectAgents.length === 0) {
     throw new Error(
-      'No agents found. Please install an AI agent (cursor, opencode, etc.) ' +
-      'or use --path for a custom location.'
+      'No agents found. Install an AI agent (cursor, opencode, etc.) ' +
+      'or use `--path` for a custom location.'
     );
   }
 

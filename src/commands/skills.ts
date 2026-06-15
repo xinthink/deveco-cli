@@ -117,12 +117,12 @@ function validateAddOptions(options: AddOptions): {
 } {
   // 1. 参数验证：--all 和 --skill 不能同时指定
   if (options.all && options.skill) {
-    throw new Error('--all and --skill cannot be specified together');
+    throw new Error('`--all` and `--skill` cannot be specified together.');
   }
 
   // 2. 参数验证：必须提供 --all 或 --skill
   if (!options.all && !options.skill) {
-    throw new Error('Must specify --all or --skill');
+    throw new Error('Must specify `--all` or `--skill`');
   }
 
   // 3. 互斥验证并解析路径
@@ -302,7 +302,7 @@ async function handleRemoveCommand(
 function validateAgentsNotEmpty(agents: string[], hint: string = ''): void {
   if (agents.length === 0) {
     throw new Error(
-      `No agents found. Please install an AI agent (cursor, opencode, etc.) ${hint}`
+      `No agents found. Install an AI agent (cursor, opencode, etc.) ${hint}`
     );
   }
 }
@@ -401,7 +401,7 @@ skillsCommand
       // 处理空结果
       if (skills.length === 0) {
         spinner.stop();
-        console.log(yellow('No skills available'));
+        console.log(yellow('No skills available.'));
         return;
       }
       spinner.succeed(`Fetched ${skills.length} skills`);
@@ -444,12 +444,12 @@ skillsCommand
 
       // 处理空结果
       if (skills.length === 0) {
-        console.log(yellow(`No skills found matching '${keyword}'`));
+        console.log(yellow(`No skills found matching '${keyword}'.`));
         spinner.stop();
         return;
       }
 
-      spinner.succeed(`Found ${skills.length} skills`);
+      spinner.succeed(`Found ${skills.length} skills.`);
 
       // 输出搜索结果
       for (const skill of skills) {

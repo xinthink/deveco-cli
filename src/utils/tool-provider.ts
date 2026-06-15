@@ -170,7 +170,7 @@ export class ToolProvider {
           ? ToolProvider.collectCandidatesMac()
           : (() => {
               throw new Error(
-                'Linux is not fully supported yet for automatic DevEco Studio detection'
+                'Linux is not fully supported yet for automatic DevEco Studio detection.'
               );
             })();
 
@@ -203,7 +203,7 @@ export class ToolProvider {
 
     if (unique.length === 0) {
       throw new Error(
-        'DevEco Studio installation not found in registry or default locations'
+        'DevEco Studio installation not found in registry or default locations.'
       );
     }
 
@@ -299,7 +299,7 @@ export class ToolProvider {
 
     if (candidates.length === 0) {
       throw new Error(
-        'DevEco Studio not found in /Applications or ~/Applications'
+        'DevEco Studio not found in /Applications or ~/Applications.'
       );
     }
 
@@ -522,7 +522,7 @@ export class ToolProvider {
         debugLog(`[ToolProvider] ${installRoot} => version ${version}`);
       } else {
         debugLog(
-          `[ToolProvider] Skipping ${installRoot}: could not read version (Info.plist / product-info.json)`
+          `[ToolProvider] Skipping ${installRoot}: could not read version (Info.plist / product-info.json).`
         );
       }
     }
@@ -557,7 +557,7 @@ export class ToolProvider {
       red(
         `Error: The detected DevEco Studio version is ${version}, ` +
           `which is below the minimum required version ${MIN_REQUIRED_VERSION}. ` +
-          `Please upgrade to the latest version before using deveco-cli:`
+          `Upgrade to the latest version before using deveco-cli:`
       ) +
         '\n' +
         DEVECO_DOWNLOAD_URL
@@ -628,7 +628,7 @@ export class ToolProvider {
         : platform === 'darwin'
           ? ToolProvider.resolveMacTools(devecoStudioPath)
           : (() => {
-              throw new Error('Linux is not fully supported yet');
+              throw new Error('Linux is not fully supported yet.');
             })();
 
     ToolProvider.verifyTools(
@@ -935,7 +935,7 @@ export class ToolProvider {
   ): SignatureVerificationResult {
     const powerShellPath = ToolProvider.findPowerShellPath();
     if (!powerShellPath) {
-        throw new Error(`The PowerShell application was not found`);
+        throw new Error(`PowerShell application not found`);
     }
     const { tmpDir, scriptPath } = ToolProvider.createSignatureScript();
     try {

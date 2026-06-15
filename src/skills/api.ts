@@ -35,7 +35,7 @@ export async function fetchTagIds(): Promise<string[]> {
   );
 
   if (requiredTags.length === 0) {
-    throw new Error('No HMOS or DevEco tags found');
+    throw new Error('No HMOS or DevEco tags found.');
   }
 
   return requiredTags.map((tag) => tag.id);

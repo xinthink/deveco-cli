@@ -34,7 +34,7 @@ function validateOneOf<T extends string>(...allowed: T[]): (value: string) => T 
 function validatePositiveInt(value: string): number {
   const num = Number(value);
   if (!Number.isInteger(num) || num <= 0) {
-    throw new InvalidArgumentError('Must be a positive integer');
+    throw new InvalidArgumentError('Must be a positive integer.');
   }
   return num;
 }
@@ -56,11 +56,11 @@ docCommand
     try {
       const normalizedKeywords = keywords.map(k => k.trim()).filter(k => k);
       if (normalizedKeywords.length === 0) {
-        console.error(red('Keywords cannot be empty'));
+        console.error(red('Keywords cannot be empty.'));
         process.exit(1);
       }
       if (normalizedKeywords.length > 10) {
-        console.error(red('Keywords cannot exceed 10'));
+        console.error(red('Keywords cannot exceed 10.'));
         process.exit(1);
       }
 
@@ -86,7 +86,7 @@ docCommand
     try {
       const normalizedId = documentId.trim();
       if (!normalizedId) {
-        console.error(red('Document ID cannot be empty'));
+        console.error(red('Document ID cannot be empty.'));
         process.exit(1);
       }
 
