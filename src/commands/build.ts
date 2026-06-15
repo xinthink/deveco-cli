@@ -166,7 +166,7 @@ export async function executeBuildSteps(
 }
 
 const buildCommand = new Command('build')
-  .description('Build the HarmonyOS project')
+  .description('Build HarmonyOS project')
   .option(
     '--product <product>',
     'Product name defined in build-profile.json5 (default: default)'
@@ -177,7 +177,7 @@ const buildCommand = new Command('build')
   )
   .option(
     '--build-mode <mode>',
-    'Build mode (buildModeSet in build-profile.json5; e.g. debug, release; default: debug)'
+    'Build mode (buildModeSet in build-profile.json5; options:debug,release; default: debug)'
   )
   .action(async (options: BuildOptions) => {
     try {
@@ -238,7 +238,7 @@ const buildCommand = new Command('build')
 
 buildCommand
   .command('clean')
-  .description('Clean the HarmonyOS project build outputs')
+  .description('Clean HarmonyOS project build outputs')
   .action(async () => {
     try {
       const currentDir = process.cwd();

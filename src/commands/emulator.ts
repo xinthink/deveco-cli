@@ -624,11 +624,11 @@ const imageCommand = new Command('image').description(
 
 imageCommand
   .command('download')
-  .description('Download a system image')
+  .description('Download system image')
   .addOption(deviceTypeOption(false))
   .option(
     '--os-version <version>',
-    'e.g. HarmonyOS 5.1.1(19) or HarmonyOS 6.0.1(21) (required)'
+    'Example: HarmonyOS 5.1.1(19) or HarmonyOS 6.0.1(21) (required)'
   )
   .option('--force', 'Overwrite an existing image')
   .action(
@@ -706,7 +706,7 @@ imageCommand
   .command('list')
   .description('List system images')
   .addOption(deviceTypeOption(false))
-  .option('--all', 'List all images (downloaded and not downloaded)')
+  .option('--all', 'List all images (local and remote)')
   .addOption(
     new Option('--format <format>', 'Output format')
       .choices(['table', 'json'])
@@ -752,12 +752,12 @@ imageCommand
 emulatorCommand.addCommand(imageCommand);
 
 const licenseCommand = new Command('license').description(
-  'HarmonyOS local emulator license'
+  'local emulator license'
 );
 
 licenseCommand
   .command('view')
-  .description('review the agreement text (read-only)')
+  .description('Review agreement text(read-only)')
   .action(async () => {
     const { toolProvider } = await initEmulatorManager();
     const code = await runEmulatorLicenseView(
@@ -769,7 +769,7 @@ licenseCommand
 
 licenseCommand
   .command('accept')
-  .description('review and accept the agreements')
+  .description('review and accept agreements')
   .action(async () => {
     const { toolProvider } = await initEmulatorManager();
     const code = await runEmulatorLicenseAccept(
@@ -820,7 +820,7 @@ emulatorCommand
 emulatorCommand
   .command('stop <names...>')
   .description(
-    'Stop one or more emulator instances (by name or 127.0.0.1:<port> serial)'
+    'Stop one or more emulator instances (by name or serial,e.g.,127.0.0.1:<port>)'
   )
   .action(async (names: string[]) => {
     const { manager, toolProvider } = await initEmulatorManager();
@@ -834,14 +834,14 @@ emulatorCommand
 const createEmulatorCmd = emulatorCommand
   .command('create <name>')
   .description(
-    'Create a local emulator. Runs emulator -create <name> …; --os-version must match a downloaded image from `emulator image list`.'
+    'Create a local emulator by running emulator -create <name> …; --os-version must match a downloaded image from `emulator image list`.'
   )
   .addOption(deviceTypeOption(true))
   .requiredOption(
     '--os-version <version>',
-    'Exact downloaded image label. Quote in PowerShell (e.g. "HarmonyOS 6.0.1(21)") or use --os-version="…"; see `devecocli emulator image list`'
+    'Downloaded image label. which will be quoted in PowerShell (e.g. "HarmonyOS 6.0.1(21)") or be used in the format --os-version="…";For details, run`devecocli emulator image list`'
   )
-  .option('--force', 'Overwrite if the tool supports it');
+  .option('--force', 'Overwrite if supported');
 
 createEmulatorCmd.configureOutput({
   outputError: (str, write) => {

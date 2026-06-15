@@ -152,10 +152,10 @@ const runCommand = new Command('run')
   )
   .option('--device <device>', 'Target device name or serial')
   .option('--product <product>', 'Product name (default: default)')
-  .option('--build-mode <mode>', 'Build mode (e.g. debug, release; default: debug)')
+  .option('--build-mode <mode>', 'Build mode (options: debug, release; default: debug)')
   .option('--ability <ability>', 'Ability name to launch')
   .option('--uninstall', 'Uninstall existing app before installation')
-  .option('--skip-build', 'Skip the build step and deploy the existing artifacts')
+  .option('--skip-build', 'Skip build step and deploy existing artifacts')
   .action(async (options: RunOptions) => {
     try {
       await runActionImpl(options);

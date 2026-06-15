@@ -49,7 +49,7 @@ const docCommand = new Command('docs').description(
 docCommand
   .command('search <keywords...>')
   .description('Search documentation by keywords')
-  .option('--catalog <name>', 'Catalog name (all for all catalogs)', validateCatalogOrAll, 'all')
+  .option('--catalog <name>', 'Catalog name (all : all catalogs)', validateCatalogOrAll, 'all')
   .option('--format <fmt>', 'Output format (default, json)', validateSearchFormat, 'default')
   .option('--limit <n>', 'Max number of results', validatePositiveInt, 20)
   .action(async (keywords: string[], opts: SearchOptions) => {
@@ -101,7 +101,7 @@ docCommand
 docCommand
   .command('catalog')
   .description('List all available catalogs')
-  .option('--format <fmt>', 'Output format (default, json)', validateCatalogFormat, 'default')
+  .option('--format <fmt>', 'Output format (options: default,json)', validateCatalogFormat, 'default')
   .action((opts: CatalogOptions) => {
     if (opts.format === 'json') {
       const catalogs = CATALOG_NAMES.map(name => ({

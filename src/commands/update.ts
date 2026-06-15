@@ -15,7 +15,7 @@ function getCurrentVersion(): string {
 }
 
 const updateCommand = new Command('update')
-  .description('Update deveco-cli to the latest version')
+  .description('Update deveco-cli to latest')
   .action(async () => {
     const packageName = getPackageName();
     const currentVersion = getCurrentVersion();

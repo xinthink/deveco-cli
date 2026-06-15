@@ -471,13 +471,13 @@ skillsCommand
   .option('--all', 'Install all available skills')
   .option(
     '--agent <agents>',
-    'Target agents, comma-separated; installs to all available agents if omitted'
+    'Target agents, comma-separated; Omit to install to all available agents'
   )
   .option('--skill <skill-name>', 'Name of the skill to install')
   .option('-f, --force', 'Overwrite an existing skill installation')
   .option(
     '--project <path>',
-    'Project root directory to install the skill into'
+    'Project root directory for skill installation'
   )
   .option(
     '--path <path>',
@@ -499,10 +499,10 @@ skillsCommand
   .requiredOption('--skill <skill-name>', 'Name of the skill to remove')
   .option(
     '--agent <agents>',
-    'Target agents, comma-separated; removes from all available agents if omitted'
+    'Target agents, comma-separated.Omit to remove from all available agents'
   )
-  .option('--project <path>', 'Project root directory to remove the skill from')
-  .option('--path <path>', 'Path to remove the skill from')
+  .option('--project <path>', 'Project root directory for skill removal')
+  .option('--path <path>', 'Path for skill removal')
   .action(async (options: RemoveOptions) => {
     try {
       await handleRemoveCommand(options.skill!, options);

@@ -91,7 +91,7 @@ const logCommand = new Command('log')
     outputError: (str, write) => write(red(str)),
   })
   .option('--device <device>', 'Target device (name or serial)')
-  .option('--crash', 'Only obtain the crash log')
+  .option('--crash', 'Only obtain crash logs')
   .option('--level <level>', 'Log level filter: D, I, W, E, F')
   .option('--bundle-name <bundle-name>', 'Filter by application bundle name')
   .option('--keyword <keyword>', 'Keyword filter')
