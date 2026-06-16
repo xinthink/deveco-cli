@@ -177,7 +177,7 @@ const buildCommand = new Command('build')
   )
   .option(
     '--build-mode <mode>',
-    'Build mode (buildModeSet in build-profile.json5; options:debug,release; default: debug)'
+    'Build mode (buildModeSet in build-profile.json5; e.d. debug, release; default: debug)'
   )
   .action(async (options: BuildOptions) => {
     try {
