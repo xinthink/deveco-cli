@@ -76,5 +76,14 @@ export interface DependencyMapParseResult {
     message?: string;
 }
 
+/** serverMaxSize 默认基准：8 GB */
+export const SERVER_MAX_SIZE_BASE_MB = 8192;
+/** 模块数阈值：<= 该值使用基准，> 该值按每个模块追加内存 */
+export const SERVER_MAX_SIZE_MODULE_THRESHOLD = 100;
+/** 超过阈值后，每个模块追加 0.03 GB */
+export const SERVER_MAX_SIZE_PER_EXTRA_MODULE_GB = 0.03;
+/** 计算结果上限：机器物理内存的 70% */
+export const SERVER_MAX_SIZE_PHYSICAL_CAP_RATIO = 0.7;
+
 /** LSP 初始化等待超时：进度重置与初始化总等待统一为 15 分钟 */
 export const LSP_INIT_TIMEOUT_MS = 15 * 60 * 1000;

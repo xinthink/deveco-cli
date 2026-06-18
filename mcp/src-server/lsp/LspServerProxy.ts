@@ -14,7 +14,7 @@ import { ModulesDependencyParse, DepsOnlyItem } from './parse/ModulesDependencyP
 import { Capabilities } from './model/Capabilities/Capabilities.js';
 import { Params } from './model/Params.js';
 import { ModuleDependencyInfo } from './model/ModuleDependencyInfo.js';
-import { normalizePath, toFileUri } from './utils.js';
+import { computeLspServerMaxSize, normalizePath, toFileUri } from './utils.js';
 import { ReloadEvent } from './watcher/DependencyMapWatcher.js';
 import { JSONRPC_VERSION, LSP_INIT_TIMEOUT_MS, LSP_METHOD, LSP_SEND_LABEL } from './constant.js';
 import { isRecord } from './common/typeGuards.js';
@@ -56,7 +56,6 @@ export class LspServerProxy {
         this.messageHandle = new ClientMessageHandle({
             serverPath: this.serverPath,
             logPath: this.logPath,
-            nodeMaxOldSpaceSize: this.nodeMaxOldSpaceSize,
             indexingDataLocation: this.indexLogPath,
         });
         // 把 ClientMessageHandle 的 broadcastToClients 直接桥接到本类的 onLspMessage，
@@ -71,11 +70,11 @@ export class LspServerProxy {
             logger.info(`rootUri: ${this.rootUri}`);
             logger.info(`sdkPath: ${this.sdkPath}`);
             logger.info(`logPath: ${this.logPath}`);
-            await this.messageHandle.start();
 
             const fileUri = toFileUri(this.rootUri);
             const options = new InitializationOptions(fileUri, this.serverPath, this.logPath, this.indexLogPath);
 
+            // 先解析模块：解析失败则不启动 LSP 进程
             const moduleModels: ModuleModel[] = [];
             const parser = new ModulesDependencyParse(this.rootUri, this.sdkPath);
             const depMapResult = parser.getAllDependencyMap(moduleModels);
@@ -83,8 +82,12 @@ export class LspServerProxy {
                 throw new Error(`${depMapResult.message}`);
             }
             this.fillModuleModelsPaths(moduleModels);
-
             options.modules = moduleModels;
+
+            // 解析成功后，按模块数动态计算 serverMaxSize，再启动进程
+            const serverMaxSize = computeLspServerMaxSize(moduleModels.length, this.nodeMaxOldSpaceSize);
+            await this.messageHandle.start(serverMaxSize);
+
             this.currentParams = new Params(fileUri, options, new Capabilities());
             this.messageHandle.sendInitialize(this.currentParams, 1);
 

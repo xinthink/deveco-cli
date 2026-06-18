@@ -80,8 +80,8 @@ export class ClientMessageHandle {
         this.client.on('error', (error: Error) => this.handleError(error));
     }
 
-    public async start(): Promise<void> {
-        await this.client.start();
+    public async start(serverMaxSize: number): Promise<void> {
+        await this.client.start(serverMaxSize);
     }
 
     /**
