@@ -198,7 +198,7 @@ export class ToolProvider {
     };
 
     await ToolProvider.addFromUninstallKey(add);
-    await ToolProvider.addFromWow64Key(add);
+    await ToolProvider.addFromHuaweiStudioKeys(add);
     ToolProvider.addFromDefaultWindowsPath(add);
 
     if (unique.length === 0) {
@@ -210,27 +210,57 @@ export class ToolProvider {
     return unique;
   }
 
+  private static readonly UNINSTALL_REGISTRY_PARENTS = [
+    'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+    'HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+  ] as const;
+
+  private static readonly HUAWEI_STUDIO_REGISTRY_KEYS = [
+    'HKLM\\SOFTWARE\\Huawei\\DevEco Studio',
+    'HKLM\\SOFTWARE\\WOW6432Node\\Huawei\\DevEco Studio',
+  ] as const;
+
+  private static isDevEcoStudioUninstallSubkey(name: string): boolean {
+    return name
+      .normalize('NFKC')
+      .trim()
+      .toLowerCase()
+      .startsWith('deveco studio');
+  }
+
   private static async addFromUninstallKey(
     add: (p: string | undefined, source: string) => void
   ): Promise<void> {
-    try {
-      const key =
-        'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DevEco Studio';
-      const result = await regList([key]);
-      const p = result[key]?.values?.InstallLocation?.value as
-        | string
-        | undefined;
-      add(p, 'Uninstall registry key');
-    } catch {
-      // registry key may not exist
+    for (const parent of ToolProvider.UNINSTALL_REGISTRY_PARENTS) {
+      try {
+        const result = await regList([parent]);
+        const subkeyNames = result[parent]?.keys ?? [];
+        const devEcoKeys = subkeyNames.filter(
+          ToolProvider.isDevEcoStudioUninstallSubkey
+        );
+        if (devEcoKeys.length === 0) {
+          continue;
+        }
+        const fullKeys = devEcoKeys.map((k) => `${parent}\\${k}`);
+        const subkeysResult = await regList(fullKeys);
+        for (const key of fullKeys) {
+          const p = subkeysResult[key]?.values?.InstallLocation?.value as
+            | string
+            | undefined;
+          add(p, `Uninstall registry key (${key})`);
+        }
+      } catch {
+        // registry parent or subkeys may not exist
+      }
     }
   }
 
-  private static async addFromWow64Key(
-    add: (p: string | undefined, source: string) => void
+  private static async addFromHuaweiStudioRegistryKey(
+    add: (p: string | undefined, source: string) => void,
+    huaweiKey: string,
+    sourceLabel: string
   ): Promise<void> {
     try {
-      const huaweiKey = 'HKLM\\SOFTWARE\\WOW6432Node\\Huawei\\DevEco Studio';
       const result = await regList([huaweiKey]);
       const versionKeys = result[huaweiKey]?.keys ?? [];
       if (versionKeys.length === 0) {
@@ -242,10 +272,21 @@ export class ToolProvider {
         const p = subkeysResult[subkey]?.values?.['']?.value as
           | string
           | undefined;
-        add(p, `WOW6432Node subkey ${subkey}`);
+        add(p, `${sourceLabel} subkey ${subkey}`);
       }
     } catch {
       // registry key may not exist
+    }
+  }
+
+  private static async addFromHuaweiStudioKeys(
+    add: (p: string | undefined, source: string) => void
+  ): Promise<void> {
+    for (const huaweiKey of ToolProvider.HUAWEI_STUDIO_REGISTRY_KEYS) {
+      const label = huaweiKey.includes('WOW6432Node')
+        ? 'Huawei DevEco Studio (WOW6432Node)'
+        : 'Huawei DevEco Studio';
+      await ToolProvider.addFromHuaweiStudioRegistryKey(add, huaweiKey, label);
     }
   }
 
