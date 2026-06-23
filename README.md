@@ -288,10 +288,10 @@ devecocli build --product <product> --modules <modules> --build-mode <mode>
 **示例：**
 
 ```bash
-devecocli build --build-model release
+devecocli build --build-mode release
 devecocli build --modules entry library
 devecocli build --modules library@phone
-devecocli build --product oversea --modules entry --build-model release
+devecocli build --product oversea --modules entry --build-mode release
 ```
 
 **说明：**
