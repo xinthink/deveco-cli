@@ -55,9 +55,9 @@ export class ArktsCheckTool {
   private projectPath: string;
   /** DevEco Studio 安装路径；构造时可选，initialize 时若为空将自动查找 */
   private devecoPath: string | null;
-  /** arkts-lang-server (即 ace-server 的父目录)；在 initialize 时根据 devecoPath 计算 */
-  private arktsLangServerPath: string | null;
   private nodeMaxOldSpaceSize?: string;
+  /** 配置文件变化回调，透传给 ArktsLspManager，由 server 层设置 needsResync 标志位 */
+  private onConfigChangedCallback: (() => void) | null = null;
 
   constructor(
     projectPath: string,
@@ -66,8 +66,12 @@ export class ArktsCheckTool {
   ) {
     this.projectPath = projectPath;
     this.devecoPath = devecoPath ?? '';
-    this.arktsLangServerPath = null;
     this.nodeMaxOldSpaceSize = nodeMaxOldSpaceSize;
+  }
+
+  /** 注册配置文件变化回调，透传给 ArktsLspManager */
+  setOnConfigChanged(callback: () => void): void {
+    this.onConfigChangedCallback = callback;
   }
 
   static getToolDefinition() {
@@ -143,6 +147,9 @@ export class ArktsCheckTool {
       nodeMaxOldSpaceSize,
     });
     this.manager.setOnMessage((msg) => this.handleLspMessage(msg));
+    if (this.onConfigChangedCallback) {
+      this.manager.setOnConfigChanged(this.onConfigChangedCallback);
+    }
 
     await new Promise<void>((resolve, reject) => {
       this.initResolve = resolve;
@@ -181,7 +188,6 @@ export class ArktsCheckTool {
     if (!arktsLangServerPath) {
       throw new Error('arkts-lang-server path not found');
     }
-    this.arktsLangServerPath = arktsLangServerPath;
 
     return { harmonyRoot, devecoPath, arktsLangServerPath };
   }
@@ -440,6 +446,11 @@ export class ArktsCheckTool {
         reject?.(new Error(`LSP initialize failed: ${reason}`));
         break;
       }
+
+      case 'workspace/didChangeConfiguration':
+        // 配置变化不再自动触发 sync，由 server 层通过 needsResync 标志位在下次 check 时处理
+        mcpLog.info('Received workspace/didChangeConfiguration, sync deferred to next check');
+        break;
 
       default:
         break;
