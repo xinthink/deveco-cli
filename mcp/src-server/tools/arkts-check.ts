@@ -25,11 +25,10 @@ import { mcpLog } from '../utils/mcp-logger.js';
 import { ArktsLspManager } from '../lsp/ArktsLspManager.js';
 import { initializeLogger } from '../lsp/logger.js';
 import { toUnixPath } from '../lsp/utils.js';
+import { LSP_INIT_TIMEOUT_MS } from '../lsp/constant.js';
 import type { LspMessage } from '../lsp/types.js';
 
 const DIAGNOSTIC_TIMEOUT_MS = 2 * 60 * 1000; // 诊断等待 2 分钟
-const INIT_INITIAL_TIMEOUT_MS = 5 * 60 * 1000; // 初始化总等待 5 分钟
-const INIT_RESET_TIMEOUT_MS = 3 * 60 * 1000; // 收到 indexingProgress 后重置为 3 分钟
 const INDEX_DIR_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // index 目录最大保留 7 天
 const LOG_DIR_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000; // log 目录最大保留 5 天
 
@@ -136,6 +135,7 @@ export class ArktsCheckTool {
       ? parseInt(this.nodeMaxOldSpaceSize, 10)
       : NaN;
     const nodeMaxOldSpaceSize = Number.isNaN(parsedMaxSize) ? undefined : parsedMaxSize;
+    mcpLog.info(`ArktsCheck nodeMaxOldSpaceSize: incoming='${this.nodeMaxOldSpaceSize ?? '(unset)'}', parsed=${nodeMaxOldSpaceSize ?? 'undefined → dynamic formula applies'}`);
 
     const sdkPath = path.join(devecoStudioContentRoot(devecoPath), 'sdk');
     mcpLog.info(`ArktsCheck devecoPath: ${devecoPath}, contentRoot: ${devecoStudioContentRoot(devecoPath)}, sdkPath: ${sdkPath}`);
@@ -154,7 +154,7 @@ export class ArktsCheckTool {
     await new Promise<void>((resolve, reject) => {
       this.initResolve = resolve;
       this.initReject = reject;
-      this.armInitTimer(INIT_INITIAL_TIMEOUT_MS);
+      this.armInitTimer(LSP_INIT_TIMEOUT_MS);
       // start() 内部异步触发 arkts/initialized 或 arkts/initializationFailed
       this.manager!.start([]).catch((err: unknown) => {
         const e = err instanceof Error ? err : new Error(String(err));
@@ -424,7 +424,7 @@ export class ArktsCheckTool {
       case 'arkts/indexingProgress':
         // 重置初始化超时
         if (this.initResolve) {
-          this.armInitTimer(INIT_RESET_TIMEOUT_MS);
+          this.armInitTimer(LSP_INIT_TIMEOUT_MS);
           mcpLog.debug('Received arkts/indexingProgress, reset init timeout');
         }
         break;

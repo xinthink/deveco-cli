@@ -20,14 +20,36 @@ export class LockJson5Parser {
     public finalDevDependencies: DependencyInfo[] = [];
     public finalDynamicDependencies: DependencyInfo[] = [];
     private storePathMap: Map<string, string> = new Map();
+    /** lock.json5 解析缓存：同一实例多次 parseDependencies(moduleName) 时只读/解析一次 */
+    private lockFileCache: { modules: unknown; storePathMap: Map<string, string> } | null = null;
+    private lockFileParsed = false;
 
     constructor(projectPath: string = '') {
         this.projectPath = projectPath;
     }
 
     public parseDependencies(moduleModelName: string): boolean {
-        const lockFilePath = this.getLockFilePath();
+        if (!this.ensureLockFileParsed()) {
+            return false;
+        }
+        const cache = this.lockFileCache!;
+        this.extractDependencies(cache.modules, cache.storePathMap, moduleModelName);
+        return true;
+    }
 
+    /**
+     * 读取 + 解析 + 校验 lock.json5 一次并缓存到实例上。
+     *
+     * 同一个 LockJson5Parser 实例多次调用 parseDependencies(moduleModelName) 时，
+     * lock 文件只读取/解析一次，storePathMap 只构建一次，
+     */
+    private ensureLockFileParsed(): boolean {
+        if (this.lockFileParsed) {
+            return this.lockFileCache !== null;
+        }
+        this.lockFileParsed = true;
+
+        const lockFilePath = this.getLockFilePath();
         const lockFileJsonObject = this.readLockFile(lockFilePath);
         if (!lockFileJsonObject) {
             return false;
@@ -38,7 +60,10 @@ export class LockJson5Parser {
             return false;
         }
 
-        this.extractDependencies(validationResult.modules, validationResult.packages, moduleModelName);
+        this.lockFileCache = {
+            modules: validationResult.modules,
+            storePathMap: this.parseStorePathMap(validationResult.packages),
+        };
         return true;
     }
 
@@ -100,22 +125,26 @@ export class LockJson5Parser {
         return { valid: true, modules: modulesJsonObject, packages: packagesJsonObject };
     }
 
-    private extractDependencies(modulesJsonObject: unknown, packagesJsonObject: unknown, moduleName: string): void {
-        this.storePathMap = this.parseStorePathMap(packagesJsonObject);
+    private extractDependencies(
+        modulesJsonObject: unknown,
+        storePathMap: Map<string, string>,
+        moduleModelName: string,
+    ): void {
+        this.storePathMap = storePathMap;
         this.finalDependencies = this.getDependencyList(
             modulesJsonObject,
             Constants.KEY_DEPENDENCY,
-            moduleName,
+            moduleModelName,
         );
         this.finalDevDependencies = this.getDependencyList(
             modulesJsonObject,
             Constants.KEY_DEV_DEPENDENCY,
-            moduleName,
+            moduleModelName,
         );
         this.finalDynamicDependencies = this.getDependencyList(
             modulesJsonObject,
             Constants.KEY_DYNAMIC_DEPENDENCY,
-            moduleName,
+            moduleModelName,
         );
     }
 

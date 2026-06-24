@@ -12,7 +12,7 @@ import { ToolProvider } from '../utils/tool-provider.js';
 async function startStdioMcpServer(): Promise<void> {
   const PROJECT_PATH = process.env.PROJECT_PATH || '';
   const DEVECO_PATH = process.env.DEVECO_PATH;
-  const NODE_MAX_OLD_SPACE_SIZE = process.env.NODE_MAX_OLD_SPACE_SIZE || '8192';
+  const NODE_MAX_OLD_SPACE_SIZE = process.env.NODE_MAX_OLD_SPACE_SIZE;
   const DEBUG = process.env.DEBUG === 'true' || process.env.DEBUG === '1';
   const FORCE_SYNC = process.env.DEVECO_MCP_FORCE_SYNC === '1';
 

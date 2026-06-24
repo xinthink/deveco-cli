@@ -43,9 +43,19 @@ class McpServerLogger {
   private currentFileSize: number = 0;
   private currentDate: string = '';
   private isRotating: boolean = false;
+  /** 最小输出级别：低于此级别的日志（如 debug）直接丢弃 */
+  private readonly minLevel: LogLevel;
+  private static readonly LEVEL_ORDER: Record<LogLevel, number> = {
+    debug: 0,
+    info: 1,
+    warn: 2,
+    error: 3,
+  };
 
   constructor(debug: boolean, rotationOptions?: LogRotationOptions) {
     this.rotationOptions = { ...DEFAULT_ROTATION_OPTIONS, ...rotationOptions };
+    // 默认（非 debug）只输出 info 及以上；debug 模式放行全部级别
+    this.minLevel = debug ? 'debug' : 'info';
 
     if (debug) {
       // debug 模式：输出到 console
@@ -219,6 +229,9 @@ class McpServerLogger {
 
   private write(level: LogLevel, message: string, ...args: unknown[]): void {
     if (this.mode === 'silent') {
+      return;
+    }
+    if (McpServerLogger.LEVEL_ORDER[level] < McpServerLogger.LEVEL_ORDER[this.minLevel]) {
       return;
     }
 

@@ -48,6 +48,19 @@ function isWatchedFileChange(value: unknown): value is WatchedFileChange {
     return typeof value.uri === 'string' && typeof value.type === 'number';
 }
 
+/** 格式化 onIndexingProgressUpdate 的 params 为可读进度，缺字段时回退原始 JSON。 */
+function formatIndexingProgress(params: unknown): string {
+    if (
+        isRecord(params) &&
+        typeof params.moduleName === 'string' &&
+        typeof params.current === 'number' &&
+        typeof params.total === 'number'
+    ) {
+        return `indexing module '${params.moduleName}', ${params.current} of total ${params.total} modules`;
+    }
+    return `params=${JSON.stringify(params ?? null)}`;
+}
+
 /**
  * ClientMessageHandle：LSP 服务端消息处理入口
  */
@@ -351,14 +364,14 @@ export class ClientMessageHandle {
             return;
         }
 
-        if (!this.isInitialized && this.handlePreInitMessage(method)) {
+        if (!this.isInitialized && this.handlePreInitMessage(method, msg)) {
             return;
         }
 
         this.handlePostInitMessage(method, msg);
     }
 
-    private handlePreInitMessage(method: string): boolean {
+    private handlePreInitMessage(method: string, msg: Record<string, unknown>): boolean {
         switch (method) {
             case LSP_METHOD.MODULE_INIT_FINISH:
                 logger.info('[LSP] handleLspMessage, receive onModuleInitFinish');
@@ -368,7 +381,9 @@ export class ClientMessageHandle {
                 this.client.emit('initialized_done');
                 return true;
             case LSP_METHOD.INDEXING_PROGRESS_UPDATE:
-                logger.info('[LSP] handleLspMessage, receive onIndexingProgressUpdate');
+                logger.info(
+                    `[LSP] onIndexingProgressUpdate: ${formatIndexingProgress(msg.params)}`,
+                );
                 this.callbacks.invoke(LSP_METHOD.INDEXING_PROGRESS_UPDATE);
                 return true;
             default:

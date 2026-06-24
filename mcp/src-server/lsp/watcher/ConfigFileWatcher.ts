@@ -111,7 +111,6 @@ export class ConfigFileWatcher extends EventEmitter {
         for (const filePath of newTargets) {
             if (!currentTargets.has(filePath)) {
                 this.watchFile(filePath);
-                logger.info(`[ConfigFileWatcher] Started watching: ${filePath}`);
             }
         }
 

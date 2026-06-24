@@ -75,3 +75,6 @@ export interface DependencyMapParseResult {
     status: DependencyMapParseStatus;
     message?: string;
 }
+
+/** LSP 初始化等待超时：进度重置与初始化总等待统一为 15 分钟 */
+export const LSP_INIT_TIMEOUT_MS = 15 * 60 * 1000;
