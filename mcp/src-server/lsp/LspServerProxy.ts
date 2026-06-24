@@ -16,7 +16,7 @@ import { Params } from './model/Params.js';
 import { ModuleDependencyInfo } from './model/ModuleDependencyInfo.js';
 import { normalizePath, toFileUri } from './utils.js';
 import { ReloadEvent } from './watcher/DependencyMapWatcher.js';
-import { JSONRPC_VERSION, LSP_METHOD, LSP_SEND_LABEL } from './constant.js';
+import { JSONRPC_VERSION, LSP_INIT_TIMEOUT_MS, LSP_METHOD, LSP_SEND_LABEL } from './constant.js';
 import { isRecord } from './common/typeGuards.js';
 import { isContentChange, isPosition, isStringArray, isTextDocument } from './lspTypeGuards.js';
 
@@ -42,7 +42,6 @@ export class LspServerProxy {
     private get currentModuleModels(): ModuleModel[] {
         return this.currentParams?.initializationOptions?.modules ?? [];
     }
-    private readonly initTimeoutMs: number = 60 * 1000; // 1 分钟，收到 onIndexingProgressUpdate 时会重置
 
     constructor(
         private sdkPath: string,
@@ -103,7 +102,7 @@ export class LspServerProxy {
                     this.messageHandle.onInitializationCompleted(resolve);
                 },
                 'LSP initialization',
-                this.initTimeoutMs,
+                LSP_INIT_TIMEOUT_MS,
             );
 
             this.messageHandle.sendInitialized(editorOpenFiles);
