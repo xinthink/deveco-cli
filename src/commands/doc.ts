@@ -34,7 +34,7 @@ function validateOneOf<T extends string>(...allowed: T[]): (value: string) => T 
 function validatePositiveInt(value: string): number {
   const num = Number(value);
   if (!Number.isInteger(num) || num <= 0) {
-    throw new InvalidArgumentError('Must be a positive integer');
+    throw new InvalidArgumentError('Must be a positive integer.');
   }
   return num;
 }
@@ -49,18 +49,18 @@ const docCommand = new Command('docs').description(
 docCommand
   .command('search <keywords...>')
   .description('Search documentation by keywords')
-  .option('--catalog <name>', 'Catalog name (all for all catalogs)', validateCatalogOrAll, 'all')
+  .option('--catalog <name>', 'Catalog name (all : all catalogs)', validateCatalogOrAll, 'all')
   .option('--format <fmt>', 'Output format (default, json)', validateSearchFormat, 'default')
   .option('--limit <n>', 'Max number of results', validatePositiveInt, 20)
   .action(async (keywords: string[], opts: SearchOptions) => {
     try {
       const normalizedKeywords = keywords.map(k => k.trim()).filter(k => k);
       if (normalizedKeywords.length === 0) {
-        console.error(red('Keywords cannot be empty'));
+        console.error(red('Keywords cannot be empty.'));
         process.exit(1);
       }
       if (normalizedKeywords.length > 10) {
-        console.error(red('Keywords cannot exceed 10'));
+        console.error(red('Keywords cannot exceed 10.'));
         process.exit(1);
       }
 
@@ -86,7 +86,7 @@ docCommand
     try {
       const normalizedId = documentId.trim();
       if (!normalizedId) {
-        console.error(red('Document ID cannot be empty'));
+        console.error(red('Document ID cannot be empty.'));
         process.exit(1);
       }
 
@@ -101,7 +101,7 @@ docCommand
 docCommand
   .command('catalog')
   .description('List all available catalogs')
-  .option('--format <fmt>', 'Output format (default, json)', validateCatalogFormat, 'default')
+  .option('--format <fmt>', 'Output format (options: default,json)', validateCatalogFormat, 'default')
   .action((opts: CatalogOptions) => {
     if (opts.format === 'json') {
       const catalogs = CATALOG_NAMES.map(name => ({

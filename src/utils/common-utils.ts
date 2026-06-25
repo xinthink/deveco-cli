@@ -38,7 +38,7 @@ export class CommonUtils {
     const match = normalizedValue.match(/^(\d+(?:\.\d+)?)([sm])?$/);
     if (!match) {
       throw new Error(
-        `${fieldName} must be like 30s, 5m or 2.5m (only s/m supported)`
+        `${fieldName} must be like 30s, 5m or 2.5m (only s/m supported).`
       );
     }
 
@@ -52,13 +52,13 @@ export class CommonUtils {
 
     if (!/^\d+(?:\.\d)?$/.test(rawAmount)) {
       throw new Error(
-        `${fieldName} minute value supports at most one decimal place, e.g. 2.5m`
+        `${fieldName} supports a maximum of 1 decimal place for minutes (e.g. 2.5m).`
       );
     }
 
     const minuteValue = Number.parseFloat(rawAmount);
     if (!Number.isFinite(minuteValue) || minuteValue <= 0) {
-      throw new Error(`${fieldName} must be a positive duration`);
+      throw new Error(`${fieldName} must be a positive duration.`);
     }
 
     return Math.round(minuteValue * 60);
@@ -306,7 +306,7 @@ export class CommonUtils {
     const resolvedPath = path.resolve(projectRoot, inputPath);
     const relative = path.relative(projectRoot, resolvedPath);
     if (CommonUtils.isPathEscaping(relative)) {
-      return { contained: false, reason: `Path escapes project root directory: ${inputPath}` };
+      return { contained: false, reason: `Path traversal project root directory: ${inputPath}` };
     }
 
     return { contained: true };

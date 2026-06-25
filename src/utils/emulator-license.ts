@@ -424,7 +424,7 @@ async function resolveEmuConfigPathForWrites(
   );
   const majorMinor = parseEmulatorMajorMinorFromVersionText(versionText);
   if (!majorMinor) {
-    throw new Error(`Cannot parse Emulator major.minor from:\n${versionText}`);
+    throw new Error(`Cannot parse Emulator major.minor from:\n${versionText}.`);
   }
   return resolveEmuConfigPathFromMajorMinor(majorMinor);
 }
@@ -555,7 +555,7 @@ export async function runEmulatorLicenseAccept(
   console.log(body);
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     console.error(
-      'devecocli emulator license accept requires an interactive terminal.'
+      '`devecocli emulator license accept` requires an interactive terminal.'
     );
     return 1;
   }

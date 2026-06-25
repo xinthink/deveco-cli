@@ -49,17 +49,17 @@ function validateEmulatorOsVersionArg(version: string): void {
   }
   if (/^\d+$/.test(v)) {
     throw new Error(
-      `--os-version "${version}" is invalid: use the full image label, e.g. HarmonyOS 5.1.1(19).`
+      `--os-version "${version}" is invalid. use the full image label, e.g. HarmonyOS 5.1.1(19).`
     );
   }
   if (!/^HarmonyOS\s+/i.test(v)) {
     if (/^HarmonyOS$/i.test(v)) {
       throw new Error(
-        '--os-version is incomplete (only "HarmonyOS"). On PowerShell/cmd, quote the full label, e.g. --os-version "HarmonyOS 6.0.1(21)"'
+        '--os-version is incomplete (only "HarmonyOS"). On PowerShell/cmd, quote the full label, e.g. --os-version "HarmonyOS 6.0.1(21)".'
       );
     }
     throw new Error(
-      `--os-version must start with "HarmonyOS " (e.g. HarmonyOS 5.1.1(19)). Got: "${version}"`
+      `Invalid --os-version "${version}". It must start with "HarmonyOS " (e.g. "HarmonyOS 5.1.1(19)").`
     );
   }
 }
@@ -78,7 +78,7 @@ function assertOsVersionAgainstDownloadedImages(
     );
     console.error(
       yellow(
-        'Run `devecocli emulator image download ...` then `devecocli emulator image list` and copy an `osVersion` string exactly.'
+        'Run `devecocli emulator image download ...` followed by `devecocli emulator image list` and then copy an `osVersion` string exactly.'
       )
     );
     throw new Error(
@@ -416,11 +416,11 @@ async function stopOneEmulator(
 
   const confirmed = await waitForEmulatorHdcState(hdcPath, name, false);
   if (confirmed) {
-    console.log(green(`Emulator "${name}" stopped successfully!`));
+    console.log(green(`Emulator "${name}" stopped successfully.`));
   } else {
     console.log(
       yellow(
-        `Emulator "${name}" stop signal was sent but the instance is still visible in hdc list targets within the timeout.`
+        `Emulator "${name}" stop signal was sent but the instance is still visible in hdc list targets within the waiting period.`
       )
     );
   }
@@ -623,11 +623,11 @@ const imageCommand = new Command('image').description(
 
 imageCommand
   .command('download')
-  .description('Download a system image')
+  .description('Download system image')
   .addOption(deviceTypeOption(false))
   .option(
     '--os-version <version>',
-    'e.g. HarmonyOS 5.1.1(19) or HarmonyOS 6.0.1(21) (required)'
+    'Example: HarmonyOS 5.1.1(19) or HarmonyOS 6.0.1(21) (required)'
   )
   .option('--force', 'Overwrite an existing image')
   .action(
@@ -652,13 +652,13 @@ imageCommand
 
       if (!opts.deviceType?.trim()) {
         console.error(
-          red("error: required option '--device-type <type>' not specified")
+          red("Error: missing required option '--device-type <type>'")
         );
         process.exit(1);
       }
       if (!opts.osVersion?.trim()) {
         console.error(
-          red("error: required option '--os-version <version>' not specified")
+          red("Error: misssing required option '--os-version <version>'")
         );
         process.exit(1);
       }
@@ -705,7 +705,7 @@ imageCommand
   .command('list')
   .description('List system images')
   .addOption(deviceTypeOption(false))
-  .option('--all', 'List all images (downloaded and not downloaded)')
+  .option('--all', 'List all images (local and remote)')
   .addOption(
     new Option('--format <format>', 'Output format')
       .choices(['table', 'json'])
@@ -751,12 +751,12 @@ imageCommand
 emulatorCommand.addCommand(imageCommand);
 
 const licenseCommand = new Command('license').description(
-  'HarmonyOS local emulator license'
+  'local emulator license'
 );
 
 licenseCommand
   .command('view')
-  .description('review the agreement text (read-only)')
+  .description('Review agreement text(read-only)')
   .action(async () => {
     const { toolProvider } = await initEmulatorManager();
     const code = await runEmulatorLicenseView(
@@ -768,7 +768,7 @@ licenseCommand
 
 licenseCommand
   .command('accept')
-  .description('review and accept the agreements')
+  .description('review and accept agreements')
   .action(async () => {
     const { toolProvider } = await initEmulatorManager();
     const code = await runEmulatorLicenseAccept(
@@ -810,7 +810,7 @@ emulatorCommand
       throw e;
     }
     if (!names?.length) {
-      console.error(red("error: missing required argument 'names'"));
+      console.error(red("Error: missing required argument 'names'"));
       process.exit(1);
     }
     await startAction(manager, toolProvider.hdcPath, names);
@@ -819,12 +819,12 @@ emulatorCommand
 emulatorCommand
   .command('stop <names...>')
   .description(
-    'Stop one or more emulator instances (by name or 127.0.0.1:<port> serial)'
+    'Stop one or more emulator instances (by name or serial,e.g.,127.0.0.1:<port>)'
   )
   .action(async (names: string[]) => {
     const { manager, toolProvider } = await initEmulatorManager();
     if (!names?.length) {
-      console.error(red("error: missing required argument 'names'"));
+      console.error(red("Error: missing required argument 'names'"));
       process.exit(1);
     }
     await stopAction(manager, toolProvider.hdcPath, names);
@@ -833,14 +833,14 @@ emulatorCommand
 const createEmulatorCmd = emulatorCommand
   .command('create <name>')
   .description(
-    'Create a local emulator. Runs emulator -create <name> …; --os-version must match a downloaded image from `emulator image list`.'
+    'Create a local emulator by running emulator -create <name> …; --os-version must match a downloaded image from `emulator image list`.'
   )
   .addOption(deviceTypeOption(true))
   .requiredOption(
     '--os-version <version>',
-    'Exact downloaded image label. Quote in PowerShell (e.g. "HarmonyOS 6.0.1(21)") or use --os-version="…"; see `devecocli emulator image list`'
+    'Downloaded image label. which will be quoted in PowerShell (e.g. "HarmonyOS 6.0.1(21)") or be used in the format --os-version="…";For details, run`devecocli emulator image list`'
   )
-  .option('--force', 'Overwrite if the tool supports it');
+  .option('--force', 'Overwrite if supported');
 
 createEmulatorCmd.configureOutput({
   outputError: (str, write) => {

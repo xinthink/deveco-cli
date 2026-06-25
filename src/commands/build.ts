@@ -166,7 +166,7 @@ export async function executeBuildSteps(
 }
 
 const buildCommand = new Command('build')
-  .description('Build the HarmonyOS project')
+  .description('Build HarmonyOS project')
   .option(
     '--product <product>',
     'Product name defined in build-profile.json5 (default: default)'
@@ -183,7 +183,7 @@ const buildCommand = new Command('build')
     try {
       const currentDir = process.cwd();
       const project = Project.discover(currentDir);
-      console.warn(yellow('Please ensure the project source is trustworthy before proceeding.'));
+      console.warn(yellow('Ensure the project source is trustworthy before proceeding.'));
       const toolProvider = await ToolProvider.new();
 
       validateProjectConfig(project, options);
@@ -224,12 +224,12 @@ const buildCommand = new Command('build')
           ),
         () => {
           console.log(
-            'Another build is already running for this project. Waiting for it to finish...'
+            'Another build is already running for this project. Waiting for completion...'
           );
         }
       );
 
-      console.log('\n' + green('Build completed successfully!'));
+      console.log('\n' + green('Build completed successfully'));
     } catch (error) {
       console.error(red((error as Error).message));
       process.exit(1);
@@ -238,12 +238,12 @@ const buildCommand = new Command('build')
 
 buildCommand
   .command('clean')
-  .description('Clean the HarmonyOS project build outputs')
+  .description('Clean HarmonyOS project build outputs')
   .action(async () => {
     try {
       const currentDir = process.cwd();
       const project = Project.discover(currentDir);
-      console.warn(yellow('Please ensure the project source is trustworthy before proceeding.'));
+      console.warn(yellow('Ensure the project source is trusted before proceeding.'));
       const toolProvider = await ToolProvider.new();
 
       const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
@@ -271,7 +271,7 @@ buildCommand
         }
       );
 
-      console.log('\n' + green('Clean completed successfully!'));
+      console.log('\n' + green('Clean completed successfully.'));
     } catch (error) {
       console.error(red((error as Error).message));
       process.exit(1);

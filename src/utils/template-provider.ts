@@ -267,7 +267,7 @@ export function createProject(
   const verified = verifyFiles(projectPath);
 
   if (!verified) {
-    throw new Error('Template integrity check failed');
+    throw new Error('Template integrity check failed.');
   }
 
   return {

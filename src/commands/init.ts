@@ -162,7 +162,7 @@ async function executeMcpInstallations(
 async function handleInitCommand(options: InitOptions): Promise<void> {
   // --skill 和 --mcp 互斥
   if (options.skill && options.mcp) {
-    throw new Error('Cannot use --skill and --mcp together. Use --skill for skill installation only, or --mcp for MCP configuration only.');
+    throw new Error('Cannot use `--skill` and `--mcp` together. Use `--skill` for skill installation only, or `--mcp` for MCP configuration only.');
   }
 
   const { resolvedPath, resolvedProject } = validatePathMutex(
@@ -209,7 +209,7 @@ const initCommand = new Command('init')
   )
   .option(
     '--project <path>',
-    'Project root directory to install the skill or MCP config into'
+    'Project root directory for skill or MCP configuration'
   )
   .option(
     '--path <path>',
@@ -223,7 +223,7 @@ const initCommand = new Command('init')
     '--mcp',
     'Configure the deveco-mcp server (syntax checking for .ets and C/C++) only; no skill installation'
   )
-  .option('-f, --force', 'Overwrite an existing skill / MCP configuration')
+  .option('-f, --force', 'Overwrite existing skill/MCP configuration')
   .action(async (options: InitOptions) => {
     try {
       await handleInitCommand(options);

@@ -30,7 +30,7 @@ function validateAppName(name: string): void {
 
   if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name)) {
     throw new Error(
-      'App name must start with a letter (a-z, A-Z) and contain only letters, digits, and underscores'
+      'Application name must start with a letter (a-z, A-Z) and contain only letters, digits, and underscores'
     );
   }
 }
@@ -44,14 +44,14 @@ function validateBundleName(bundleName: string): void {
 
   if (bundleName.includes('..')) {
     throw new Error(
-      'Bundle name cannot contain consecutive dots (e.g., "com..example")'
+      'Bundle name cannot contain consecutive dots (e.g., "com..example").'
     );
   }
 
   const segments = bundleName.split('.');
   if (segments.length < 3) {
     throw new Error(
-      'Bundle name must contain at least 3 segments separated by dots'
+      'Bundle name must contain at least 3 dot-separated segments.'
     );
   }
 
@@ -61,26 +61,26 @@ function validateBundleName(bundleName: string): void {
 
     if (!segmentRegex.test(segment)) {
       throw new Error(
-        `Segment "${segment}" contains invalid characters. Only letters, digits, and underscores allowed`
+        `Segment "${segment}" contains invalid characters. Only letters, digits, and underscores allowed.`
       );
     }
 
     if (i === 0) {
       if (!/^[a-zA-Z]/.test(segment)) {
         throw new Error(
-          `First segment "${segment}" must start with a letter (a-z, A-Z)`
+          `First segment "${segment}" must start with a letter (a-z, A-Z).`
         );
       }
     } else {
       if (!/^[a-zA-Z0-9]/.test(segment)) {
         throw new Error(
-          `Segment "${segment}" must start with a letter or digit`
+          `Segment "${segment}" must start with a letter or digit.`
         );
       }
     }
 
     if (!/[a-zA-Z0-9]$/.test(segment)) {
-      throw new Error(`Segment "${segment}" must end with a letter or digit`);
+      throw new Error(`Segment "${segment}" must end with a letter or digit.`);
     }
   }
 }
@@ -97,12 +97,12 @@ function normalizeProjectPath(projectPath: string): string {
 
 function validateProjectPath(projectPath: string): void {
   if (projectPath.length === 0) {
-    throw new Error('Project path cannot be empty');
+    throw new Error('Project path cannot be empty.');
   }
 
   if (projectPath.length > 120) {
     throw new Error(
-      `Project path cannot exceed 120 characters (current: ${projectPath.length})`
+      `Project path cannot exceed 120 characters (current: ${projectPath.length}).`
     );
   }
 
@@ -116,14 +116,14 @@ function validateProjectPath(projectPath: string): void {
       platform === 'win32'
         ? 'letters, digits, dots, underscores, hyphens, colons, slashes (/) or backslashes (\\)'
         : 'letters, digits, dots, underscores, hyphens or slashes (/)';
-    throw new Error(`Project path can only contain ${allowedChars}`);
+    throw new Error(`Project path can only contain ${allowedChars}.`);
   }
 
   const normalizedPath = normalizeProjectPath(projectPath);
 
   const chineseRegex = /[\u4e00-\u9fff]/;
   if (chineseRegex.test(normalizedPath)) {
-    throw new Error('Project path cannot contain Chinese characters');
+    throw new Error('Project path cannot contain Chinese characters.');
   }
 
   if (normalizedPath.endsWith('.')) {
@@ -192,7 +192,7 @@ function resolveProjectPath(appName: string, specifiedPath?: string): string {
       const contents = fs.readdirSync(resolvedPath);
       if (contents.length > 0) {
         throw new Error(
-          `Directory '${resolvedPath}' is not empty. Cannot create project in non-empty directory.`
+          `Directory '${resolvedPath}' is not empty. Cannot create project here.`
         );
       }
     } else {
@@ -227,7 +227,7 @@ function resolveApiLevel(
     // 最小 API 验证：API 版本从 17 开始
     if (!Number.isInteger(parsed) || parsed < 17) {
       throw new Error(
-        `Invalid API level ${options.apiLevel}. Minimum supported is API 17`
+        `Invalid API version ${options.apiLevel}. API version 17 or higher is required.`
       );
     }
     
@@ -236,14 +236,14 @@ function resolveApiLevel(
       // 有 IDE：范围 17 ~ SDK maxApi
       if (parsed > sdkMaxApi) {
         throw new Error(
-          `Invalid API level ${options.apiLevel}. Your SDK supports API 17-${sdkMaxApi}`
+          `Invalid API version ${options.apiLevel}. Your SDK supports API version 17-${sdkMaxApi}`
         );
       }
     } else {
       // 无 IDE：范围 17-23
       if (parsed > noIdeMaxApi) {
         throw new Error(
-          `Invalid API level ${options.apiLevel}. Without DevEco Studio, supported range is API 17-${noIdeMaxApi}`
+          `Invalid API version ${options.apiLevel}. Without DevEco Studio, supported range is API version 17-${noIdeMaxApi}`
         );
       }
     }
@@ -267,7 +267,7 @@ async function tryGetToolProvider(): Promise<ToolProvider | undefined> {
   } catch (error) {
     const e = error as Error;
     console.error(yellow(`DevEco Studio not found: ${e.message}`));
-    console.log(yellow('Using placeholder API level instead.'));
+    console.log(yellow('Use placeholder API level instead.'));
     return undefined;
   }
 }
@@ -326,15 +326,15 @@ const createCommand = new Command('create')
         devecoStudioPath
       );
 
-      console.log('\n' + green('Project created successfully!'));
+      console.log('\n' + green('Project created successfully.'));
       console.log(`Project root: ${result.projectRoot}`);
       console.log(`App name: ${result.appName}`);
       console.log(`Bundle name: ${result.bundleName}`);
       console.log(`API level: ${result.apiLevel}`);
-      console.log(green('Template integrity check passed'));
+      console.log(green('Template integrity check passed.'));
     } catch (error) {
       const e = error as Error;
-      console.error(red('\nFailed to create project'));
+      console.error(red('\nFailed to create project.'));
       console.error(red(e.message));
       process.exit(1);
     }

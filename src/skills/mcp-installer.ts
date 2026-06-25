@@ -37,7 +37,7 @@ async function readJsonConfig(filePath: string): Promise<Record<string, unknown>
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       return {};
     }
-    throw new Error(`Failed to read config file ${filePath}: ${(err as Error).message}`, { cause: err });
+    throw new Error(`Failed to read configuration file ${filePath}: ${(err as Error).message}`, { cause: err });
   }
 }
 
@@ -166,7 +166,7 @@ export async function installMcpConfigToAgentGlobal(
     const config = await readConfig(agentConfig, agentConfig.globalConfigPath);
 
     if (isMcpServerConfigured(config, agentConfig.mcpServersKey, MCP_SERVER_NAME) && !force) {
-      console.log(`MCP server ${MCP_SERVER_NAME} already configured in ${agentConfig.globalConfigPath}`);
+      console.log(`MCP server ${MCP_SERVER_NAME} already configured in ${agentConfig.globalConfigPath}.`);
       return {
         success: true,
         skipped: true,
@@ -180,7 +180,7 @@ export async function installMcpConfigToAgentGlobal(
     addMcpServerConfig(config, agentConfig.mcpServersKey, MCP_SERVER_NAME, serverConfig as unknown as Record<string, unknown>, force);
 
     await writeConfig(agentConfig, agentConfig.globalConfigPath, config);
-    console.log(`MCP server ${MCP_SERVER_NAME} configured in ${agentConfig.globalConfigPath}`);
+    console.log(`MCP server ${MCP_SERVER_NAME} configured in ${agentConfig.globalConfigPath}.`);
 
     return {
       success: true,
@@ -220,7 +220,7 @@ export async function installMcpConfigToAgentProject(
     const config = await readConfig(agentConfig, configFile);
 
     if (isMcpServerConfigured(config, agentConfig.mcpServersKey, MCP_SERVER_NAME) && !force) {
-      console.log(`MCP server ${MCP_SERVER_NAME} already configured in ${configFile}`);
+      console.log(`MCP server ${MCP_SERVER_NAME} already configured in ${configFile}.`);
       return {
         success: true,
         skipped: true,
@@ -234,7 +234,7 @@ export async function installMcpConfigToAgentProject(
     addMcpServerConfig(config, agentConfig.mcpServersKey, MCP_SERVER_NAME, serverConfig as unknown as Record<string, unknown>, force);
 
     await writeConfig(agentConfig, configFile, config);
-    console.log(`MCP server ${MCP_SERVER_NAME} configured in ${configFile}`);
+    console.log(`MCP server ${MCP_SERVER_NAME} configured in ${configFile}.`);
 
     return {
       success: true,
@@ -267,7 +267,7 @@ export async function removeMcpConfigFromAgentGlobal(agentName: string): Promise
     const config = await readConfig(agentConfig, agentConfig.globalConfigPath);
 
     if (!removeMcpServerConfig(config, agentConfig.mcpServersKey, MCP_SERVER_NAME)) {
-      console.log(`MCP server ${MCP_SERVER_NAME} not found in ${agentConfig.globalConfigPath}`);
+      console.log(`MCP server ${MCP_SERVER_NAME} not found in ${agentConfig.globalConfigPath}.`);
       return {
         success: true,
         skipped: true,
@@ -278,7 +278,7 @@ export async function removeMcpConfigFromAgentGlobal(agentName: string): Promise
     }
 
     await writeConfig(agentConfig, agentConfig.globalConfigPath, config);
-    console.log(`MCP server ${MCP_SERVER_NAME} removed from ${agentConfig.globalConfigPath}`);
+    console.log(`MCP server ${MCP_SERVER_NAME} removed from ${agentConfig.globalConfigPath}.`);
 
     return {
       success: true,
@@ -287,7 +287,7 @@ export async function removeMcpConfigFromAgentGlobal(agentName: string): Promise
       installType: 'global',
     };
   } catch (err) {
-    return { success: false, error: `Failed to remove MCP config: ${(err as Error).message}` };
+    return { success: false, error: `Failed to remove MCP configuration: ${(err as Error).message}` };
   }
 }
 

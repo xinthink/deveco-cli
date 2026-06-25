@@ -93,7 +93,7 @@ export class LocalDocService {
   private async extractDocs(version: string): Promise<void> {
     const zipPath = this.findDocsZip();
     if (!zipPath) {
-      throw new Error('docs.zip not found');
+      throw new Error('docs.zip not found.');
     }
 
     const spinner = ora({
