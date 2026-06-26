@@ -57,4 +57,8 @@ export const AGENT_SKILLS_CONFIG = {
     path: '.codex/skills',
     displayName: 'codex',
   },
+  atomcode: {
+    path: '.atomcode/skills',
+    displayName: 'atomcode',
+  },
 } as const;
