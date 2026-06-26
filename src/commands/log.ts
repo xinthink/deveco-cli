@@ -35,7 +35,7 @@ function parseDuration(value: string, fieldName: string): number {
     return CommonUtils.parseDurationToSeconds(value, fieldName);
   } catch {
     throw new InvalidArgumentError(
-      `${fieldName} must be a valid duration string (e.g.,30s, 5m or 2.5m).Supported units: s and m.when specified in seconds(with `s` or as a raw number), the value must be an integer.`
+      `${fieldName} must be a valid duration string (e.g.,30s, 5m or 2.5m).Supported units: s and m.when specified in seconds(with \`s\` or as a raw number), the value must be an integer.`
     );
   }
 }

@@ -460,7 +460,7 @@ export class HilogAdapter {
       pid
     );
     debugLog(
-      `Ready to run hilog command which contain `follow` and `tail`: ${command} ${args.join(' ')}`
+      `Ready to run hilog command which contain \`follow\` and \`tail\`: ${command} ${args.join(' ')}`
     );
     const result = await this.runHilogWithSpawnRetry(
       command,

@@ -415,7 +415,7 @@ export class EmulatorManager {
         await this.deleteVirtualDevice(existing.name);
       } else {
         throw new Error(
-          `Emulator "${name}" already exists. Use `--force` to overwrite.`
+          `Emulator "${name}" already exists. Use \`--force\` to overwrite.`
         );
       }
     }
