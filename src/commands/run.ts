@@ -76,7 +76,7 @@ function identifyModule(project: Project, moduleArg?: string): string {
     return selected;
   }
 
-  throw new Error(Specify a module using --module <name>.\nAvailable runnable modules:\n` +
+  throw new Error(`Specify a module using --module <name>.\nAvailable runnable modules:\n` +
       runnableModules.map((m) => `  - ${m.name}`).join('\n')
   );
 }
