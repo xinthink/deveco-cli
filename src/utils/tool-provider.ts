@@ -124,8 +124,19 @@ export class ToolProvider {
     this._emulatorLauncherPath = emulatorLauncherPath;
   }
 
+  public static enforceStudioMinVersion(installRoot: string): void {
+    const version = ToolProvider.parseProductInfoVersion(installRoot);
+    if (version === undefined) {
+      throw new Error(
+        `Failed to determine DevEco Studio version at ${installRoot}`
+      );
+    }
+    ToolProvider.assertMinVersion(installRoot, version);
+  }
+
   public static async checkVersion(): Promise<void> {
-    await ToolProvider.findDevEcoStudio();
+    const installRoot = await ToolProvider.findDevEcoStudio();
+    ToolProvider.enforceStudioMinVersion(installRoot);
   }
 
   public static async new(): Promise<ToolProvider> {
@@ -538,11 +549,10 @@ export class ToolProvider {
     return 0;
   }
 
-  // ---------- pick latest + version enforcement ----------
+  // ---------- pick latest ----------
 
   private static pickLatestByProductInfo(candidates: string[]): string {
     const best = ToolProvider.selectHighestVersion(candidates);
-    ToolProvider.assertMinVersion(best.installRoot, best.version);
     debugLog(
       `[ToolProvider] Selected DevEco Studio ${best.version} at ${best.installRoot}`
     );
