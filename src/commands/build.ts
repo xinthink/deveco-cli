@@ -9,6 +9,7 @@ import { ToolProvider } from '../utils/tool-provider.js';
 import { HvigorAdapter } from '../utils/hvigor-adapter.js';
 import { OhpmAdapter } from '../utils/ohpm-adapter.js';
 import { withBuildLock } from '../utils/build-lock.js';
+import { checkSyncRequired } from '../utils/project-check.js';
 
 interface BuildOptions {
   product?: string;
@@ -132,23 +133,33 @@ export async function executeBuildSteps(
   hvigorAdapter: HvigorAdapter,
   productName: string,
   buildMode: string,
-  buildTarget: BuildTarget
+  buildTarget: BuildTarget,
+  projectRoot: string
 ) {
-  console.log('\n[1/3] Running ohpm install...');
-  try {
-    await ohpmAdapter.installAll();
-  } catch (error) {
-    logAdapterFailureAndThrow('ohpm install', error);
-  }
+  // 1. 检查是否需要执行 ohpm install + hvigor sync
+  const checkResult = checkSyncRequired(projectRoot);
 
-  console.log('\n[2/3] Running hvigor sync...');
-  try {
-    await hvigorAdapter.sync(productName, buildMode);
-  } catch (error) {
-    logAdapterFailureAndThrow('hvigor sync', error);
-  }
+  // 2. 如果需要，执行 ohpm install + hvigor sync
+  if (checkResult.required) {
+    console.log('\n[1/3] Running ohpm install...');
+    try {
+      await ohpmAdapter.installAll();
+    } catch (error) {
+      logAdapterFailureAndThrow('ohpm install', error);
+    }
 
-  console.log('\n[3/3] Running hvigor build...');
+    console.log('\n[2/3] Running hvigor sync...');
+    try {
+      await hvigorAdapter.sync(productName, buildMode);
+    } catch (error) {
+      logAdapterFailureAndThrow('hvigor sync', error);
+    }
+
+    console.log('\n[3/3] Running hvigor build...');
+  } else {
+    console.log('\n[skip] ohpm install & hvigor sync (configurations unchanged)');
+    console.log('\n[1/1] Running hvigor build...');
+  }
   try {
     if (buildTarget.type === 'product') {
       await hvigorAdapter.buildProduct(productName, buildMode);
@@ -220,7 +231,8 @@ const buildCommand = new Command('build')
             hvigorAdapter,
             productName,
             buildMode,
-            buildTarget
+            buildTarget,
+            project.rootDir
           ),
         () => {
           console.log(
