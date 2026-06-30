@@ -78,6 +78,7 @@ function replaceInFile(filePath: string, pairs: Array<[string, string]>): void {
 }
 
 function updateApiLevel(targetRoot: string, apiLevel: number): void {
+  // 模板默认内嵌 API 22 版本号（6.0.2），无需替换
   if (apiLevel === 22) {
     return;
   }

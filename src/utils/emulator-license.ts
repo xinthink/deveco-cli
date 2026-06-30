@@ -377,12 +377,12 @@ export async function ensureEmulatorLicenseAccepted(
   });
 
   const combined = combinedEmulatorOutputText(probe.stdout, probe.stderr);
-  if (probe.exitCode === 0 && !isEmulatorLicenseBlockedOutput(combined)) {
-    acceptedCache.add(key);
-    return;
-  }
-  if (isEmulatorLicenseBlockedOutput(combined)) {
+  const isBlocked = isEmulatorLicenseBlockedOutput(combined);
+  if (isBlocked) {
     throw new EmulatorLicenseBlockedError();
+  }
+  if (probe.exitCode === 0) {
+    acceptedCache.add(key);
   }
 }
 

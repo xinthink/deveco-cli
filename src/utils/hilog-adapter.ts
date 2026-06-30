@@ -104,14 +104,8 @@ export class HilogAdapter {
       .join('\n');
   }
 
-  private async loadConnectedDevicesByName(): Promise<
-    ConnectedDevice[] | undefined
-  > {
-    const connectedDevices = await this.getConnectedDevices();
-    if (!connectedDevices) {
-      return undefined;
-    }
-    return connectedDevices;
+  private async loadConnectedDevicesByName(): Promise<ConnectedDevice[]> {
+    return this.getConnectedDevices();
   }
 
   /**
@@ -120,9 +114,6 @@ export class HilogAdapter {
    */
   async selectDevice(deviceArg?: string): Promise<string | undefined> {
     const serials = await this.getConnectedDeviceSerials();
-    if (!serials) {
-      return undefined;
-    }
 
     if (!deviceArg && serials.length === 1) {
       const serial = serials[0];
@@ -136,9 +127,6 @@ export class HilogAdapter {
     }
 
     const connectedDevices = await this.loadConnectedDevicesByName();
-    if (!connectedDevices) {
-      return undefined;
-    }
 
     if (deviceArg) {
       const found = this.findDeviceByArg(connectedDevices, deviceArg);
@@ -167,7 +155,7 @@ export class HilogAdapter {
   /**
    * 获取已连接设备 serial 列表（快速路径，不查询设备名）
    */
-  private async getConnectedDeviceSerials(): Promise<string[] | null> {
+  private async getConnectedDeviceSerials(): Promise<string[]> {
     const devices = await this.deviceManager.listDevices();
     if (devices.length === 0) {
       throw new Error(
@@ -180,7 +168,7 @@ export class HilogAdapter {
   /**
    * 获取已连接的设备列表（包含设备名）
    */
-  private async getConnectedDevices(): Promise<ConnectedDevice[] | null> {
+  private async getConnectedDevices(): Promise<ConnectedDevice[]> {
     const devices = await this.deviceManager.listDevicesWithName();
 
     if (devices.length === 0) {
