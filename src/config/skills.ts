@@ -50,6 +50,7 @@ export const AGENT_SKILLS_CONFIG = {
   },
   'claude-code': {
     path: '.claude/skills',
+    projectPath: '.claude/skills',
     displayName: 'claude-code',
   },
   codex: {
