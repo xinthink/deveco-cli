@@ -9,6 +9,7 @@ import JSON5 from 'json5';
 import { DependencyInfo } from './DependencyInfo.js';
 import { Constants } from './Constants.js';
 import { logger } from '../logger.js';
+import { CommonUtils } from '../../../../src/utils/common-utils.js';
 import { isRecord } from '../common/typeGuards.js';
 
 export class LockJson5Parser {
@@ -229,33 +230,28 @@ export class LockJson5Parser {
         specifier: string,
         version: string,
     ): void {
-        const dependencyPath = path.normalize(
-            path.join(this.projectPath, relativeModulePath, Constants.OH_MODULES_PATH, dependencyKey),
+        const defaultDepPath = CommonUtils.resolvePathWithinRoot(
+            this.projectPath,
+            path.join(relativeModulePath, Constants.OH_MODULES_PATH, dependencyKey),
         );
 
         try {
-            let filePathStr = version;
-            if (version.startsWith(LockJson5Parser.FILE_DEPENDENCY_PREFIX)) {
-                filePathStr = version.substring(LockJson5Parser.FILE_DEPENDENCY_PREFIX.length);
-            }
+            const fileDepPath = version.startsWith(LockJson5Parser.FILE_DEPENDENCY_PREFIX)
+                ? version.substring(LockJson5Parser.FILE_DEPENDENCY_PREFIX.length)
+                : version;
 
-            let filePath = filePathStr;
-            if (!path.isAbsolute(filePath)) {
-                filePath = path.join(this.projectPath, filePathStr);
-            }
+            const resolved = path.isAbsolute(fileDepPath)
+                ? CommonUtils.ensurePathWithinRoot(this.projectPath, fileDepPath)
+                : CommonUtils.resolvePathWithinRoot(this.projectPath, fileDepPath);
 
-            if (!fs.existsSync(filePath)) {
-                dependencyInfo.dependencyPath = dependencyPath;
-                return;
+            if (fs.existsSync(resolved)) {
+                dependencyInfo.path = specifier;
+                dependencyInfo.dependencyPath = this.fileNameForOhpm.test(version)
+                    ? defaultDepPath
+                    : resolved;
+            } else {
+                dependencyInfo.dependencyPath = defaultDepPath;
             }
-
-            dependencyInfo.path = specifier;
-            if (this.fileNameForOhpm.test(version)) {
-                dependencyInfo.dependencyPath = dependencyPath;
-                return;
-            }
-
-            dependencyInfo.dependencyPath = filePath;
         } catch (e) {
             logger.error('Invalid dependency path in lock.json5', e);
         }
