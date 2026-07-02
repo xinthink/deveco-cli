@@ -311,12 +311,18 @@ export class Project {
       );
     }
 
-    const { packageName, isSigned } = this.parseOutputMetadata(
-      metadataPath,
-      metadataKey
-    );
+    const { packageName, isSigned } = this.parseOutputMetadata(metadataPath, metadataKey);
+    let finalPackageName = packageName;
 
-    if (!isEmulator && !isSigned) {
+    // 优先获取签名包
+    if (!isSigned) {
+      const signedHapName = this.getSignedHapName(packageName, moduleNode.srcPath, product, target);
+      if (signedHapName) {
+        finalPackageName = signedHapName;
+      }
+    }
+
+    if (!isEmulator && !finalPackageName.endsWith('-signed.hap')) {
       throw new Error(
         `Target device is a real device, but the artifact for '${moduleName}' is not signed. Real devices cannot install unsigned packages.`
       );
@@ -325,7 +331,7 @@ export class Project {
     const packagePath = this.buildOutputPath(moduleNode.srcPath, product, [
       'outputs',
       target,
-      packageName,
+      finalPackageName,
     ]);
 
     if (!fs.existsSync(packagePath)) {
@@ -333,6 +339,35 @@ export class Project {
     }
 
     return packagePath;
+  }
+
+  private getSignedHapName(
+    packageName: string,
+    srcPath: string,
+    product: string,
+    target: string
+  ): string | null {
+    let signedHapName: string | null = null;
+    if (packageName.endsWith('-unsigned.hap')) {
+      signedHapName = packageName.replace('-unsigned.hap', '-signed.hap');
+    } else if (packageName.endsWith('-unsigned.hsp')) {
+      signedHapName = packageName.replace('-unsigned.hsp', '-signed.hsp');
+    }
+
+    if (!signedHapName) {
+      return null;
+    }
+
+    const signedPackagePath = this.buildOutputPath(srcPath, product, [
+      'outputs',
+      target,
+      signedHapName,
+    ]);
+
+    if (fs.existsSync(signedPackagePath)) {
+      return signedHapName;
+    }
+    return null;
   }
 
   private buildOutputPath(
