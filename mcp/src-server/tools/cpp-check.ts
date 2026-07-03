@@ -23,6 +23,7 @@ import {
 import { mcpLog } from '../utils/mcp-logger.js';
 import { ModuleInfoParse } from '../lsp/parse/ModuleInfoParse.js';
 import { executeBuildCommand } from '../lsp/sync/buildProject.js';
+import { CommonUtils } from '../../../src/utils/common-utils.js';
 
 /** initialize / 单文件诊断的超时（毫秒）。 */
 const INIT_TIMEOUT_MS = 60 * 1000;
@@ -587,8 +588,7 @@ function findCppModules(projectPath: string): ModuleInfo[] {
   const allModules = parser.getAllModuleInfo();
   const cppModules: ModuleInfo[] = [];
   for (const module of allModules) {
-    const normalizedSrcPath = module.srcPath.replace(/^\.\//, '');
-    const modulePath = path.join(projectPath, normalizedSrcPath);
+    const modulePath = CommonUtils.resolvePathWithinRoot(projectPath, module.srcPath);
     if (hasCppFiles(modulePath)) {
       cppModules.push(module);
     }
@@ -605,8 +605,8 @@ function findCompileCommandsFiles(projectPath: string): string[] {
   const modules = parser.getAllModuleInfo();
 
   for (const module of modules) {
-    const normalizedSrcPath = module.srcPath.replace(/^\.\//, '');
-    const cxxPath = path.join(projectPath, normalizedSrcPath, '.cxx');
+    const modulePath = CommonUtils.resolvePathWithinRoot(projectPath, module.srcPath);
+    const cxxPath = path.join(modulePath, '.cxx');
 
     if (!fs.existsSync(cxxPath)) {
       continue;

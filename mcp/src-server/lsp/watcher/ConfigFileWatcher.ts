@@ -10,6 +10,7 @@ import { EventEmitter } from 'events';
 import { logger } from '../logger.js';
 import { Constants } from '../parse/Constants.js';
 import { findJsonObject } from '../utils.js';
+import { CommonUtils } from '../../../../src/utils/common-utils.js';
 
 export type ConfigChangeSource = 'ohPackage' | 'buildProfile';
 
@@ -161,7 +162,7 @@ export class ConfigFileWatcher extends EventEmitter {
 
     private emitModuleAddedEvents(modules: BuildProfileModule[], ts: number): void {
         for (const mod of modules) {
-            const moduleDir = path.resolve(this.projectRoot, mod.srcPath);
+            const moduleDir = CommonUtils.resolvePathWithinRoot(this.projectRoot, mod.srcPath);
             this.emit('configChanged', {
                 source: 'buildProfile',
                 kind: ConfigChangeKind.ModulesAdded,
@@ -175,7 +176,7 @@ export class ConfigFileWatcher extends EventEmitter {
 
     private emitModuleRemovedEvents(modules: BuildProfileModule[], ts: number): void {
         for (const mod of modules) {
-            const moduleDir = path.resolve(this.projectRoot, mod.srcPath);
+            const moduleDir = CommonUtils.resolvePathWithinRoot(this.projectRoot, mod.srcPath);
             this.emit('configChanged', {
                 source: 'buildProfile',
                 kind: ConfigChangeKind.ModulesRemoved,
@@ -189,7 +190,7 @@ export class ConfigFileWatcher extends EventEmitter {
 
     private emitModuleRenamedEvents(renamed: { before: BuildProfileModule; after: BuildProfileModule }[], ts: number): void {
         for (const r of renamed) {
-            const moduleDir = path.resolve(this.projectRoot, r.after.srcPath);
+            const moduleDir = CommonUtils.resolvePathWithinRoot(this.projectRoot, r.after.srcPath);
             this.emit('configChanged', {
                 source: 'buildProfile',
                 kind: ConfigChangeKind.ModulesRenamed,
@@ -204,7 +205,7 @@ export class ConfigFileWatcher extends EventEmitter {
 
     private emitModuleMovedEvents(moved: { before: BuildProfileModule; after: BuildProfileModule }[], ts: number): void {
         for (const m of moved) {
-            const moduleDir = path.resolve(this.projectRoot, m.after.srcPath);
+            const moduleDir = CommonUtils.resolvePathWithinRoot(this.projectRoot, m.after.srcPath);
             this.emit('configChanged', {
                 source: 'buildProfile',
                 kind: ConfigChangeKind.ModulesMoved,
@@ -444,7 +445,7 @@ export class ConfigFileWatcher extends EventEmitter {
         // 从 build-profile.json5 获取各模块，监听各模块的 oh-package.json5
         const modules = this.parseModulesFromBuildProfile();
         for (const mod of modules) {
-            const modulePath = path.resolve(this.projectRoot, mod.srcPath);
+            const modulePath = CommonUtils.resolvePathWithinRoot(this.projectRoot, mod.srcPath);
             const moduleOhPackage = path.join(modulePath, Constants.OH_PACKAGE_JSON5);
             if (fs.existsSync(moduleOhPackage)) {
                 targets.push(moduleOhPackage);

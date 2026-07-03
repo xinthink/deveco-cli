@@ -21,6 +21,7 @@ import { LockJson5Parser } from './LockJson5Parser.js';
 import { Constants, DEPENDENCY_MAP_PATH, DEPENDENCY_MAP_JSON5 } from './Constants.js';
 import { logger } from '../logger.js';
 import { findJsonObject, toUnixPath } from '../utils.js';
+import { CommonUtils } from '../../../../src/utils/common-utils.js';
 import { DependencyMapParseResult, DependencyMapParseStatus } from '../constant.js';
 import { isRecord } from '../common/typeGuards.js';
 import { ModuleInfoParse } from './ModuleInfoParse.js';
@@ -128,8 +129,7 @@ export class ModulesDependencyParse {
             if (filterSet && !filterSet.has(name)) {
                 continue;
             }
-            const srcPath = mod.srcPath;
-            const modulePath = path.resolve(this.projectPath, srcPath);
+            const modulePath = CommonUtils.resolvePathWithinRoot(this.projectPath, mod.srcPath);
             const depPathForModule = path.join(dependencyMapPath, name);
             const modulePathStr = toUnixPath(modulePath);
 
@@ -155,8 +155,7 @@ export class ModulesDependencyParse {
         moduleModels: ModuleModel[],
     ): void {
         const name = mod.name;
-        const srcPath = mod.srcPath;
-        const modulePath = path.resolve(this.projectPath, srcPath);
+        const modulePath = CommonUtils.resolvePathWithinRoot(this.projectPath, mod.srcPath);
         const depPathForModule = path.join(dependencyMapPath, name);
         const modulePathStr = toUnixPath(modulePath);
 
