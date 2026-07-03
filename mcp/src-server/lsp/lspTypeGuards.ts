@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { ContentChange } from './core/LspProtocols.js';
+import { TextDocumentContentChangeEvent } from './core/LspProtocols.js';
 import { isRecord, isStringArray } from './common/typeGuards.js';
 
 export function isPosition(value: unknown): value is { line: number; character: number } {
@@ -29,7 +29,7 @@ export function isTextDocument(
 
 export { isStringArray };
 
-export function isContentChange(value: unknown): value is ContentChange {
+export function isContentChange(value: unknown): value is TextDocumentContentChangeEvent {
     if (!isRecord(value)) {
         return false;
     }

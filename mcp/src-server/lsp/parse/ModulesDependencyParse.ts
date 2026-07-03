@@ -291,7 +291,12 @@ export class ModulesDependencyParse {
             return;
         }
         if (typeof obj.data.apiVersion === 'string') {
-            moduleModel.compileSdkLevel = obj.data.apiVersion;
+            const apiVersion = parseInt(obj.data.apiVersion, 10);
+            if (!Number.isNaN(apiVersion) && apiVersion >= 26 && typeof obj.data.platformVersion === 'string') {
+                moduleModel.compileSdkLevel = obj.data.platformVersion;
+            } else {
+                moduleModel.compileSdkLevel = obj.data.apiVersion;
+            }
         }
         if (typeof obj.data.releaseType === 'string') {
             moduleModel.compileSdkType = obj.data.releaseType;
@@ -336,7 +341,7 @@ export class ModulesDependencyParse {
     private parseBySplit(input: string): [string, string] {
         const openParen = input.indexOf('(');
         if (openParen === -1 || !input.endsWith(')')) {
-            return [input, ''];
+            return [input, input];
         }
         const version = input.substring(0, openParen);
         const level = input.substring(openParen + 1, input.length - 1);

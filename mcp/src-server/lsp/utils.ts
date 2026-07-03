@@ -77,6 +77,9 @@ export function isString(value: unknown): value is string {
 }
 
 export function toFileUri(filePath: string): string {
+    if (filePath.startsWith('file:')) {
+        return filePath;
+    }
     try {
         const absPath = path.resolve(filePath);
         let uriStr = new URL(`file://${absPath}`).toString();

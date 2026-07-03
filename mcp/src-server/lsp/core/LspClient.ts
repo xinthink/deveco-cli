@@ -115,6 +115,22 @@ export class LspClient extends EventEmitter {
         this.sendRaw(JSON.stringify(message), method);
     }
 
+    /** 发送标准 LSP notification（无 id）。 */
+    public sendNotification(method: string, params: unknown): void {
+        this.sendRaw(
+            JSON.stringify({ jsonrpc: '2.0', method, params }),
+            method,
+        );
+    }
+
+    /** 发送标准 LSP request（带 id，等待响应）。 */
+    public sendRequest(method: string, params: unknown, id: number | string): void {
+        this.sendRaw(
+            JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+            method,
+        );
+    }
+
     private buildLspMessage(jsonBody: string): string {
         const contentBuffer = Buffer.from(jsonBody, 'utf8');
         return `Content-Length: ${contentBuffer.length}\r\n\r\n${jsonBody}`;

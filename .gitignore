@@ -5,3 +5,5 @@ THIRD-PARTY-LICENSES
 .env
 .DS_Store
 cli.js.map
+.idea
+.vscode

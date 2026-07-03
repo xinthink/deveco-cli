@@ -5,6 +5,7 @@
 import { Command } from 'commander';
 import { createMcpServer } from '../../mcp/src-server/index.js';
 import { ToolProvider } from '../utils/tool-provider.js';
+import { startArktsLspServer } from './serve-lsp.js';
 
 /**
  * 启动 stdio 模式的 MCP server，并接管当前进程的 stdin/stdout 作为通信通道。
@@ -56,6 +57,21 @@ serveCommand
   .description('Start a local stdio-based MCP server')
   .action(async () => {
     await startStdioMcpServer();
+  });
+
+serveCommand
+  .command('lsp')
+  .description('Start a bundled LSP language server')
+  .option('--arkts', 'Start the ArkTS language server (ace-server)')
+  .option('--project-path <path>', 'HarmonyOS project root path', process.cwd())
+  .action(async (options) => {
+    if (!options.arkts) {
+      console.error('Use --arkts to start the ArkTS language server.');
+      process.exit(1);
+    }
+    await startArktsLspServer({
+      projectPath: options.projectPath,
+    });
   });
 
 export default serveCommand;

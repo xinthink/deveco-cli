@@ -9,7 +9,7 @@ import { DependencyMapWatcher, ReloadEvent } from './watcher/DependencyMapWatche
 import { syncProject } from './sync/buildProject.js';
 import { ohpmInstallAll } from './sync/ohpmInstall.js';
 import { tryWithBuildLock } from '../../../src/utils/build-lock.js';
-import { LspMessage, LspRequest, EtsFileItem } from './types.js';
+import { LspMessage, LspRequest, EtsFileItem, OpenFileParam } from './types.js';
 import { JSONRPC_VERSION, LSP_METHOD } from './constant.js';
 import { ArkTsProxyError } from './ArkTsProxyError.js';
 import { ModuleDependencyInfo } from './model/ModuleDependencyInfo.js';
@@ -33,6 +33,12 @@ export interface ArktsLspManagerConfig {
     workspaceRoot: string;
     indexLogPath: string;
     nodeMaxOldSpaceSize?: number;
+    /**
+     * 是否使用标准 LSP 协议。
+     * true  → ace-server/out/standardIndex/index.js 存在（DevEco >= 26.0.0.610），走标准化协议；
+     * false → 该文件不存在（老版本），走 ace-server 私有协议。
+     */
+    useStandardProtocol: boolean;
 }
 
 /**
@@ -40,10 +46,10 @@ export interface ArktsLspManagerConfig {
  * - 直接持有 `LspServerProxy`（其内部 spawn 唯一一个 ace-server 子进程）；
  * - 维持 `ConfigFileWatcher` / `DependencyMapWatcher`；
  * - 处理 `arkts/syncProject` 请求（ohpm install + hvigor sync）；
- * - 把 LSP 上行消息（initialized / indexingProgress / publishDiagnostics 等）通过
- *   `setOnMessage` 注册的回调统一上抛给上层（`ArktsCheckTool`）。
+ * - 把 LSP 上行消息通过 `setOnMessage` 注册的回调统一上抛给上层（`ArktsCheckTool`）。
  *
- * 不再涉及 UDS / 多客户端 / 心跳 / process.exit。
+ * 内部通信使用标准 LSP 协议（initialize / initialized / didOpen / publishDiagnostics 等），
+ * 对上层暴露的 arkts/* 通知保留为进程内状态信号。
  */
 export class ArktsLspManager {
     private readonly config: ArktsLspManagerConfig;
@@ -84,13 +90,60 @@ export class ArktsLspManager {
         this.lspProxy.sendNotification(msg);
     }
 
-    /** 上行请求（hover / definition / references；当前 arkts-check 未使用） */
+    /** 上行请求（hover / definition / references） */
     sendRequest(msg: LspRequest): void {
         if (!this.lspProxy) {
             logger.warn('[ArktsLspManager] sendRequest before LSP ready, dropped');
             return;
         }
         this.lspProxy.sendRequest(msg);
+    }
+
+    /** textDocument/diagnostic — 标准 LSP 拉取式诊断请求，返回 Promise<unknown>。 */
+    async diagnostic(params: { textDocument: { uri: string } }): Promise<unknown> {
+        if (!this.lspProxy) {
+            throw new Error('[ArktsLspManager] diagnostic before LSP ready');
+        }
+        return this.lspProxy.diagnostic(params);
+    }
+
+    /**
+     * 通用语言特性请求（async）：直接发 LSP request 并 await response。
+     * 供 hover / definition / references / completion 等调用，
+     * 由调用方保证 method 和 params 正确。
+     */
+    async sendFeatureRequest(method: string, params: unknown): Promise<unknown> {
+        if (!this.useStandardProtocol) {
+            throw new Error(
+                `Language feature '${method}' is not supported on the installed DevEco Studio. ` +
+                    'The standard LSP protocol entry (plugins/openharmony/ace-server/out/standardIndex/index.js) was not found. ' +
+                    'Please upgrade DevEco Studio to version 26.0.0.610 or later to use this tool.',
+            );
+        }
+        if (!this.lspProxy) {
+            throw new Error('LSP not ready');
+        }
+        return this.lspProxy.sendFeatureRequest(method, params);
+    }
+
+    /** 是否使用标准 LSP 协议（false=老版本 ace-server 私有协议）。 */
+    get useStandardProtocol(): boolean {
+        return this.config.useStandardProtocol;
+    }
+
+    /** 老版本：onAsyncOpenFile（ace-server 私有 didOpen）。仅 legacy 模式调用。 */
+    onAsyncOpenFile(param: OpenFileParam): void {
+        this.lspProxy?.onAsyncOpenFile(param);
+    }
+
+    /** 老版本：closeFile(uri, isManual)。仅 legacy 模式调用。 */
+    closeFileLegacy(uri: string, isManual: boolean): void {
+        this.lspProxy?.closeFileLegacy(uri, isManual);
+    }
+
+    /** 注册 publishDiagnostics 回调（按 uri 匹配），standard/legacy 共用。 */
+    registerDiagnosticCallback(uri: string): void {
+        this.lspProxy?.registerDiagnosticCallback(uri);
     }
 
     /**
@@ -172,6 +225,7 @@ export class ArktsLspManager {
             this.config.workspaceRoot,
             this.config.indexLogPath,
             this.config.nodeMaxOldSpaceSize,
+            this.config.useStandardProtocol,
         );
         proxy.setOnMessage((msg) => this.handleLspMessage(msg));
         proxy.start(editorOpenFiles, (success) => this.handleLspInitialized(success));
@@ -250,16 +304,10 @@ export class ArktsLspManager {
                 dependencies: d.dependencies ?? {},
                 dynamicDependencies: d.dynamicDependencies ?? {},
             }));
-            this.lspProxy.sendNotification({
-                jsonrpc: JSONRPC_VERSION,
-                method: LSP_METHOD.ON_DID_CHANGE_PACKAGE_DEPENDENCIES_CLIENT,
-                params: { moduleSet },
-            });
-            // 通知上层清除"需要 Sync"的提示
             this.onMessage({
                 jsonrpc: JSONRPC_VERSION,
                 method: LSP_METHOD.ARKTS_SYNC_COMPLETED,
-                params: { success: true },
+                params: { success: true, moduleSet },
             });
         });
         this.depMapWatcher.start();
