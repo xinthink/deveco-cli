@@ -743,6 +743,28 @@ devecocli skills remove --skill skillname --agent agentname  # skillname需替�
 }
 ```
 
+### `serve lsp`
+
+启动本地 `LSP` 语言服务。智能体配置 `LSP` 服务后，可通过 `LSP` 协议获取 `ArkTS` 代码补全、跳转定义、悬浮提示、引用查找、诊断等语言特性。当前支持 `ArkTS`（`ace-server`）。
+
+```bash
+{
+  "lsp": {
+    "ArkTS": {
+      "command": [
+        "devecocli",
+        "serve",
+        "lsp",
+        "--arkts"
+      ],
+      "extensions": [
+        ".ets"
+      ]
+    }
+  }
+}
+```
+
 ## 常见问题
 
 [FAQ](https://gitcode.com/openharmony-sig/deveco-cli/wiki/FAQ.md)

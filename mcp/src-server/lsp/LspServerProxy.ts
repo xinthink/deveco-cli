@@ -3,8 +3,9 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { EtsFileItem, isNotificationRequest, LspMessage, LspNotification, LspRequest, LspResponse } from './types.js';
+import { EtsFileItem, isNotificationRequest, LspMessage, LspNotification, LspRequest, OpenFileParam } from './types.js';
 import { ClientMessageHandle } from './core/ClientMessageHandle.js';
+import { LegacyClientMessageHandle } from './legacy/LegacyClientMessageHandle.js';
 import { getLogPath, logger } from './logger.js';
 import path from 'path';
 import { InitializationOptions } from './model/InitializationOptions.js';
@@ -16,29 +17,50 @@ import { Params } from './model/Params.js';
 import { ModuleDependencyInfo } from './model/ModuleDependencyInfo.js';
 import { computeLspServerMaxSize, normalizePath, toFileUri } from './utils.js';
 import { ReloadEvent } from './watcher/DependencyMapWatcher.js';
-import { JSONRPC_VERSION, LSP_INIT_TIMEOUT_MS, LSP_METHOD, LSP_SEND_LABEL } from './constant.js';
+import { JSONRPC_VERSION, LSP_INIT_TIMEOUT_MS, LSP_METHOD } from './constant.js';
 import { isRecord } from './common/typeGuards.js';
-import { isContentChange, isPosition, isStringArray, isTextDocument } from './lspTypeGuards.js';
+import type {
+    DidOpenTextDocumentParams,
+    DidChangeTextDocumentParams,
+    DidCloseTextDocumentParams,
+    HoverParams,
+    DefinitionParams,
+    ReferenceParams,
+    Position,
+    DocumentDiagnosticParams,
+} from './core/LspProtocols.js';
 
 /**
  * LspServerProxy
  *
  * 进程内单例：直接持有 ClientMessageHandle（其内部 spawn 唯一一个 ace-server 子进程），
- * 把 LSP 上行消息（initialized/indexingProgress/publishDiagnostics 等）通过 setOnMessage 注册的
- * 回调统一抛给上层（ArktsLspManager / ArktsCheckTool），不再走 UDS / 多客户端广播。
+ * 使用标准 LSP 协议与子进程通信。所有语言特性请求通过标准 request/response 完成。
  */
 export class LspServerProxy {
-    private messageHandle: ClientMessageHandle;
+    private messageHandle: ClientMessageHandle | LegacyClientMessageHandle;
+    /** 标准协议句柄（仅 useStandardProtocol=true 时有效；legacy 模式不应调用 standard-only 方法）。 */
+    private get stdHandle(): ClientMessageHandle {
+        return this.messageHandle as ClientMessageHandle;
+    }
+    /** 老版本协议句柄（仅 useStandardProtocol=false 时有效）。 */
+    private get legacyHandle(): LegacyClientMessageHandle {
+        return this.messageHandle as LegacyClientMessageHandle;
+    }
+    /** 老版本：onAsyncOpenFile。仅 legacy 模式调用。 */
+    onAsyncOpenFile(param: OpenFileParam): void {
+        this.legacyHandle.onAsyncOpenFile(param);
+    }
+    /** 老版本：closeFile(uri, isManual)。仅 legacy 模式调用。 */
+    closeFileLegacy(uri: string, isManual: boolean): void {
+        this.legacyHandle.closeFile(uri, isManual);
+    }
     private serverPath: string;
     private logPath: string;
     private lastStartErrorMessage: string | null = null;
-    /** 初始化与 reload 时使用的 Params，modules 存于 initializationOptions.modules */
     private currentParams: Params | null = null;
     private indexLogPath: string;
-    /** 上一轮 reload 返回的 depsOnly，用于 byName 为空时作为“旧状态”做 diff（标出删除的依赖） */
     private lastDepsOnlyForDiff: DepsOnlyItem[] = [];
 
-    /** 当前模块列表（从 currentParams 读取，便于复用逻辑） */
     private get currentModuleModels(): ModuleModel[] {
         return this.currentParams?.initializationOptions?.modules ?? [];
     }
@@ -49,20 +71,31 @@ export class LspServerProxy {
         private rootUri: string,
         indexLogPath: string,
         private nodeMaxOldSpaceSize?: number,
+        private readonly useStandardProtocol: boolean = true,
     ) {
-        this.serverPath = path.resolve(arktsLangServer, 'ace-server', 'out', 'index.js');
+        this.serverPath = this.useStandardProtocol
+            ? path.resolve(arktsLangServer, 'ace-server', 'out', 'standardIndex', 'index.js')
+            : path.resolve(arktsLangServer, 'ace-server', 'out', 'index.js');
         this.logPath = getLogPath();
         this.indexLogPath = indexLogPath || this.logPath;
-        this.messageHandle = new ClientMessageHandle({
+        const handleConfig = {
             serverPath: this.serverPath,
             logPath: this.logPath,
             indexingDataLocation: this.indexLogPath,
-        });
-        // 把 ClientMessageHandle 的 broadcastToClients 直接桥接到本类的 onLspMessage，
-        // 这样上层只需 setOnMessage 一个入口即可拿到所有 LSP 上行消息。
+        };
+        this.messageHandle = this.useStandardProtocol
+            ? new ClientMessageHandle(handleConfig)
+            : new LegacyClientMessageHandle(handleConfig);
         this.messageHandle.setBroadcastToClients((msg: LspMessage) => this.onLspMessage(msg));
     }
 
+    /**
+     * 标准 LSP 启动流程：
+     *  1. spawn 子进程
+     *  2. 解析模块依赖图
+     *  3. send initialize request → 等待 response（capabilities）
+     *  4. send initialized notification
+     */
     async start(editorOpenFiles: EtsFileItem[], onInitialized?: (success: boolean) => void): Promise<void> {
         let success = false;
         try {
@@ -89,26 +122,20 @@ export class LspServerProxy {
             await this.messageHandle.start(serverMaxSize);
 
             this.currentParams = new Params(fileUri, options, new Capabilities());
-            this.messageHandle.sendInitialize(this.currentParams, 1);
 
-            this.messageHandle.onIndexingProgressUpdate(() => {
-                this.onLspMessage({
+            if (this.useStandardProtocol) {
+                const handle = this.messageHandle as ClientMessageHandle;
+                await handle.sendInitializeResettable(this.currentParams, LSP_INIT_TIMEOUT_MS);
+                logger.info('[LSP] initialize response received');
+                handle.broadcastToClients({
                     jsonrpc: JSONRPC_VERSION,
                     method: LSP_METHOD.ARKTS_INDEXING_PROGRESS,
                     params: {},
                 });
-            });
-
-            await this.withResettableTimeout(
-                (resolve, reset) => {
-                    this.messageHandle.onIndexingProgressUpdate(reset);
-                    this.messageHandle.onInitializationCompleted(resolve);
-                },
-                'LSP initialization',
-                LSP_INIT_TIMEOUT_MS,
-            );
-
-            this.messageHandle.sendInitialized(editorOpenFiles);
+                handle.sendInitialized();
+            } else {
+                await this.startLegacy(this.currentParams, editorOpenFiles);
+            }
             success = true;
         } catch (e) {
             this.lastStartErrorMessage = e instanceof Error ? e.message : String(e);
@@ -116,6 +143,57 @@ export class LspServerProxy {
             await this.messageHandle.stop();
         }
         onInitialized?.(success);
+    }
+
+    /**
+     * 老版本 ace-server 私有协议启动流程：
+     *  1. sendInitialize(params, 1)（fire-and-forget，不发标准 request）
+     *  2. 等 aceProject/onIndexingProgressUpdate（进度）+ aceProject/onModuleInitFinish（完成）
+     *  3. sendInitialized(editorOpenFiles)（带 editors）
+     */
+    private async startLegacy(params: Params, editorOpenFiles: EtsFileItem[]): Promise<void> {
+        const handle = this.messageHandle as LegacyClientMessageHandle;
+        handle.sendInitialize(params, 1);
+        handle.onIndexingProgressUpdate(() => {
+            this.onLspMessage({
+                jsonrpc: JSONRPC_VERSION,
+                method: LSP_METHOD.ARKTS_INDEXING_PROGRESS,
+                params: {},
+            });
+        });
+        await this.withResettableTimeout(
+            (resolve, reset) => {
+                handle.onIndexingProgressUpdate(reset);
+                handle.onInitializationCompleted(resolve);
+            },
+            'LSP initialization',
+            LSP_INIT_TIMEOUT_MS,
+        );
+        handle.sendInitialized(editorOpenFiles);
+    }
+
+    private withResettableTimeout(
+        registerCallback: (resolve: () => void, reset: () => void) => void,
+        operationName: string,
+        timeoutMs: number,
+    ): Promise<void> {
+        return new Promise((resolve, reject) => {
+            let timeoutId: ReturnType<typeof setTimeout>;
+            const schedule = () => {
+                timeoutId = setTimeout(() => {
+                    reject(new Error(`${operationName} timeout after ${timeoutMs}ms`));
+                }, timeoutMs);
+            };
+            const reset = () => {
+                clearTimeout(timeoutId);
+                schedule();
+            };
+            schedule();
+            registerCallback(() => {
+                clearTimeout(timeoutId);
+                resolve();
+            }, reset);
+        });
     }
 
     consumeStartErrorMessage(): string | null {
@@ -130,18 +208,19 @@ export class LspServerProxy {
         this.onLspMessage = callback;
     }
 
-    registerDiagnosticCallback(filePath: string): void {
-        const uri = toFileUri(filePath);
+    /** 注册诊断回调：文件被打开后，收到 publishDiagnostics 时回调。 */
+    registerDiagnosticCallback(uri: string): void {
+        logger.info(`[LSP] registerDiagnosticCallback uri='${uri}', useStandardProtocol=${this.useStandardProtocol}`);
         this.messageHandle.registerRequestCallback(uri, (method: string, payload: unknown) => {
             const diagnosticPayload = isRecord(payload) ? payload : {};
-            logger.info(`[LSP] onDiagnosticCompleted called, filePath: ${filePath}`);
+            logger.info(`[LSP] onDiagnosticCompleted called, uri: ${uri}`);
             const response: LspNotification = {
                 jsonrpc: JSONRPC_VERSION,
                 method,
                 params: {
                     uri: typeof diagnosticPayload.uri === 'string' ? diagnosticPayload.uri : uri,
                     diagnostics: Array.isArray(diagnosticPayload.diagnostics)
-                        ? diagnosticPayload.diagnostics.filter((d): d is string => typeof d === 'string')
+                        ? diagnosticPayload.diagnostics
                         : [],
                     ...(typeof diagnosticPayload.errorMessage === 'string'
                         ? { errorMessage: diagnosticPayload.errorMessage }
@@ -152,22 +231,53 @@ export class LspServerProxy {
         });
     }
 
-    registerRequestCallback(globalId: number | string, requestId: number): void {
-        this.messageHandle.registerRequestCallback(requestId, (method: string, payload: unknown) => {
-            logger.info(`[LSP] onRequestCompleted called, requestId: ${requestId}, method: ${method}`);
-            const response: LspResponse = {
-                jsonrpc: JSONRPC_VERSION,
-                id: globalId,
-                result: isRecord(payload) ? payload.result : undefined,
-            };
-            this.onLspMessage(response);
-        });
+    /* ========== 标准语言特性请求（返回 Promise） ========== */
+
+    /** textDocument/hover — 返回标准 Hover 结果。 */
+    async hover(params: HoverParams): Promise<unknown> {
+        const uri = params.textDocument.uri;
+        this.registerDiagnosticCallback(uri);
+        return this.stdHandle.sendLspRequest(LSP_METHOD.HOVER, params);
+    }
+
+    /** textDocument/definition — 返回标准 Definition 结果。 */
+    async definition(params: DefinitionParams): Promise<unknown> {
+        return this.stdHandle.sendLspRequest(LSP_METHOD.DEFINITION, params);
+    }
+
+    /** textDocument/references — 返回标准 Location[] 结果。 */
+    async references(params: ReferenceParams): Promise<unknown> {
+        return this.stdHandle.sendLspRequest(LSP_METHOD.REFERENCES, params);
+    }
+
+    /** textDocument/completion — 返回标准 CompletionList 结果。 */
+    async completion(params: { textDocument: { uri: string }; position: Position }): Promise<unknown> {
+        return this.stdHandle.sendLspRequest(LSP_METHOD.COMPLETION, params);
+    }
+
+    /** textDocument/documentSymbol — 返回标准 DocumentSymbol[] 结果。 */
+    async documentSymbol(params: { textDocument: { uri: string } }): Promise<unknown> {
+        return this.stdHandle.sendLspRequest(LSP_METHOD.DOCUMENT_SYMBOL, params);
+    }
+
+    /** textDocument/diagnostic — 返回标准 DocumentDiagnosticReport 结果。 */
+    async diagnostic(params: DocumentDiagnosticParams): Promise<unknown> {
+        return this.stdHandle.sendLspRequest(LSP_METHOD.DIAGNOSTIC, params, 2 * 60 * 1000);
     }
 
     /**
-     * 仅解析依赖并更新 ModuleModel，通知 LSP。
-     * - 工程级 oh-package 变化（event.fullReload）：解析全部模块的依赖。
-     * - 模块级依赖变化（!fullReload）：只解析 event.changedModules 的依赖，与当前列表合并。
+     * 通用语言特性请求：直接发 LSP request 并 await response。
+     * 供 hover / definition / references / completion 等使用，
+     * 由调用方保证 method 名称和 params 结构正确。
+     */
+    async sendFeatureRequest(method: string, params: unknown): Promise<unknown> {
+        return this.stdHandle.sendLspRequest(method, params);
+    }
+
+    /* ========== 依赖管理 ========== */
+
+    /**
+     * 仅解析依赖并更新 ModuleModel，通过 workspace/didChangeConfiguration 通知 LSP。
      */
     reloadDependenciesOnly(event?: ReloadEvent): DepsOnlyItem[] {
         const fullReload = event?.fullReload ?? false;
@@ -180,6 +290,7 @@ export class LspServerProxy {
             this.markDependencyTypesIncremental(depsOnly);
             const moduleModels = this.mergeDepsOnlyIntoModuleList(depsOnly, byName);
             this.applyModuleModelsUpdate(moduleModels);
+            this.sendDidChangeConfiguration({ moduleSet: moduleModels });
             logger.info(`[LspServerProxy] Dependencies only (all) reloaded, count: ${moduleModels.length}`);
             this.lastDepsOnlyForDiff = depsOnly;
             return depsOnly;
@@ -197,16 +308,20 @@ export class LspServerProxy {
         this.markDependencyTypesIncremental(depsOnly);
         const moduleModels = this.mergeIncrementalDeps(this.currentModuleModels, removedSet, depsOnly);
         this.applyModuleModelsUpdate(moduleModels);
+        this.sendDidChangeConfiguration({ moduleSet: moduleModels });
         logger.info(`[LspServerProxy] Dependencies only (incremental) reloaded, count: ${moduleModels.length}`);
         this.lastDepsOnlyForDiff = depsOnly;
         return depsOnly;
+    }
+
+    private sendDidChangeConfiguration(settings: unknown): void {
+        this.stdHandle.sendDidChangeConfiguration(settings);
     }
 
     private getModuleModelsByName(): Map<string, ModuleModel> {
         return new Map(this.currentModuleModels.map((m) => [m.moduleName ?? '', m]));
     }
 
-    /** 全量/增量时为每个 ModuleDependencyInfo 设置 type：新增 'add'，删除 'delete'，未变动不设 */
     private markDependencyTypesIncremental(depsOnly: DepsOnlyItem[]): void {
         const byName = this.getModuleModelsByName();
         const lastByName = new Map(this.lastDepsOnlyForDiff.map((d) => [d.moduleName ?? '', d]));
@@ -226,7 +341,6 @@ export class LspServerProxy {
         }
     }
 
-    /** 取某模块的“旧”依赖：优先 byName，否则用 lastByName */
     private getOldDepsForModule(
         moduleName: string,
         byName: Map<string, ModuleModel>,
@@ -245,7 +359,6 @@ export class LspServerProxy {
         return { oldDeps, oldDynamic };
     }
 
-    /** 对新 map 中新增的标 add，对旧有且新 map 没有的调用 onDelete 写入 delete 项 */
     private markAddAndDeleteInDeps(
         oldMap: Record<string, ModuleDependencyInfo>,
         newMap: Record<string, ModuleDependencyInfo>,
@@ -273,7 +386,6 @@ export class LspServerProxy {
         });
     }
 
-    /** 从 depsOnly 单条创建最小化 ModuleModel（仅 name/path/deps） */
     private createMinimalModelFromDepsItem(item: DepsOnlyItem): ModuleModel {
         const model = new ModuleModel(item.modulePath);
         model.moduleName = item.moduleName;
@@ -285,7 +397,6 @@ export class LspServerProxy {
         return model;
     }
 
-    /** 将 depsOnly 合并为模块列表：优先复用 byName 中已有 ModuleModel，否则新建。 */
     private mergeDepsOnlyIntoModuleList(depsOnly: DepsOnlyItem[], byName: Map<string, ModuleModel>): ModuleModel[] {
         const result: ModuleModel[] = [];
         for (const item of depsOnly) {
@@ -302,7 +413,6 @@ export class LspServerProxy {
         return result;
     }
 
-    /** 增量：从当前列表去掉 removed，用 depsOnly 更新/追加对应模块 */
     private mergeIncrementalDeps(
         current: ModuleModel[],
         removedSet: Set<string>,
@@ -329,7 +439,6 @@ export class LspServerProxy {
         return result;
     }
 
-    /** 更新 currentParams.modules 并填充路径 */
     private applyModuleModelsUpdate(moduleModels: ModuleModel[]): void {
         this.fillModuleModelsPaths(moduleModels);
         if (this.currentParams) {
@@ -337,10 +446,6 @@ export class LspServerProxy {
         }
     }
 
-    /**
-     * 根据 sdkPath 计算 SDK 相关路径，并填充到模块列表中。
-     * start 与 reloadDependenciesOnly 共用。
-     */
     private fillModuleModelsPaths(models: ModuleModel[]): void {
         const basePath = this.sdkPath;
         const aceLoaderPath = normalizePath(path.join(basePath, 'default/openharmony/ets/build-tools/ets-loader'));
@@ -354,108 +459,31 @@ export class LspServerProxy {
         }
     }
 
+    /* ========== 通知分发（兼容上层 sendNotification 调用） ========== */
+
     sendRequest(msg: LspRequest) {
         switch (msg.method) {
             case LSP_METHOD.HOVER:
-                this.handleHoverRequest(msg);
+                this.stdHandle.sendLspRequest(LSP_METHOD.HOVER, msg.params).then(
+                    (result) => this.onLspMessage({ jsonrpc: JSONRPC_VERSION, id: msg.id, result }),
+                    (err) => this.onLspMessage({ jsonrpc: JSONRPC_VERSION, id: msg.id, error: { code: -32603, message: err.message } }),
+                );
                 break;
             case LSP_METHOD.DEFINITION:
-                this.handleDefinitionRequest(msg);
+                this.stdHandle.sendLspRequest(LSP_METHOD.DEFINITION, msg.params).then(
+                    (result) => this.onLspMessage({ jsonrpc: JSONRPC_VERSION, id: msg.id, result }),
+                    (err) => this.onLspMessage({ jsonrpc: JSONRPC_VERSION, id: msg.id, error: { code: -32603, message: err.message } }),
+                );
                 break;
             case LSP_METHOD.REFERENCES:
-                this.handleReferencesRequest(msg);
+                this.stdHandle.sendLspRequest(LSP_METHOD.REFERENCES, msg.params).then(
+                    (result) => this.onLspMessage({ jsonrpc: JSONRPC_VERSION, id: msg.id, result }),
+                    (err) => this.onLspMessage({ jsonrpc: JSONRPC_VERSION, id: msg.id, error: { code: -32603, message: err.message } }),
+                );
                 break;
             default:
                 logger.warn(`Unhandled LSP request: ${msg.method}`);
         }
-    }
-
-    private handleHoverRequest(msg: LspRequest): void {
-        const params = msg.params;
-        if (!isRecord(params)) {
-            logger.error('Invalid client textDocument/hover, params missing or not an object');
-            return;
-        }
-
-        const { textDocument, position, requestId } = params;
-        if (!isRecord(textDocument) || typeof textDocument.uri !== 'string' || !isPosition(position)) {
-            logger.error('Invalid client textDocument/hover, malformed or missing required parameters');
-            return;
-        }
-
-        if (typeof requestId !== 'number') {
-            logger.error('Invalid client textDocument/hover, requestId missing or not a number');
-            return;
-        }
-
-        this.registerRequestCallback(msg.id, requestId);
-        this.messageHandle.sendAsyncRequest(
-            LSP_METHOD.ON_ASYNC_HOVER,
-            params,
-            requestId,
-            LSP_SEND_LABEL.ON_ASYNC_HOVER,
-        );
-    }
-
-    private handleDefinitionRequest(msg: LspRequest): void {
-        const params = msg.params;
-        if (!isRecord(params)) {
-            logger.error('Invalid client textDocument/definition, params missing or not an object');
-            return;
-        }
-
-        const { textDocument, position } = params;
-        if (!isRecord(textDocument) || typeof textDocument.uri !== 'string' || !isPosition(position)) {
-            logger.error('Invalid client textDocument/definition, malformed or missing required parameters');
-            return;
-        }
-
-        const requestIdNum = this.resolveRequestId(params.requestId, msg.id);
-        if (!Number.isFinite(requestIdNum)) {
-            logger.error('Invalid client textDocument/definition, requestId missing or not a valid number');
-            return;
-        }
-
-        this.registerRequestCallback(msg.id, requestIdNum);
-        this.messageHandle.sendAsyncRequest(
-            LSP_METHOD.ON_ASYNC_DEFINITION,
-            params,
-            requestIdNum,
-            LSP_SEND_LABEL.ON_ASYNC_DEFINITION,
-        );
-    }
-
-    private handleReferencesRequest(msg: LspRequest): void {
-        const params = msg.params;
-        if (!isRecord(params)) {
-            logger.error('Invalid client textDocument/references, params missing or not an object');
-            return;
-        }
-
-        const { textDocument, position } = params;
-        if (!isRecord(textDocument) || typeof textDocument.uri !== 'string' || !isPosition(position)) {
-            logger.error('Invalid client textDocument/references, malformed or missing required parameters');
-            return;
-        }
-
-        const requestIdNum = this.resolveRequestId(params.requestId, msg.id);
-        if (!Number.isFinite(requestIdNum)) {
-            logger.error('Invalid client textDocument/references, requestId missing or not a valid number');
-            return;
-        }
-
-        this.registerRequestCallback(msg.id, requestIdNum);
-        this.messageHandle.sendAsyncRequest(
-            LSP_METHOD.ON_ASYNC_FIND_USAGES,
-            params,
-            requestIdNum,
-            LSP_SEND_LABEL.ON_ASYNC_FIND_USAGES,
-        );
-    }
-
-    private resolveRequestId(requestId: unknown, fallbackId: number | string): number {
-        const raw = requestId ?? fallbackId;
-        return typeof raw === 'number' ? raw : Number(raw);
     }
 
     sendNotification(msg: LspMessage) {
@@ -474,11 +502,14 @@ export class LspServerProxy {
             case LSP_METHOD.DID_CLOSE:
                 this.handleDidCloseNotification(msg);
                 break;
-            case LSP_METHOD.ON_DID_CHANGE_PACKAGE_DEPENDENCIES_CLIENT:
-                this.handleDidChangePackageDependencies(msg);
-                break;
             case LSP_METHOD.WORKSPACE_DID_CHANGE_WATCHED_FILES:
                 this.handleDidChangeWatchedFiles(msg);
+                break;
+            case LSP_METHOD.DID_CREATE_FILES:
+                this.handleDidCreateFiles(msg);
+                break;
+            case LSP_METHOD.DID_DELETE_FILES:
+                this.handleDidDeleteFiles(msg);
                 break;
             default:
                 logger.warn(`Unhandled LSP notification: ${msg.method}`);
@@ -486,136 +517,54 @@ export class LspServerProxy {
     }
 
     private handleDidOpenNotification(msg: LspNotification): void {
-        const params = msg.params;
-        if (!isRecord(params)) {
-            logger.error('Invalid client textDocument/didOpen, params missing or not an object');
+        const params = msg.params as DidOpenTextDocumentParams | undefined;
+        if (!params || !params.textDocument || typeof params.textDocument.uri !== 'string') {
+            logger.error('Invalid textDocument/didOpen params');
             return;
         }
-
-        const { textDocument, editorFiles } = params;
-        if (!isTextDocument(textDocument) || !isStringArray(editorFiles)) {
-            logger.error('Invalid client textDocument/didOpen, malformed or missing required parameters');
-            return;
-        }
-
-        const isFromEditor = typeof params.isFromEditor === 'boolean' ? params.isFromEditor : false;
-        const openParam = { isFromEditor, editorFiles, textDocument };
-        this.registerDiagnosticCallback(textDocument.uri);
-        this.messageHandle.onAsyncOpenFile(openParam);
+        this.stdHandle.sendDidOpen(params);
     }
 
     private handleDidChangeNotification(msg: LspNotification): void {
-        const params = msg.params;
-        if (!isRecord(params)) {
-            logger.error('Invalid client textDocument/didChange, params missing or not an object');
+        const params = msg.params as DidChangeTextDocumentParams | undefined;
+        if (!params || !params.textDocument || typeof params.textDocument.uri !== 'string') {
+            logger.error('Invalid textDocument/didChange params');
             return;
         }
-
-        const { textDocument, contentChanges } = params;
-        if (
-            !isRecord(textDocument) ||
-            typeof textDocument.uri !== 'string' ||
-            typeof textDocument.version !== 'number'
-        ) {
-            logger.error('Invalid client textDocument/didChange, malformed or missing required parameters');
-            return;
-        }
-
-        if (!Array.isArray(contentChanges) || !contentChanges.every(isContentChange)) {
-            logger.error('Invalid client textDocument/didChange, contentChanges invalid');
-            return;
-        }
-
-        const uri = textDocument.uri;
-        const version = textDocument.version;
-        this.registerDiagnosticCallback(uri);
-        this.messageHandle.onAsyncDidChange({ uri, version, contentChanges });
+        this.stdHandle.sendDidChange(params);
     }
 
     private handleDidCloseNotification(msg: LspNotification): void {
-        const params = msg.params;
-        if (!isRecord(params)) {
-            logger.error('Invalid client textDocument/didClose, params missing or not an object');
+        const params = msg.params as DidCloseTextDocumentParams | undefined;
+        if (!params || !params.textDocument || typeof params.textDocument.uri !== 'string') {
+            logger.error('Invalid textDocument/didClose params');
             return;
         }
-
-        const { textDocument } = params;
-        if (!isRecord(textDocument) || typeof textDocument.uri !== 'string') {
-            logger.error('Invalid client textDocument/didClose, malformed or missing required parameters');
-            return;
-        }
-
-        const isManual = typeof params.isManual === 'boolean' ? params.isManual : false;
-        this.messageHandle.closeFile(textDocument.uri, isManual);
-    }
-
-    private handleDidChangePackageDependencies(msg: LspNotification): void {
-        const params = msg.params;
-        if (!isRecord(params)) {
-            logger.error(
-                'Invalid client aceProject/onDidChangePakcageDependencies, params missing or not an object',
-            );
-            return;
-        }
-
-        const { moduleSet } = params;
-        if (!Array.isArray(moduleSet) || moduleSet.length === 0) {
-            logger.error(
-                'Invalid client aceProject/onDidChangePakcageDependencies, malformed or missing required parameters',
-            );
-            return;
-        }
-
-        this.messageHandle.sendModuleDependencyUpdate(params);
+        this.stdHandle.closeFile(params);
     }
 
     private handleDidChangeWatchedFiles(msg: LspNotification): void {
-        const params = msg.params;
-        if (!isRecord(params)) {
-            logger.error('Invalid client workspace/didChangeWatchedFiles, params missing or not an object');
+        const params = msg.params as { changes?: Array<{ uri: string; type: number }> } | undefined;
+        if (!params || !Array.isArray(params.changes)) {
             return;
         }
-
-        const { changes } = params;
-        if (!Array.isArray(changes)) {
-            logger.error(
-                'Invalid client workspace/didChangeWatchedFiles, malformed or missing required parameters',
-            );
-            return;
-        }
-
-        this.messageHandle.onDidChangeWatchedFiles(changes);
+        this.messageHandle.onDidChangeWatchedFiles(params.changes);
     }
 
-    /**
-     * 可重置超时：registerCallback 收到 (resolve, reset)。
-     * 在等待期间每次调用 reset() 会重新开始计时；超时时间为 timeoutMs。
-     */
-    private withResettableTimeout(
-        registerCallback: (resolve: () => void, reset: () => void) => void,
-        operationName: string,
-        timeoutMs: number,
-    ): Promise<void> {
-        return new Promise((resolve, reject) => {
-            let timeoutId: ReturnType<typeof setTimeout>;
+    private handleDidCreateFiles(msg: LspNotification): void {
+        const params = msg.params as { files?: Array<{ uri: string }> } | undefined;
+        if (!params || !Array.isArray(params.files)) {
+            return;
+        }
+        this.stdHandle.sendNotification(LSP_METHOD.DID_CREATE_FILES, params);
+    }
 
-            const schedule = () => {
-                timeoutId = setTimeout(() => {
-                    reject(new Error(`${operationName} timeout after ${timeoutMs}ms`));
-                }, timeoutMs);
-            };
-
-            const reset = () => {
-                clearTimeout(timeoutId);
-                schedule();
-            };
-
-            schedule();
-            registerCallback(() => {
-                clearTimeout(timeoutId);
-                resolve();
-            }, reset);
-        });
+    private handleDidDeleteFiles(msg: LspNotification): void {
+        const params = msg.params as { files?: Array<{ uri: string }> } | undefined;
+        if (!params || !Array.isArray(params.files)) {
+            return;
+        }
+        this.stdHandle.sendNotification(LSP_METHOD.DID_DELETE_FILES, params);
     }
 
     async dispose(): Promise<void> {

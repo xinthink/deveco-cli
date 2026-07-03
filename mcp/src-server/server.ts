@@ -107,12 +107,20 @@ export class DevecoCliMcpServer {
   /**
    * Register all tools to the router.
    *
-   * 目前只暴露一个 `check` 工具：根据传入文件的扩展名自动分发——
-   *  - `.ets` → ArkTS LSP（{@link ArktsCheckTool}）
-   *  - `.c/.cc/.cpp/.cxx/.h/.hh/.hpp/...` → clangd（{@link CppCheckTool}）
-   *  - 其它扩展名 → 收集为错误返回。
+   * - `check`：静态语法分析（ArkTS + C/C++ 诊断）
+   * - `hover` / `definition` / `declaration` / `references` / `implementation`：ArkTS 位置相关语言特性，
+   *   共享 LSP 生命周期（didOpen → request → didClose），仅 READY 状态可用。
+   * - `workspaceSymbol`：全工程符号搜索，无需打开文件，仅 READY 状态可用。
+   * - `documentSymbol`：单文件符号树，需 didOpen/didClose，仅 READY 状态可用。
+   * - `callHierarchy`：函数调用关系查询（incoming/outgoing），需 didOpen/didClose，仅 READY 状态可用。
    */
   private registerTools(): void {
+    this.registerCheckTool();
+    this.registerLspFeatureTools();
+  }
+
+  /** 注册 check 工具（ArkTS + C/C++ 诊断）。 */
+  private registerCheckTool(): void {
     this.toolRouter.add(
       {
         name: 'check',
@@ -130,6 +138,82 @@ export class DevecoCliMcpServer {
         }),
       },
       async (args: Record<string, unknown>) => this.handleCheckCall(args)
+    );
+  }
+
+  /** 注册位置相关 ArkTS 语言特性工具（hover/definition/declaration/references/implementation）。 */
+  private registerLspFeatureTools(): void {
+    const lspPositionSchema = z.object({
+      file: z.string().describe('ArkTS (.ets) file path, relative to the project root'),
+      line: z.number().describe('Line number (0-based)'),
+      character: z.number().describe('Character offset in the line (0-based)'),
+    });
+
+    for (const { name, description, feature } of this.getPositionFeatures()) {
+      this.toolRouter.add(
+        { name, description, inputSchema: lspPositionSchema },
+        async (args: Record<string, unknown>) => this.handleLspFeatureCall(feature, args)
+      );
+    }
+
+    this.registerSymbolTools();
+    this.registerCallHierarchyTool();
+  }
+
+  /** 返回位置相关工具的定义列表。 */
+  private getPositionFeatures(): Array<{ name: string; description: string; feature: 'hover' | 'definition' | 'declaration' | 'references' | 'implementation' | 'completion' | 'signatureHelp' | 'documentHighlight' }> {
+    return [
+      { name: 'hover', description: 'Get hover information (type info, documentation) at a specific position in an ArkTS (.ets) file.', feature: 'hover' },
+      { name: 'definition', description: 'Find where the symbol at the given position is defined. Returns file path, line, and character.', feature: 'definition' },
+      { name: 'declaration', description: 'Find the declaration of the symbol at the given position. In ArkTS, this may differ from definition.', feature: 'declaration' },
+      { name: 'references', description: 'Find all references to the symbol at the given position across the HarmonyOS project.', feature: 'references' },
+      { name: 'implementation', description: 'Find implementations of the symbol at the given position (e.g., interface implementations).', feature: 'implementation' },
+    ];
+  }
+
+  /** 注册 workspaceSymbol（全工程搜索）和 documentSymbol（单文件符号树）。 */
+  private registerSymbolTools(): void {
+    this.toolRouter.add(
+      {
+        name: 'workspaceSymbol',
+        description: 'Search for symbols by name across the entire HarmonyOS project.',
+        inputSchema: z.object({
+          query: z.string().describe('Symbol name (or partial) to search for'),
+        }),
+      },
+      async (args: Record<string, unknown>) => this.handleWorkspaceSymbolCall(args)
+    );
+
+    this.toolRouter.add(
+      {
+        name: 'documentSymbol',
+        description:
+          'Get the symbol tree (functions, classes, variables with ranges) of an ArkTS (.ets) file. ' +
+          'Useful for file overview, structured code breakdown, and large file slicing.',
+        inputSchema: z.object({
+          file: z.string().describe('ArkTS (.ets) file path, relative to the project root'),
+        }),
+      },
+      async (args: Record<string, unknown>) => this.handleDocumentSymbolCall(args)
+    );
+  }
+
+  /** 注册 callHierarchy 工具（调用关系查询，支持 incoming/outgoing 方向）。 */
+  private registerCallHierarchyTool(): void {
+    this.toolRouter.add(
+      {
+        name: 'callHierarchy',
+        description:
+          'Query call hierarchy for a function at the given position. ' +
+          'Use direction "incoming" to find callers, "outgoing" to find callees.',
+        inputSchema: z.object({
+          file: z.string().describe('ArkTS (.ets) file path, relative to the project root'),
+          line: z.number().describe('Line number (0-based)'),
+          character: z.number().describe('Character offset in the line (0-based)'),
+          direction: z.enum(['incoming', 'outgoing']).describe('"incoming" = who calls this function, "outgoing" = what this function calls'),
+        }),
+      },
+      async (args: Record<string, unknown>) => this.handleCallHierarchyCall(args)
     );
   }
 
@@ -242,6 +326,220 @@ export class DevecoCliMcpServer {
         return this.handleErrorCheck();
       case ProjectLifecycle.READY:
         return this.arktsCheckTool!.handleCall({ files });
+    }
+  }
+
+  /**
+   * `hover` / `definition` / `references` / `completion` 工具的统一入口：
+   * 校验参数 + containment → 按 projectState 分流（与 check 相同的状态机）。
+   */
+  private async handleLspFeatureCall(
+    feature: 'hover' | 'definition' | 'declaration' | 'references' | 'implementation' | 'completion' | 'signatureHelp' | 'documentHighlight',
+    args: Record<string, unknown>
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    const file = (args as { file?: unknown }).file;
+    const line = (args as { line?: unknown }).line;
+    const character = (args as { character?: unknown }).character;
+
+    if (typeof file !== 'string' || typeof line !== 'number' || typeof character !== 'number') {
+      return {
+        content: [{ type: 'text', text: `Missing or invalid parameters. Required: file (string), line (number), character (number).` }],
+        isError: true,
+      };
+    }
+
+    const containmentResult = this.validateContainment([file]);
+    if (containmentResult) {
+      return containmentResult;
+    }
+
+    return this.callArktsFeature(feature, { file, line, character });
+  }
+
+  /**
+   * `workspaceSymbol` 工具入口：校验 query 参数 → 状态机分流。
+   * 不需要 containment 校验（不涉及具体文件路径）。
+   */
+  private async handleWorkspaceSymbolCall(
+    args: Record<string, unknown>
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    const query = (args as { query?: unknown }).query;
+    if (typeof query !== 'string' || query.trim().length === 0) {
+      return {
+        content: [{ type: 'text', text: 'Missing or invalid parameter: query (non-empty string required).' }],
+        isError: true,
+      };
+    }
+
+    return this.callArktsWorkspaceSymbol(query);
+  }
+
+  /**
+   * `documentSymbol` 工具入口：校验 file 参数 + containment → 状态机分流。
+   */
+  private async handleDocumentSymbolCall(
+    args: Record<string, unknown>
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    const file = (args as { file?: unknown }).file;
+    if (typeof file !== 'string') {
+      return {
+        content: [{ type: 'text', text: 'Missing or invalid parameter: file (string required).' }],
+        isError: true,
+      };
+    }
+
+    const containmentResult = this.validateContainment([file]);
+    if (containmentResult) {
+      return containmentResult;
+    }
+
+    return this.routeArktsRequest('documentSymbol', () => this.arktsCheckTool!.handleDocumentSymbol(file));
+  }
+
+  /**
+   * `callHierarchy` 工具入口：校验 file/line/character/direction + containment → 状态机分流。
+   */
+  private async handleCallHierarchyCall(
+    args: Record<string, unknown>
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    const file = (args as { file?: unknown }).file;
+    const line = (args as { line?: unknown }).line;
+    const character = (args as { character?: unknown }).character;
+    const direction = (args as { direction?: unknown }).direction;
+
+    if (typeof file !== 'string' || typeof line !== 'number' || typeof character !== 'number') {
+      return {
+        content: [{ type: 'text', text: 'Missing or invalid parameters. Required: file (string), line (number), character (number).' }],
+        isError: true,
+      };
+    }
+    if (direction !== 'incoming' && direction !== 'outgoing') {
+      return {
+        content: [{ type: 'text', text: 'Parameter direction must be "incoming" or "outgoing".' }],
+        isError: true,
+      };
+    }
+
+    const containmentResult = this.validateContainment([file]);
+    if (containmentResult) {
+      return containmentResult;
+    }
+
+    return this.routeArktsRequest(
+      `callHierarchy(${direction})`,
+      () => this.arktsCheckTool!.handleCallHierarchy({ file, line, character, direction }),
+    );
+  }
+
+  /** `codeAction` 工具入口。 */
+  private async handleCodeActionCall(
+    args: Record<string, unknown>
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    const { file, line, character } = this.extractPositionArgs(args);
+    if (!file) {
+      return { content: [{ type: 'text', text: 'Missing or invalid parameters. Required: file (string), line (number), character (number).' }], isError: true };
+    }
+    const containmentResult = this.validateContainment([file]);
+    if (containmentResult) { return containmentResult; }
+    return this.routeArktsRequest('codeAction', () => this.arktsCheckTool!.handleCodeAction({ file, line, character }));
+  }
+
+  /** `rename` 工具入口。 */
+  private async handleRenameCall(
+    args: Record<string, unknown>
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    const { file, line, character } = this.extractPositionArgs(args);
+    const newName = (args as { newName?: unknown }).newName;
+    if (!file || typeof newName !== 'string' || newName.trim().length === 0) {
+      return { content: [{ type: 'text', text: 'Missing or invalid parameters. Required: file (string), line (number), character (number), newName (non-empty string).' }], isError: true };
+    }
+    const containmentResult = this.validateContainment([file]);
+    if (containmentResult) { return containmentResult; }
+    return this.routeArktsRequest('rename', () => this.arktsCheckTool!.handleRename({ file, line, character, newName }));
+  }
+
+  /** `typeHierarchy` 工具入口。 */
+  private async handleTypeHierarchyCall(
+    args: Record<string, unknown>
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    const { file, line, character } = this.extractPositionArgs(args);
+    const direction = (args as { direction?: unknown }).direction;
+    if (!file) {
+      return { content: [{ type: 'text', text: 'Missing or invalid parameters. Required: file (string), line (number), character (number).' }], isError: true };
+    }
+    if (direction !== 'supertypes' && direction !== 'subtypes') {
+      return { content: [{ type: 'text', text: 'Parameter direction must be "supertypes" or "subtypes".' }], isError: true };
+    }
+    const containmentResult = this.validateContainment([file]);
+    if (containmentResult) { return containmentResult; }
+    return this.routeArktsRequest(`typeHierarchy(${direction})`, () => this.arktsCheckTool!.handleTypeHierarchy({ file, line, character, direction }));
+  }
+
+  /** `completionItemResolve` 工具入口。 */
+  private async handleCompletionItemResolveCall(
+    args: Record<string, unknown>
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    const item = (args as { item?: unknown }).item;
+    if (item == null) {
+      return { content: [{ type: 'text', text: 'Missing parameter: item (completion item object required).' }], isError: true };
+    }
+    return this.routeArktsRequest('completionItemResolve', () => this.arktsCheckTool!.handleCompletionItemResolve(item));
+  }
+
+  /** 从 args 中提取 file/line/character，失败返回 file=null。 */
+  private extractPositionArgs(args: Record<string, unknown>): { file: string | null; line: number; character: number } {
+    const file = (args as { file?: unknown }).file;
+    const line = (args as { line?: unknown }).line;
+    const character = (args as { character?: unknown }).character;
+    if (typeof file !== 'string' || typeof line !== 'number' || typeof character !== 'number') {
+      return { file: null, line: 0, character: 0 };
+    }
+    return { file, line, character };
+  }
+
+  /** ArkTS 语言特性请求；按项目生命周期状态分流（与 callArktsCheck 一致）。 */
+  private async callArktsFeature(
+    feature: 'hover' | 'definition' | 'declaration' | 'references' | 'implementation' | 'completion' | 'signatureHelp' | 'documentHighlight',
+    args: { file: string; line: number; character: number }
+  ): Promise<{
+    content: { type: string; text: string }[];
+    isError?: boolean;
+  }> {
+    return this.routeArktsRequest(feature, () => this.arktsCheckTool!.handleLspFeature(feature, args));
+  }
+
+  /** workspaceSymbol 请求；同一状态机分流。 */
+  private async callArktsWorkspaceSymbol(
+    query: string
+  ): Promise<{
+    content: { type: string; text: string }[];
+    isError?: boolean;
+  }> {
+    return this.routeArktsRequest('workspaceSymbol', () => this.arktsCheckTool!.handleWorkspaceSymbol(query));
+  }
+
+  /**
+   * ArkTS 请求的统一状态机路由：IDLE/DISCOVERING/SYNCING/INITIALIZING/ERROR/READY。
+   * 只有 READY 状态才执行 readyAction，其余返回 "please retry"。
+   */
+  private async routeArktsRequest(
+    logLabel: string,
+    readyAction: () => Promise<{ content: { type: string; text: string }[]; isError?: boolean }>
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    switch (this.projectState) {
+      case ProjectLifecycle.IDLE:
+        return this.handleIdleCheck();
+      case ProjectLifecycle.DISCOVERING:
+      case ProjectLifecycle.SYNCING:
+        mcpLog.warn(`ArkTS ${logLabel} rejected: project is ${ProjectLifecycle[this.projectState]}`);
+        return { content: [{ type: 'text', text: 'Project is syncing, please retry in 10 seconds' }], isError: true };
+      case ProjectLifecycle.INITIALIZING:
+        mcpLog.warn(`ArkTS ${logLabel} rejected: LSP is initializing`);
+        return { content: [{ type: 'text', text: 'ArkTS LSP is initializing, please retry in 10 seconds' }], isError: true };
+      case ProjectLifecycle.ERROR:
+        return this.handleErrorCheck();
+      case ProjectLifecycle.READY:
+        return readyAction();
     }
   }
 
