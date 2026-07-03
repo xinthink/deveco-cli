@@ -220,6 +220,22 @@ function createPlaceholderImages(
   generateFallbackIcons(targetRoot);
 }
 
+function renameGitignoreFiles(projectPath: string): void {
+  const gitignoreRenames = [
+    path.join(projectPath, 'gitignore.txt'),
+    path.join(projectPath, 'entry', 'gitignore.txt'),
+  ];
+
+  for (const gitignorePath of gitignoreRenames) {
+    if (fs.existsSync(gitignorePath)) {
+      fs.renameSync(
+        gitignorePath,
+        gitignorePath.replace(/\/gitignore\.txt$/, '/.gitignore')
+      );
+    }
+  }
+}
+
 export interface CreateProjectResult {
   projectRoot: string;
   appName: string;
@@ -244,6 +260,8 @@ export function createProject(
   fs.mkdirSync(projectPath, { recursive: true });
 
   copyDirectoryContents(templateDir, projectPath);
+
+  renameGitignoreFiles(projectPath);
 
   createPlaceholderImages(projectPath, devecoStudioPath);
 
