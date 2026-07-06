@@ -199,6 +199,19 @@ function getAgentSkillsDir(agentName: string): string {
   return path.join(homedir(), agentConfig.path);
 }
 
+function getAgentSkillsConfig(agentName: string): typeof AGENT_SKILLS_CONFIG[keyof typeof AGENT_SKILLS_CONFIG] {
+  const agentConfig =
+    AGENT_SKILLS_CONFIG[agentName as keyof typeof AGENT_SKILLS_CONFIG];
+
+  if (!agentConfig) {
+    throw new Error(
+      `Invalid agent: ${agentName}, Valid options are: ${Object.keys(AGENT_SKILLS_CONFIG).join(', ')}`
+    );
+  }
+
+  return agentConfig;
+}
+
 /**
  * 获取项目下指定 agent 的 skills 目录路径
  */
@@ -206,7 +219,12 @@ function getProjectAgentSkillsDir(
   projectPath: string,
   agentName: string
 ): string {
-  return path.join(projectPath, '.' + agentName, 'skills');
+  const agentConfig = getAgentSkillsConfig(agentName);
+  const projectSkillsPath =
+    'projectPath' in agentConfig
+      ? agentConfig.projectPath
+      : path.join('.' + agentName, 'skills');
+  return path.join(projectPath, projectSkillsPath);
 }
 
 /**
