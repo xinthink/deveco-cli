@@ -322,7 +322,8 @@ export class Project {
       }
     }
 
-    if (!isEmulator && !finalPackageName.endsWith('-signed.hap')) {
+    const signedSuffix = isShared ? '-signed.hsp' : '-signed.hap';
+    if (!isEmulator && !finalPackageName.endsWith(signedSuffix)) {
       throw new Error(
         `Target device is a real device, but the artifact for '${moduleName}' is not signed. Real devices cannot install unsigned packages.`
       );
