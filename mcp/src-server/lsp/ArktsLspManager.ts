@@ -4,11 +4,12 @@
  */
 
 import { LspServerProxy } from './LspServerProxy.js';
-import { ConfigFileWatcher, ConfigChangeEvent, ConfigChangeKind } from './watcher/ConfigFileWatcher.js';
+import { ConfigFileWatcher, ConfigChangeEvent } from './watcher/ConfigFileWatcher.js';
 import { DependencyMapWatcher, ReloadEvent } from './watcher/DependencyMapWatcher.js';
 import { syncProject } from './sync/buildProject.js';
 import { ohpmInstallAll } from './sync/ohpmInstall.js';
-import { LspMessage, LspNotification, LspRequest, EtsFileItem } from './types.js';
+import { tryWithBuildLock } from '../../../src/utils/build-lock.js';
+import { LspMessage, LspRequest, EtsFileItem, OpenFileParam } from './types.js';
 import { JSONRPC_VERSION, LSP_METHOD } from './constant.js';
 import { ArkTsProxyError } from './ArkTsProxyError.js';
 import { ModuleDependencyInfo } from './model/ModuleDependencyInfo.js';
@@ -20,6 +21,11 @@ export interface ModuleSetItem {
     dynamicDependencies: Record<string, ModuleDependencyInfo>;
 }
 
+export type SyncResult =
+    | { status: 'success' }
+    | { status: 'failed'; reason: string }
+    | { status: 'skipped'; reason: string };
+
 export interface ArktsLspManagerConfig {
     sdkPath: string;
     /** DevEco Studio 内 `plugins/openharmony` 目录（含 ace-server/out/index.js） */
@@ -27,6 +33,12 @@ export interface ArktsLspManagerConfig {
     workspaceRoot: string;
     indexLogPath: string;
     nodeMaxOldSpaceSize?: number;
+    /**
+     * 是否使用标准 LSP 协议。
+     * true  → ace-server/out/standardIndex/index.js 存在（DevEco >= 26.0.0.610），走标准化协议；
+     * false → 该文件不存在（老版本），走 ace-server 私有协议。
+     */
+    useStandardProtocol: boolean;
 }
 
 /**
@@ -34,10 +46,10 @@ export interface ArktsLspManagerConfig {
  * - 直接持有 `LspServerProxy`（其内部 spawn 唯一一个 ace-server 子进程）；
  * - 维持 `ConfigFileWatcher` / `DependencyMapWatcher`；
  * - 处理 `arkts/syncProject` 请求（ohpm install + hvigor sync）；
- * - 把 LSP 上行消息（initialized / indexingProgress / publishDiagnostics 等）通过
- *   `setOnMessage` 注册的回调统一上抛给上层（`ArktsCheckTool`）。
+ * - 把 LSP 上行消息通过 `setOnMessage` 注册的回调统一上抛给上层（`ArktsCheckTool`）。
  *
- * 不再涉及 UDS / 多客户端 / 心跳 / process.exit。
+ * 内部通信使用标准 LSP 协议（initialize / initialized / didOpen / publishDiagnostics 等），
+ * 对上层暴露的 arkts/* 通知保留为进程内状态信号。
  */
 export class ArktsLspManager {
     private readonly config: ArktsLspManagerConfig;
@@ -47,6 +59,7 @@ export class ArktsLspManager {
     private isInitialized: boolean = false;
     private lastEditorOpenFiles: EtsFileItem[] = [];
     private onMessage: (msg: LspMessage) => void = () => {};
+    private onConfigChanged: (() => void) | null = null;
     /** dispose 仅执行一次 */
     private disposeOnce: Promise<void> | null = null;
 
@@ -77,7 +90,7 @@ export class ArktsLspManager {
         this.lspProxy.sendNotification(msg);
     }
 
-    /** 上行请求（hover / definition / references；当前 arkts-check 未使用） */
+    /** 上行请求（hover / definition / references） */
     sendRequest(msg: LspRequest): void {
         if (!this.lspProxy) {
             logger.warn('[ArktsLspManager] sendRequest before LSP ready, dropped');
@@ -86,28 +99,90 @@ export class ArktsLspManager {
         this.lspProxy.sendRequest(msg);
     }
 
+    /** textDocument/diagnostic — 标准 LSP 拉取式诊断请求，返回 Promise<unknown>。 */
+    async diagnostic(params: { textDocument: { uri: string } }): Promise<unknown> {
+        if (!this.lspProxy) {
+            throw new Error('[ArktsLspManager] diagnostic before LSP ready');
+        }
+        return this.lspProxy.diagnostic(params);
+    }
+
     /**
-     * 处理 `arkts/syncProject`：先 ohpm install，再 hvigor sync；模型重载由 DependencyMapWatcher
-     * 自动触发。无论是否有变化，结束后都通过 `arkts/syncCompleted` 通知上层。
+     * 通用语言特性请求（async）：直接发 LSP request 并 await response。
+     * 供 hover / definition / references / completion 等调用，
+     * 由调用方保证 method 和 params 正确。
      */
-    static async handleSyncProject(workspaceRoot: string, sdkPath?: string): Promise<boolean> {
+    async sendFeatureRequest(method: string, params: unknown): Promise<unknown> {
+        if (!this.useStandardProtocol) {
+            throw new Error(
+                `Language feature '${method}' is not supported on the installed DevEco Studio. ` +
+                    'The standard LSP protocol entry (plugins/openharmony/ace-server/out/standardIndex/index.js) was not found. ' +
+                    'Please upgrade DevEco Studio to version 26.0.0.610 or later to use this tool.',
+            );
+        }
+        if (!this.lspProxy) {
+            throw new Error('LSP not ready');
+        }
+        return this.lspProxy.sendFeatureRequest(method, params);
+    }
+
+    /** 是否使用标准 LSP 协议（false=老版本 ace-server 私有协议）。 */
+    get useStandardProtocol(): boolean {
+        return this.config.useStandardProtocol;
+    }
+
+    /** 老版本：onAsyncOpenFile（ace-server 私有 didOpen）。仅 legacy 模式调用。 */
+    onAsyncOpenFile(param: OpenFileParam): void {
+        this.lspProxy?.onAsyncOpenFile(param);
+    }
+
+    /** 老版本：closeFile(uri, isManual)。仅 legacy 模式调用。 */
+    closeFileLegacy(uri: string, isManual: boolean): void {
+        this.lspProxy?.closeFileLegacy(uri, isManual);
+    }
+
+    /** 注册 publishDiagnostics 回调（按 uri 匹配），standard/legacy 共用。 */
+    registerDiagnosticCallback(uri: string): void {
+        this.lspProxy?.registerDiagnosticCallback(uri);
+    }
+
+    /**
+     * 处理 `arkts/syncProject`：原子性尝试获取构建锁后执行 ohpm install + hvigor sync。
+     * 模型重载由 DependencyMapWatcher 自动触发。
+     *
+     * 锁策略：
+     * - 原子性尝试获取锁（无重试），若其他进程已持有构建锁则返回 skipped
+     * - 消除 isBuildLocked + withBuildLock 之间的 TOCTOU 竞态
+     */
+    static async handleSyncProject(workspaceRoot: string, sdkPath?: string): Promise<SyncResult> {
         logger.info('[ArktsLspManager] Received arkts/syncProject');
         if (!workspaceRoot || !sdkPath) {
             logger.error('[ArktsLspManager] handleSyncProject: workspaceRoot or sdkPath is empty');
-            return false;
+            return { status: 'failed', reason: 'workspaceRoot or sdkPath is empty' };
         }
-        const installSuccess = await ohpmInstallAll(workspaceRoot, sdkPath);
-        if (!installSuccess) {
-            logger.error('[ArktsLspManager] ohpm install failed');
-            return false;
+        const result = await tryWithBuildLock(
+            workspaceRoot,
+            async () => {
+                const installSuccess = await ohpmInstallAll(workspaceRoot, sdkPath);
+                if (!installSuccess) {
+                    logger.error('[ArktsLspManager] ohpm install failed');
+                    return { status: 'failed' as const, reason: 'ohpm install failed' };
+                }
+                const success = await syncProject(workspaceRoot, sdkPath);
+                if (success) {
+                    logger.info('[ArktsLspManager] syncProject completed successfully');
+                    return { status: 'success' as const };
+                } else {
+                    logger.error('[ArktsLspManager] syncProject failed');
+                    return { status: 'failed' as const, reason: 'hvigor sync failed' };
+                }
+            },
+        );
+        if (!result.acquired) {
+            logger.info('[ArktsLspManager] Build lock held by another process, skipping sync');
+            return { status: 'skipped', reason: 'build lock held by another process' };
         }
-        const success = await syncProject(workspaceRoot, sdkPath);
-        if (success) {
-            logger.info('[ArktsLspManager] syncProject completed successfully');
-        } else {
-            logger.error('[ArktsLspManager] syncProject failed');
-        }
-        return success;
+        return result.result;
     }
 
     async dispose(): Promise<void> {
@@ -150,6 +225,7 @@ export class ArktsLspManager {
             this.config.workspaceRoot,
             this.config.indexLogPath,
             this.config.nodeMaxOldSpaceSize,
+            this.config.useStandardProtocol,
         );
         proxy.setOnMessage((msg) => this.handleLspMessage(msg));
         proxy.start(editorOpenFiles, (success) => this.handleLspInitialized(success));
@@ -228,44 +304,26 @@ export class ArktsLspManager {
                 dependencies: d.dependencies ?? {},
                 dynamicDependencies: d.dynamicDependencies ?? {},
             }));
-            this.lspProxy.sendNotification({
-                jsonrpc: JSONRPC_VERSION,
-                method: LSP_METHOD.ON_DID_CHANGE_PACKAGE_DEPENDENCIES_CLIENT,
-                params: { moduleSet },
-            });
-            // 通知上层清除"需要 Sync"的提示
             this.onMessage({
                 jsonrpc: JSONRPC_VERSION,
                 method: LSP_METHOD.ARKTS_SYNC_COMPLETED,
-                params: { success: true },
+                params: { success: true, moduleSet },
             });
         });
         this.depMapWatcher.start();
     }
 
+    /**
+     * 注册配置文件变化回调。
+     * 当 ConfigFileWatcher 检测到 oh-package.json5 或 build-profile.json5 变化时调用，
+     * 由 server 层设置 needsResync 标志位，在下次 check 时触发重新 sync。
+     */
+    setOnConfigChanged(callback: () => void): void {
+        this.onConfigChanged = callback;
+    }
+
     private handleConfigChanged(event: ConfigChangeEvent): void {
-        logger.info(`[ArktsLspManager] Config file changed: ${event.filePath}`);
-        try {
-            const changeSignal = event.kind ?? ConfigChangeKind.OhPackageChanged;
-            const notification: LspNotification = {
-                jsonrpc: JSONRPC_VERSION,
-                method: LSP_METHOD.WORKSPACE_DID_CHANGE_CONFIGURATION,
-                params: {
-                    relativePath: event.relativePath,
-                    timestamp: event.timestamp,
-                    changeSource: event.source,
-                    changeSignal,
-                    ...(event.filePath && { filePath: event.filePath }),
-                    ...(event.fileName !== undefined && { fileName: event.fileName }),
-                    ...(event.moduleName !== undefined && { moduleName: event.moduleName }),
-                    ...(event.removedModuleName !== undefined && {
-                        removedModuleName: event.removedModuleName,
-                    }),
-                },
-            };
-            this.onMessage(notification);
-        } catch (e) {
-            logger.error(`[ArktsLspManager] Failed to handle config change: ${e instanceof Error ? e.message : String(e)}`);
-        }
+        logger.info(`[ArktsLspManager] Config file changed: ${event.filePath}, notifying server`);
+        this.onConfigChanged?.();
     }
 }

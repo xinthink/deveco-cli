@@ -166,7 +166,7 @@ export class EmulatorManager {
     });
     if (exitCode !== 0) {
       throw new Error(
-        `emulator exited with code ${exitCode === null ? 'null' : exitCode}`
+        `Emulator exited with code ${exitCode === null ? 'null' : exitCode}.`
       );
     }
   }
@@ -271,7 +271,7 @@ export class EmulatorManager {
     }
     if (await this.hasMatchingDownloadedImage(opts)) {
       throw new Error(
-        `Image for --device-type "${opts.deviceType}" and --os-version "${opts.osVersion}" is still listed as downloaded after uninstall.`
+        `Image for --device-type "${opts.deviceType}" and --os-version "${opts.osVersion}" remains listed as downloaded after uninstallation.`
       );
     }
   }
@@ -415,7 +415,7 @@ export class EmulatorManager {
         await this.deleteVirtualDevice(existing.name);
       } else {
         throw new Error(
-          `Emulator "${name}" already exists. Use --force to overwrite.`
+          `Emulator "${name}" already exists. Use \`--force\` to overwrite.`
         );
       }
     }
@@ -464,7 +464,7 @@ export class EmulatorManager {
     const created = await this.waitForEmulatorPresenceByList(nameKey);
     if (!created) {
       throw new Error(
-          `Emulator "${opts.name}" was reported as created, but it did not appear in the emulator list within the timeout. Please open the device manager list in DevEco Studio, then run this command again.`
+          `Emulator "${opts.name}" was reported as created, but it did not appear in the emulator list within the waiting period. Open the device manager list in DevEco Studio, then run this command again.`
       );
     }
   }

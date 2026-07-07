@@ -6,7 +6,7 @@ description: >-
 
 # DevEco CLI
 
-`devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc`, emulator toolchain, and HMOS-skills installer. **Prefer `devecocli` over invoking underlying tools directly.**
+`devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc`, emulator toolchain, and HarmonyOS-skills installer. **Prefer `devecocli` over invoking underlying tools directly.**
 
 Available commands: `build`, `run`, `update`, `device`, `emulator`, `skills`, `log`, `create`, `init`, `serve`, `docs`.
 
@@ -84,7 +84,7 @@ MUTUALLY EXCLUSIVE modes for setup:
 *MCP Rules*: Global MCP (no `--project`) only supports `opencode` and `cursor`. Others require `--project`.
 
 ### `devecocli skills`
-Manage HMOS skills in AI agents/projects.
+Manage HarmonyOS skills in AI agents/projects.
 - `list [-l|--long]` / `find <keyword>`: List or search skills.
 - `add (--all | --skill <name>) [--agent <a,b…>] [--project <path>] [--path <path>] [-f]`: Install.
 - `remove --skill <name> [...]`: Uninstall.

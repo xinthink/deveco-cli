@@ -3,67 +3,96 @@
  * SPDX-License-Identifier: MIT
  */
 
-export const LSP_TO_SERVER = {
-    EXIT: 'exit',
-    INITIALIZED: 'initialized',
-    ON_DID_CHANGE_PACKAGE_DEPENDENCIES: 'aceProject/onDidChangePackageDependencies',
-    ON_ASYNC_DID_OPEN: 'aceProject/onAsyncDidOpen',
-    ON_ASYNC_DID_CHANGE: 'aceProject/onAsyncDidChange',
-    DID_CLOSE: 'textDocument/didClose',
-    ON_ASYNC_HOVER: 'aceProject/onAsyncHover',
-    ON_ASYNC_DEFINITION: 'aceProject/onAsyncDefinition',
-    ON_ASYNC_FIND_USAGES: 'aceProject/onAsyncFindUsages',
-} as const;
-
 /**
- * 与 IDE 客户端（socket）相关：代理发往客户端、IDE 发往代理、或 CallbackRegistry 等用的 `method` / key。
- * 含 arkts/*、从 ace 转发/广播给客户端的通知、以及标准 LSP 在 IDE 侧的 method 名。
+ * 标准 LSP 方法名（wire protocol，发往 / 收自 ace-server 子进程）。
+ * 全部使用 LSP 3.17 规范定义的 method 字符串，不再保留 ace-server 私有协议。
  */
-export const LSP_CLIENT = {
-    MODULE_INIT_FINISH: 'aceProject/onModuleInitFinish',
-    INDEXING_PROGRESS_UPDATE: 'aceProject/onIndexingProgressUpdate',
-    /** 广播给所有客户端时的回调 key，invoke 时传入 LspMessage */
-    BROADCAST: 'lsp/broadcast',
-    ARKTS_ERROR: 'arkts/error',
-    ON_FORCE_OPEN_FILE: 'aceProject/onForceOpenFile',
-    ON_PACKAGE_CHANGE_FINISH: 'aceProject/onPackageChangeFinish',
-    PUBLISH_DIAGNOSTICS: 'textDocument/publishDiagnostics',
-    HOVER: 'textDocument/hover',
-    TEXT_DOCUMENT_ON_ASYNC_DEFINITION: 'textDocument/onAsyncDefinition',
-    REFERENCES: 'textDocument/references',
+export const LSP_METHOD = {
+    // ---- 生命周期 (C→S) ----
+    INITIALIZE: 'initialize',
+    INITIALIZED: 'initialized',
+    SHUTDOWN: 'shutdown',
+    EXIT: 'exit',
+
+    // ---- 文档同步 (C→S notifications) ----
     DID_OPEN: 'textDocument/didOpen',
     DID_CHANGE: 'textDocument/didChange',
+    DID_CLOSE: 'textDocument/didClose',
+
+    // ---- 诊断 (S→C notification) ----
+    PUBLISH_DIAGNOSTICS: 'textDocument/publishDiagnostics',
+
+    // ---- 语言特性请求 (C→S requests) ----
+    HOVER: 'textDocument/hover',
     DEFINITION: 'textDocument/definition',
-    ON_DID_CHANGE_PACKAGE_DEPENDENCIES_CLIENT: 'textDocument/onDidChangePackageDependencies',
+    DECLARATION: 'textDocument/declaration',
+    REFERENCES: 'textDocument/references',
+    IMPLEMENTATION: 'textDocument/implementation',
+    COMPLETION: 'textDocument/completion',
+    COMPLETION_ITEM_RESOLVE: 'completionItem/resolve',
+    SIGNATURE_HELP: 'textDocument/signatureHelp',
+    CODE_ACTION: 'textDocument/codeAction',
+    PREPARE_RENAME: 'textDocument/prepareRename',
+    RENAME: 'textDocument/rename',
+    DOCUMENT_HIGHLIGHT: 'textDocument/documentHighlight',
+    DOCUMENT_LINK: 'textDocument/documentLink',
+    INLAY_HINT: 'textDocument/inlayHint',
+    DOCUMENT_SYMBOL: 'textDocument/documentSymbol',
+    WORKSPACE_SYMBOL: 'workspace/symbol',
+    DIAGNOSTIC: 'textDocument/diagnostic',
+    WORKSPACE_DIAGNOSTIC: 'workspace/diagnostic',
+    PREPARE_CALL_HIERARCHY: 'textDocument/prepareCallHierarchy',
+    INCOMING_CALLS: 'callHierarchy/incomingCalls',
+    OUTGOING_CALLS: 'callHierarchy/outgoingCalls',
+    PREPARE_TYPE_HIERARCHY: 'textDocument/prepareTypeHierarchy',
+    SUPERTYPES: 'typeHierarchy/supertypes',
+    SUBTYPES: 'typeHierarchy/subtypes',
+
+    // ---- Workspace (C→S notifications) ----
     WORKSPACE_DID_CHANGE_CONFIGURATION: 'workspace/didChangeConfiguration',
+    WORKSPACE_DID_CHANGE_WATCHED_FILES: 'workspace/didChangeWatchedFiles',
+    DID_CREATE_FILES: 'workspace/didCreateFiles',
+    DID_DELETE_FILES: 'workspace/didDeleteFiles',
+
+    // ---- 进度 / 消息 (S→C notifications) ----
+    PROGRESS: '$/progress',
+    WINDOW_SHOW_MESSAGE: 'window/showMessage',
+    WINDOW_LOG_MESSAGE: 'window/logMessage',
+
+    // ============================================================
+    // 以下为内部状态通知（不参与 wire protocol，仅用于
+    // ArktsLspManager → ArktsCheckTool 之间的进程内通信）
+    // ============================================================
     ARKTS_INITIALIZED: 'arkts/initialized',
     ARKTS_INITIALIZATION_FAILED: 'arkts/initializationFailed',
     ARKTS_INDEXING_PROGRESS: 'arkts/indexingProgress',
     ARKTS_SYNC_PROJECT: 'arkts/syncProject',
     ARKTS_SYNC_COMPLETED: 'arkts/syncCompleted',
     ARKTS_REINITIALIZING: 'arkts/reinitializing',
-    WORKSPACE_DID_CHANGE_WATCHED_FILES: 'workspace/didChangeWatchedFiles',
-} as const;
-
-/** 合并视图；与 CallbackRegistry 的 key、既有 `LSP_METHOD.xxx` 引用保持一致 */
-export const LSP_METHOD = {
-    ...LSP_TO_SERVER,
-    ...LSP_CLIENT,
+    ARKTS_ERROR: 'arkts/error',
+    /** 广播给上层时的回调 key */
+    BROADCAST: 'lsp/broadcast',
 } as const;
 
 export const JSONRPC_VERSION = '2.0';
 
+/** 日志标签（仅用于 logger 输出，非协议字段） */
 export const LSP_SEND_LABEL = {
-    EXIT: 'exit',
+    INITIALIZE: 'initialize',
     INITIALIZED: 'initialized',
-    EMPTY: 'empty',
-    ON_DID_CHANGE_PACKAGE_DEPENDENCIES: 'onDidChangePackageDependencies',
-    ON_ASYNC_DID_OPEN: 'onAsyncDidOpen',
-    ON_ASYNC_DID_CHANGE: 'onAsyncDidChange',
+    SHUTDOWN: 'shutdown',
+    EXIT: 'exit',
+    DID_OPEN: 'didOpen',
+    DID_CHANGE: 'didChange',
     DID_CLOSE: 'didClose',
-    ON_ASYNC_HOVER: 'onAsyncHover',
-    ON_ASYNC_DEFINITION: 'onAsyncDefinition',
-    ON_ASYNC_FIND_USAGES: 'onAsyncFindUsages',
+    HOVER: 'hover',
+    DEFINITION: 'definition',
+    REFERENCES: 'references',
+    COMPLETION: 'completion',
+    DOCUMENT_SYMBOL: 'documentSymbol',
+    DIAGNOSTIC: 'diagnostic',
+    WORKSPACE_DID_CHANGE_CONFIGURATION: 'workspace/didChangeConfiguration',
+    WORKSPACE_DID_CHANGE_WATCHED_FILES: 'workspace/didChangeWatchedFiles',
 } as const;
 
 export enum DependencyMapParseStatus {
@@ -75,3 +104,15 @@ export interface DependencyMapParseResult {
     status: DependencyMapParseStatus;
     message?: string;
 }
+
+/** serverMaxSize 默认基准：8 GB */
+export const SERVER_MAX_SIZE_BASE_MB = 8192;
+/** 模块数阈值：<= 该值使用基准，> 该值按每个模块追加内存 */
+export const SERVER_MAX_SIZE_MODULE_THRESHOLD = 100;
+/** 超过阈值后，每个模块追加 0.03 GB */
+export const SERVER_MAX_SIZE_PER_EXTRA_MODULE_GB = 0.03;
+/** 计算结果上限：机器物理内存的70% */
+export const SERVER_MAX_SIZE_PHYSICAL_CAP_RATIO = 0.7;
+
+/** LSP 初始化等待超时：进度重置与初始化总等待统一为 15分钟 */
+export const LSP_INIT_TIMEOUT_MS = 15 * 60 * 1000;

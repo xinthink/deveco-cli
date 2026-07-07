@@ -68,7 +68,7 @@ export class Project {
     }
 
     throw new Error(
-      'Not in a valid project directory (project-level build-profile.json5 not found)'
+      'Not in a valid project directory (project-level build-profile.json5 not found).'
     );
   }
 
@@ -92,7 +92,7 @@ export class Project {
     const moduleNode = this.profile.modules.find((m) => m.name === moduleName);
     if (!moduleNode) {
       throw new Error(
-        `Module '${moduleName}' not found in project build-profile.json5.`
+        `Module '${moduleName}' not found in project-level build-profile.json5.`
       );
     }
 
@@ -120,7 +120,7 @@ export class Project {
     const moduleNode = this.profile.modules.find((m) => m.name === moduleName);
     if (!moduleNode) {
       throw new Error(
-        `Module '${moduleName}' not found in project build-profile.json5.`
+        `Module '${moduleName}' not found in project-level build-profile.json5.`
       );
     }
 
@@ -129,7 +129,7 @@ export class Project {
 
     if (!fs.existsSync(profilePath)) {
       throw new Error(
-        `Build profile for module '${moduleName}' not found at ${profilePath}`
+        `Build profile for module '${moduleName}' not found at ${profilePath}.`
       );
     }
 
@@ -153,7 +153,7 @@ export class Project {
         console.warn(`Warning: Failed to parse ${appJson5Path}:`, e);
       }
     }
-    throw new Error('Could not find bundleName in AppScope/app.json5');
+    throw new Error('Could not find bundleName in AppScope/app.json5.');
   }
 
   public getMainAbility(moduleName: string, ability?: string): string {
@@ -307,7 +307,7 @@ export class Project {
 
     if (!fs.existsSync(metadataPath)) {
       throw new Error(
-        `Build metadata not found for module '${moduleName}' at ${metadataPath}. Please build the project first.`
+        `Build metadata not found for module '${moduleName}' at ${metadataPath}. Build the project first.`
       );
     }
 
@@ -329,7 +329,7 @@ export class Project {
     ]);
 
     if (!fs.existsSync(packagePath)) {
-      throw new Error(`Generated package file does not exist: ${packagePath}`);
+      throw new Error(`Generated package file not found in ${packagePath}.`);
     }
 
     return packagePath;
@@ -384,13 +384,13 @@ private validatePackageName(packageName: string): void {
     
     if (basename !== packageName) {
       throw new Error(
-        `Invalid package name: contains path characters. Expected filename only, got '${packageName}'`
+        `Invalid traversal name: '${packageName}'. It must contain path characters.`
       );
     }
     
     if (!basename.endsWith('.hap') && !basename.endsWith('.hsp')) {
       throw new Error(
-        `Invalid package name: must be a .hap or .hsp file. Got '${basename}'`
+        `Invalid package name '${basename}'.It must be a .hap or .hsp file.`
       );
     }
   }

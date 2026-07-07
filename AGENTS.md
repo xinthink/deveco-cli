@@ -4,9 +4,9 @@ Guidance for AI coding assistants working in this repo.
 
 ## Project Overview
 
-**deveco-cli** wraps the DevEco Studio toolchain (`ohpm`, `hvigor`, `hdc`, `emulator`, `hilog`, bundled `node` + JBR + SDK) plus the HMOS skills installer, and a project-scaffolding template engine — all behind a single `devecocli` binary, with no need to set `PATH` / `DEVECO_SDK_HOME` / `JAVA_HOME`.
+**deveco-cli** wraps the DevEco Studio toolchain (`ohpm`, `hvigor`, `hdc`, `emulator`, `hilog`, bundled `node` + JBR + SDK) plus the HarmonyOS skills installer, and a project-scaffolding template engine — all behind a single `devecocli` binary, with no need to set `PATH` / `DEVECO_SDK_HOME` / `JAVA_HOME`.
 
-Capabilities: scaffold a new application project from the bundled template (`create`), build & package (`.hap` / `.hsp` / `.har` / `.app`), manage devices and emulators, install + launch (`run`), fetch `hilog` / crash logs, install / remove HMOS skills for AI agents (Claude, Cursor, Gemini, OpenCode, …), and self-update.
+Capabilities: scaffold a new application project from the bundled template (`create`), build & package (`.hap` / `.hsp` / `.har` / `.app`), manage devices and emulators, install + launch (`run`), fetch `hilog` / crash logs, install / remove HarmonyOS skills for AI agents (Claude, Cursor, Gemini, OpenCode, …), and self-update.
 
 Distribution: a single ESM bundle (`dist/cli.js`), exposed as the `devecocli` bin.
 
@@ -38,8 +38,8 @@ src/
 │   ├── skills.ts  init.ts
 │   ├── serve.ts              # MCP server subcommand (serve mcp)
 │   └── doc.ts                # Local HarmonyOS docs search/read/catalog (CLI command: `docs`)
-├── skills/                   # HMOS skills marketplace client (api + installer + agents)
-│   ├── api.ts                       # HMOS skills HTTP client + installed-agent discovery
+├── skills/                   # HarmonyOS skills marketplace client (api + installer + agents)
+│   ├── api.ts                       # HarmonyOS skills HTTP client + installed-agent discovery
 │   ├── installer.ts                 # Download / extract / remove skill packages
 │   ├── agents.ts                    # parseAgentList / getAllExistingAgents / summarizeOperationResults
 │   └── mcp-installer.ts             # installMcpConfigToAgentGlobal / installMcpConfigToAgentProject / removeMcpConfigFromAgentGlobal / removeMcpConfigFromAgentProject

@@ -7,6 +7,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import JSON5 from 'json5';
+import {
+    SERVER_MAX_SIZE_BASE_MB,
+    SERVER_MAX_SIZE_MODULE_THRESHOLD,
+    SERVER_MAX_SIZE_PER_EXTRA_MODULE_GB,
+    SERVER_MAX_SIZE_PHYSICAL_CAP_RATIO,
+} from './constant.js';
+import { logger } from './logger.js';
 
 export function findJsonObject(filePath: string): unknown | null {
     if (!fs.existsSync(filePath)) {
@@ -23,11 +30,56 @@ export function findJsonObject(filePath: string): unknown | null {
     }
 }
 
+/**
+ * 动态计算 LSP 进程的 --max-old-space-size（单位 MB）。
+ *
+ * 规则：
+ * - 模块数 <= 100：默认 8192 MB (8 GB)
+ * - 模块数  > 100：8 GB + (模块数 - 100) * 0.03 GB
+ * - 上限为机器物理内存的 70%
+ *
+ * 当 overrideSize 为有效正数时（来自环境变量 NODE_MAX_OLD_SPACE_SIZE 的显式覆盖），
+ * 以该值为基础计算，但同样不得高于物理内存的 70%。
+ */
+export function computeLspServerMaxSize(moduleCount: number, overrideSize?: number): number {
+    const physicalTotalMb = Math.floor(os.totalmem() / (1024 * 1024));
+    const physicalCapMb = Math.floor(physicalTotalMb * SERVER_MAX_SIZE_PHYSICAL_CAP_RATIO);
+
+    let sizeMb: number;
+    let source: string;
+    if (overrideSize !== undefined && Number.isFinite(overrideSize) && overrideSize > 0) {
+        sizeMb = overrideSize;
+        source = `override(${overrideSize})`;
+    } else {
+        sizeMb = SERVER_MAX_SIZE_BASE_MB;
+        if (moduleCount > SERVER_MAX_SIZE_MODULE_THRESHOLD) {
+            sizeMb +=
+                (moduleCount - SERVER_MAX_SIZE_MODULE_THRESHOLD) *
+                SERVER_MAX_SIZE_PER_EXTRA_MODULE_GB *
+                1024;
+        }
+        source = `formula(moduleCount=${moduleCount})`;
+    }
+
+    const capped = physicalCapMb > 0 && sizeMb > physicalCapMb;
+    if (capped) {
+        sizeMb = physicalCapMb;
+    }
+    const finalSizeMb = Math.round(sizeMb);
+    logger.info(
+        `[computeLspServerMaxSize] source=${source}, physicalTotal=${physicalTotalMb}MB, physicalCap(70%)=${physicalCapMb}MB, finalSize=${finalSizeMb}MB${capped ? ' (capped)' : ''}`,
+    );
+    return finalSizeMb;
+}
+
 export function isString(value: unknown): value is string {
     return typeof value === 'string';
 }
 
 export function toFileUri(filePath: string): string {
+    if (filePath.startsWith('file:')) {
+        return filePath;
+    }
     try {
         const absPath = path.resolve(filePath);
         let uriStr = new URL(`file://${absPath}`).toString();

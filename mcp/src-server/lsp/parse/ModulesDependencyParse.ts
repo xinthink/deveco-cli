@@ -21,6 +21,7 @@ import { LockJson5Parser } from './LockJson5Parser.js';
 import { Constants, DEPENDENCY_MAP_PATH, DEPENDENCY_MAP_JSON5 } from './Constants.js';
 import { logger } from '../logger.js';
 import { findJsonObject, toUnixPath } from '../utils.js';
+import { CommonUtils } from '../../../../src/utils/common-utils.js';
 import { DependencyMapParseResult, DependencyMapParseStatus } from '../constant.js';
 import { isRecord } from '../common/typeGuards.js';
 import { ModuleInfoParse } from './ModuleInfoParse.js';
@@ -39,6 +40,12 @@ function isDependencyModuleEntry(value: unknown): value is DependencyModuleEntry
 
 export class ModulesDependencyParse {
     private moduleInfoParse: ModuleInfoParse;
+    /** 复用单个 LockJson5Parser 实例：lock.json5 只读取/解析一次，按模块名提取各自依赖 */
+    private lockJson5Parser: LockJson5Parser | null = null;
+    /** sdk-pkg.json 对所有模块相同，只读取/解析一次 */
+    private sdkPkgCache: unknown | null | undefined = undefined;
+    /** build-profile.json5 对所有模块相同，只读取/解析一次 */
+    private buildProfileCache: unknown | null | undefined = undefined;
     constructor(
         public projectPath: string,
         public sdkPath: string,
@@ -68,12 +75,18 @@ export class ModulesDependencyParse {
             return { status: DependencyMapParseStatus.ERROR, message };
         }
 
-        for (const mod of modules) {
+        const startMs = Date.now();
+        for (let i = 0; i < modules.length; i++) {
+            const mod = modules[i];
             if (!isDependencyModuleEntry(mod)) {
                 continue;
             }
             this.parseSingleModule(mod, dependencyMapPath, projectModuleDependency, moduleModels);
+            if ((i + 1) % 100 === 0) {
+                logger.info(`[Parser] getAllDependencyMap progress: ${i + 1}/${modules.length} (${Date.now() - startMs}ms)`);
+            }
         }
+        logger.info(`[Parser] getAllDependencyMap parsed ${moduleModels.length} modules in ${Date.now() - startMs}ms`);
         return { status: DependencyMapParseStatus.OK };
     }
 
@@ -116,8 +129,7 @@ export class ModulesDependencyParse {
             if (filterSet && !filterSet.has(name)) {
                 continue;
             }
-            const srcPath = mod.srcPath;
-            const modulePath = path.resolve(this.projectPath, srcPath);
+            const modulePath = CommonUtils.resolvePathWithinRoot(this.projectPath, mod.srcPath);
             const depPathForModule = path.join(dependencyMapPath, name);
             const modulePathStr = toUnixPath(modulePath);
 
@@ -143,8 +155,7 @@ export class ModulesDependencyParse {
         moduleModels: ModuleModel[],
     ): void {
         const name = mod.name;
-        const srcPath = mod.srcPath;
-        const modulePath = path.resolve(this.projectPath, srcPath);
+        const modulePath = CommonUtils.resolvePathWithinRoot(this.projectPath, mod.srcPath);
         const depPathForModule = path.join(dependencyMapPath, name);
         const modulePathStr = toUnixPath(modulePath);
 
@@ -220,7 +231,7 @@ export class ModulesDependencyParse {
     }
 
     public parseLockJson(moduleModelDependency: ModuleModelDependency): void {
-        const lockJson5Parser = new LockJson5Parser(moduleModelDependency.projectPath);
+        const lockJson5Parser = this.getLockJson5Parser();
         if (lockJson5Parser.parseDependencies(moduleModelDependency.moduleName)) {
             moduleModelDependency.finalDependencies = lockJson5Parser.finalDependencies;
             moduleModelDependency.finalDevDependencies = lockJson5Parser.finalDevDependencies;
@@ -230,6 +241,14 @@ export class ModulesDependencyParse {
             moduleModelDependency.finalDevDependencies = moduleModelDependency.devDependencies;
             moduleModelDependency.finalDynamicDependencies = moduleModelDependency.dynamicDependencies;
         }
+    }
+
+    /** 复用单个 LockJson5Parser 实例，使 lock.json5 在大工程下只解析一次。 */
+    private getLockJson5Parser(): LockJson5Parser {
+        if (!this.lockJson5Parser) {
+            this.lockJson5Parser = new LockJson5Parser(this.projectPath);
+        }
+        return this.lockJson5Parser;
     }
 
     private parseModuleJson5(basePath: string, moduleModel: ModuleModel): void {
@@ -266,13 +285,17 @@ export class ModulesDependencyParse {
     }
 
     public parseSdkJson(moduleModel: ModuleModel): void {
-        const sdkPkgPath = path.join(this.sdkPath, 'default', 'sdk-pkg.json');
-        const obj = findJsonObject(sdkPkgPath);
+        const obj = this.getSdkPkg();
         if (!isRecord(obj) || !isRecord(obj.data)) {
             return;
         }
         if (typeof obj.data.apiVersion === 'string') {
-            moduleModel.compileSdkLevel = obj.data.apiVersion;
+            const apiVersion = parseInt(obj.data.apiVersion, 10);
+            if (!Number.isNaN(apiVersion) && apiVersion >= 26 && typeof obj.data.platformVersion === 'string') {
+                moduleModel.compileSdkLevel = obj.data.platformVersion;
+            } else {
+                moduleModel.compileSdkLevel = obj.data.apiVersion;
+            }
         }
         if (typeof obj.data.releaseType === 'string') {
             moduleModel.compileSdkType = obj.data.releaseType;
@@ -282,9 +305,17 @@ export class ModulesDependencyParse {
         }
     }
 
+    /** sdk-pkg.json 对所有模块相同，只读取/解析一次。 */
+    private getSdkPkg(): unknown | null {
+        if (this.sdkPkgCache === undefined) {
+            const sdkPkgPath = path.join(this.sdkPath, 'default', 'sdk-pkg.json');
+            this.sdkPkgCache = findJsonObject(sdkPkgPath);
+        }
+        return this.sdkPkgCache;
+    }
+
     public parseCompatibleSdkVersion(moduleModel: ModuleModel): void {
-        const buildProfilePath = path.join(this.projectPath, 'build-profile.json5');
-        const obj = findJsonObject(buildProfilePath);
+        const obj = this.getBuildProfile();
         if (!isRecord(obj) || !isRecord(obj.app) || !Array.isArray(obj.app.products) || obj.app.products.length === 0) {
             return;
         }
@@ -297,10 +328,19 @@ export class ModulesDependencyParse {
         moduleModel.compatibleSdkLevel = level;
     }
 
+    /** build-profile.json5 对所有模块相同，只读取/解析一次。 */
+    private getBuildProfile(): unknown | null {
+        if (this.buildProfileCache === undefined) {
+            const buildProfilePath = path.join(this.projectPath, 'build-profile.json5');
+            this.buildProfileCache = findJsonObject(buildProfilePath);
+        }
+        return this.buildProfileCache;
+    }
+
     private parseBySplit(input: string): [string, string] {
         const openParen = input.indexOf('(');
         if (openParen === -1 || !input.endsWith(')')) {
-            return [input, ''];
+            return [input, input];
         }
         const version = input.substring(0, openParen);
         const level = input.substring(openParen + 1, input.length - 1);

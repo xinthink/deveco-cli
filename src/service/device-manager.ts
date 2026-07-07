@@ -37,6 +37,7 @@ const ENTRY_PARAM_KEYS = [
   'const.product.model',
   'const.product.brand',
   'const.product.devicetype',
+  'const.build.product',
 ] as const;
 
 export class DeviceManager {
@@ -120,6 +121,10 @@ export class DeviceManager {
       const brand = params.get('const.product.brand');
       return this.stripBrandPrefix(productModel, brand);
     }
+    const buildProduct = params.get('const.build.product');
+    if (buildProduct && buildProduct !== 'emulator') {
+      return buildProduct;
+    }
     return undefined;
   }
 
@@ -162,7 +167,7 @@ export class DeviceManager {
       }
       if (matches.length > 1) {
         throw new Error(
-          `Multiple devices match "${deviceSelector}". Please use a serial instead:\n` +
+          `Multiple devices match "${deviceSelector}". Use a serial instead:\n` +
             matches.map((m) => `  - ${m.name} (${m.device.serial})`).join('\n')
         );
       }

@@ -78,6 +78,7 @@ function replaceInFile(filePath: string, pairs: Array<[string, string]>): void {
 }
 
 function updateApiLevel(targetRoot: string, apiLevel: number): void {
+  // 模板默认内嵌 API 22 版本号（6.0.2），无需替换
   if (apiLevel === 22) {
     return;
   }
@@ -219,6 +220,22 @@ function createPlaceholderImages(
   generateFallbackIcons(targetRoot);
 }
 
+function renameGitignoreFiles(projectPath: string): void {
+  const gitignoreRenames = [
+    path.join(projectPath, 'gitignore.txt'),
+    path.join(projectPath, 'entry', 'gitignore.txt'),
+  ];
+
+  for (const gitignorePath of gitignoreRenames) {
+    if (fs.existsSync(gitignorePath)) {
+      fs.renameSync(
+        gitignorePath,
+        gitignorePath.replace(/\/gitignore\.txt$/, '/.gitignore')
+      );
+    }
+  }
+}
+
 export interface CreateProjectResult {
   projectRoot: string;
   appName: string;
@@ -244,6 +261,8 @@ export function createProject(
 
   copyDirectoryContents(templateDir, projectPath);
 
+  renameGitignoreFiles(projectPath);
+
   createPlaceholderImages(projectPath, devecoStudioPath);
 
   replaceInFile(
@@ -267,7 +286,7 @@ export function createProject(
   const verified = verifyFiles(projectPath);
 
   if (!verified) {
-    throw new Error('Template integrity check failed');
+    throw new Error('Template integrity check failed.');
   }
 
   return {

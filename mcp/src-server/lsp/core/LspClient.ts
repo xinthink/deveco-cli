@@ -17,7 +17,6 @@ export interface LspClientConfig {
     serverPath: string; // LSP server (js file) path
     logPath: string; // Log directory
     indexingDataLocation: string; // Indexing data directory
-    nodeMaxOldSpaceSize?: number;
     cwd?: string; // Working directory
 }
 
@@ -34,10 +33,8 @@ export class LspClient extends EventEmitter {
         super();
     }
 
-    /**
-     * 启动 LSP 进程 (对应 Java StreamMessageConsumer.start)
-     */
-    public async start(): Promise<void> {
+    /** 确保 log/index 目录存在，返回 lspLog 子目录路径。 */
+    private ensureDirectories(): string {
         const lspLogPath = path.join(this.config.logPath, 'lspLog');
         if (!fs.existsSync(lspLogPath)) {
             fs.mkdirSync(lspLogPath, { recursive: true });
@@ -45,7 +42,15 @@ export class LspClient extends EventEmitter {
         if (!fs.existsSync(this.config.indexingDataLocation)) {
             fs.mkdirSync(this.config.indexingDataLocation, { recursive: true });
         }
-        const serverMaxSize = this.config.nodeMaxOldSpaceSize ?? 8192;
+        return lspLogPath;
+    }
+
+    /**
+     * 启动 LSP 进程 (对应 Java StreamMessageConsumer.start)
+     */
+    public async start(serverMaxSize: number): Promise<void> {
+        const lspLogPath = this.ensureDirectories();
+        logger.info(`[LspClient] serverMaxSize=${serverMaxSize}MB`);
         const lspPathStr = toUnixPath(lspLogPath);
         const args = [
             '--expose-gc',
@@ -108,6 +113,22 @@ export class LspClient extends EventEmitter {
             message.id = id;
         }
         this.sendRaw(JSON.stringify(message), method);
+    }
+
+    /** 发送标准 LSP notification（无 id）。 */
+    public sendNotification(method: string, params: unknown): void {
+        this.sendRaw(
+            JSON.stringify({ jsonrpc: '2.0', method, params }),
+            method,
+        );
+    }
+
+    /** 发送标准 LSP request（带 id，等待响应）。 */
+    public sendRequest(method: string, params: unknown, id: number | string): void {
+        this.sendRaw(
+            JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+            method,
+        );
     }
 
     private buildLspMessage(jsonBody: string): string {

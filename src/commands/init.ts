@@ -32,40 +32,30 @@ async function executeSkillInstallations(
   sourceFile: string,
   options: InitOptions
 ): Promise<SkillOperationResult[]> {
-  const results: SkillOperationResult[] = [];
-
   if (targets.customPath) {
-    const result = await installLocalSkillToPath(
+    return [await installLocalSkillToPath(
       DEVECO_CLI_SKILL_NAME,
       sourceFile,
       targets.customPath,
       options.force
-    );
-    results.push(result);
-    return results;
+    )];
   }
 
-  for (const { project, agent } of targets.projectAgents) {
-    const result = await installLocalSkillToProjectAgent(
-      DEVECO_CLI_SKILL_NAME,
-      sourceFile,
-      project,
-      agent,
-      options.force
-    );
-    results.push(result);
-  }
+  const tasks: (() => Promise<SkillOperationResult>)[] = [
+    ...targets.projectAgents.map(({ project, agent }) => () =>
+      installLocalSkillToProjectAgent(DEVECO_CLI_SKILL_NAME, sourceFile, project, agent, options.force)
+    ),
+    ...targets.agents.map((agentName) => () =>
+      installLocalSkillToAgent(DEVECO_CLI_SKILL_NAME, sourceFile, agentName, options.force)
+    ),
+  ];
 
-  for (const agentName of targets.agents) {
-    const result = await installLocalSkillToAgent(
-      DEVECO_CLI_SKILL_NAME,
-      sourceFile,
-      agentName,
-      options.force
-    );
-    results.push(result);
+  const concurrencyLimit = 5;
+  const results: SkillOperationResult[] = [];
+  for (let i = 0; i < tasks.length; i += concurrencyLimit) {
+    const batch = tasks.slice(i, i + concurrencyLimit);
+    results.push(...(await Promise.all(batch.map((fn) => fn()))));
   }
-
   return results;
 }
 
@@ -162,7 +152,7 @@ async function executeMcpInstallations(
 async function handleInitCommand(options: InitOptions): Promise<void> {
   // --skill 和 --mcp 互斥
   if (options.skill && options.mcp) {
-    throw new Error('Cannot use --skill and --mcp together. Use --skill for skill installation only, or --mcp for MCP configuration only.');
+    throw new Error('Cannot use `--skill` and `--mcp` together. Use `--skill` for skill installation only, or `--mcp` for MCP configuration only.');
   }
 
   const { resolvedPath, resolvedProject } = validatePathMutex(
@@ -209,7 +199,7 @@ const initCommand = new Command('init')
   )
   .option(
     '--project <path>',
-    'Project root directory to install the skill or MCP config into'
+    'Project root directory for skill or MCP configuration'
   )
   .option(
     '--path <path>',
@@ -223,7 +213,7 @@ const initCommand = new Command('init')
     '--mcp',
     'Configure the deveco-mcp server (syntax checking for .ets and C/C++) only; no skill installation'
   )
-  .option('-f, --force', 'Overwrite an existing skill / MCP configuration')
+  .option('-f, --force', 'Overwrite existing skill/MCP configuration')
   .action(async (options: InitOptions) => {
     try {
       await handleInitCommand(options);

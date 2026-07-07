@@ -5,6 +5,7 @@
 import { Command } from 'commander';
 import { createMcpServer } from '../../mcp/src-server/index.js';
 import { ToolProvider } from '../utils/tool-provider.js';
+import { startArktsLspServer } from './serve-lsp.js';
 
 /**
  * 启动 stdio 模式的 MCP server，并接管当前进程的 stdin/stdout 作为通信通道。
@@ -12,8 +13,9 @@ import { ToolProvider } from '../utils/tool-provider.js';
 async function startStdioMcpServer(): Promise<void> {
   const PROJECT_PATH = process.env.PROJECT_PATH || '';
   const DEVECO_PATH = process.env.DEVECO_PATH;
-  const NODE_MAX_OLD_SPACE_SIZE = process.env.NODE_MAX_OLD_SPACE_SIZE || '8192';
+  const NODE_MAX_OLD_SPACE_SIZE = process.env.NODE_MAX_OLD_SPACE_SIZE;
   const DEBUG = process.env.DEBUG === 'true' || process.env.DEBUG === '1';
+  const FORCE_SYNC = process.env.DEVECO_MCP_FORCE_SYNC === '1';
 
   const toolProvider = await ToolProvider.new();
   const projectPath = PROJECT_PATH;
@@ -24,6 +26,7 @@ async function startStdioMcpServer(): Promise<void> {
     devecoPath,
     nodeMaxOldSpaceSize: NODE_MAX_OLD_SPACE_SIZE,
     debug: DEBUG,
+    forceSync: FORCE_SYNC,
   });
 
   const shutdown = async (): Promise<void> => {
@@ -54,6 +57,21 @@ serveCommand
   .description('Start a local stdio-based MCP server')
   .action(async () => {
     await startStdioMcpServer();
+  });
+
+serveCommand
+  .command('lsp')
+  .description('Start a bundled LSP language server')
+  .option('--arkts', 'Start the ArkTS language server (ace-server)')
+  .option('--project-path <path>', 'HarmonyOS project root path', process.cwd())
+  .action(async (options) => {
+    if (!options.arkts) {
+      console.error('Use --arkts to start the ArkTS language server.');
+      process.exit(1);
+    }
+    await startArktsLspServer({
+      projectPath: options.projectPath,
+    });
   });
 
 export default serveCommand;

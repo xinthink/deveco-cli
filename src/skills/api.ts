@@ -16,8 +16,11 @@ import type {
   ChecksumResponse,
 } from '../types/skills';
 
+// 需要排除的标签名称数组（DevEco标签的技能有冲突）
+const EXCLUDED_TAG_NAMES: readonly string[] = ['DevEco'];
+
 /**
- * 获取需要的标签 ID 列表（HMOS 和 DevEco）
+ * 获取需要的标签 ID 列表（仅 HMOS）
  * 通过 Tags API 查询所有标签，返回匹配标签的 ID 列表
  * @returns 标签 ID 数组
  * @throws 如果 API 调用失败或找不到任何标签
@@ -29,13 +32,13 @@ export async function fetchTagIds(): Promise<string[]> {
   // 验证并解析响应
   const data = validateApiResponse<TagsResponse>(response, 'Tags API');
 
-  // 在标签列表中查找 HMOS 和 DevEco 标签
+  // 在标签列表中查找 HMOS 标签
   const requiredTags = data.data.skill.filter(
-    (tag) => tag.name === 'HMOS' || tag.name === 'DevEco'
+    (tag) => tag.name === 'HMOS'
   );
 
   if (requiredTags.length === 0) {
-    throw new Error('No HMOS or DevEco tags found');
+    throw new Error('No HMOS tag found.');
   }
 
   return requiredTags.map((tag) => tag.id);
@@ -85,18 +88,17 @@ async function fetchSkillsForTag(tagId: string): Promise<Skill[]> {
 /**
  * 获取所有技能
  * 通过 Skills API 分别获取每个标签下的所有技能，并合并去重
+ * 同时过滤掉包含 DevEco 标签的技能
  * @param tagIds - 标签 ID 数组
- * @returns 所有技能数组（根据 id 去重）
+ * @returns 所有技能数组（根据 id 去重，且不包含 DevEco 标签）
  * @throws 如果 API 调用失败
  */
 export async function fetchAllSkills(tagIds: string[]): Promise<Skill[]> {
   const skillMap = new Map<string, Skill>();
 
-  // 并行获取所有标签的技能
   const fetchPromises = tagIds.map(tagId => fetchSkillsForTag(tagId));
   const allTagSkills = await Promise.all(fetchPromises);
 
-  // 合并并去重所有技能
   for (const tagSkills of allTagSkills) {
     for (const skill of tagSkills) {
       if (!skillMap.has(skill.id)) {
@@ -105,7 +107,9 @@ export async function fetchAllSkills(tagIds: string[]): Promise<Skill[]> {
     }
   }
 
-  return Array.from(skillMap.values());
+  return Array.from(skillMap.values()).filter(skill => 
+    skill.tags?.every(tag => !EXCLUDED_TAG_NAMES.includes(tag.name))
+  );
 }
 
 /**
@@ -138,9 +142,10 @@ async function searchSkillsInTag(keyword: string, tagId: string): Promise<Skill[
 /**
  * 搜索技能
  * 通过 Skills API 分别在每个标签下搜索匹配关键词的技能，并合并去重
+ * 同时过滤掉包含 DevEco 标签的技能
  * @param keyword - 搜索关键词
  * @param tagIds - 标签 ID 数组
- * @returns 匹配的技能数组（根据 id 去重）
+ * @returns 匹配的技能数组（根据 id 去重，且不包含 DevEco 标签）
  * @throws 如果 API 调用失败
  */
 export async function searchSkills(
@@ -149,11 +154,9 @@ export async function searchSkills(
 ): Promise<Skill[]> {
   const skillMap = new Map<string, Skill>();
 
-  // 并行在所有标签中搜索技能
   const searchPromises = tagIds.map(tagId => searchSkillsInTag(keyword, tagId));
   const allTagSkills = await Promise.all(searchPromises);
 
-  // 合并并去重所有技能
   for (const tagSkills of allTagSkills) {
     for (const skill of tagSkills) {
       if (!skillMap.has(skill.id)) {
@@ -162,7 +165,9 @@ export async function searchSkills(
     }
   }
 
-  return Array.from(skillMap.values());
+  return Array.from(skillMap.values()).filter(skill => 
+    skill.tags?.every(tag => !EXCLUDED_TAG_NAMES.includes(tag.name))
+  );
 }
 
 /**

@@ -41,7 +41,7 @@ function assertWithin(parent: string, child: string): void {
   const root = path.resolve(parent);
   const rel = path.relative(root, resolved);
   if (rel.startsWith('..') || path.isAbsolute(rel)) {
-    throw new Error(`Path escape detected: ${child}`);
+    throw new Error(`Path traversal detected: ${child}.`);
   }
 }
 
@@ -199,6 +199,19 @@ function getAgentSkillsDir(agentName: string): string {
   return path.join(homedir(), agentConfig.path);
 }
 
+function getAgentSkillsConfig(agentName: string): typeof AGENT_SKILLS_CONFIG[keyof typeof AGENT_SKILLS_CONFIG] {
+  const agentConfig =
+    AGENT_SKILLS_CONFIG[agentName as keyof typeof AGENT_SKILLS_CONFIG];
+
+  if (!agentConfig) {
+    throw new Error(
+      `Invalid agent: ${agentName}, Valid options are: ${Object.keys(AGENT_SKILLS_CONFIG).join(', ')}`
+    );
+  }
+
+  return agentConfig;
+}
+
 /**
  * 获取项目下指定 agent 的 skills 目录路径
  */
@@ -206,7 +219,12 @@ function getProjectAgentSkillsDir(
   projectPath: string,
   agentName: string
 ): string {
-  return path.join(projectPath, '.' + agentName, 'skills');
+  const agentConfig = getAgentSkillsConfig(agentName);
+  const projectSkillsPath =
+    'projectPath' in agentConfig
+      ? agentConfig.projectPath
+      : path.join('.' + agentName, 'skills');
+  return path.join(projectPath, projectSkillsPath);
 }
 
 /**
@@ -229,7 +247,7 @@ async function prepareSkillDirectory(
     if (force) {
       await fsp.rm(skillDir, { recursive: true, force: true });
     } else {
-      console.log(`Skill ${skillName} exists in ${skillsDir}`);
+      console.log(`Skill ${skillName} exists in ${skillsDir}.`);
       return { skillDir, shouldSkip: true };
     }
   } catch {
@@ -249,7 +267,7 @@ async function performSkillInstall(
 ): Promise<void> {
   await extractSkill(zipBuffer, skillsDir, skillName);
   console.log(
-    `Skill ${skillName} installed to ${path.join(skillsDir, skillName)}`
+    `Skill ${skillName} installed to ${path.join(skillsDir, skillName)}.`
   );
 }
 
@@ -266,7 +284,7 @@ async function performLocalSkillInstall(
   await fsp.mkdir(skillDir, { recursive: true });
   const target = path.join(skillDir, path.basename(sourceFile));
   await fsp.copyFile(sourceFile, target);
-  console.log(`Skill ${skillName} installed to ${skillDir}`);
+  console.log(`Skill ${skillName} installed to ${skillDir}.`);
 }
 
 /**
@@ -278,7 +296,7 @@ function handleOperationError(
   defaultErrMsg: string = ''
 ): SkillOperationResult {
   const errorMessage = error instanceof Error ? error.message : defaultErrMsg;
-  console.log(red(`Skill ${skillName} operation failed - ${errorMessage}`));
+  console.log(red(`Faild to exute operation for skill "${skillName}": ${errorMessage}`));
   return { success: false, error: errorMessage };
 }
 
@@ -335,12 +353,12 @@ async function executeRemove(
     try {
       await fsp.access(skillDir);
     } catch {
-      console.log(`Skill ${skillName} does not exist in ${skillsDir}`);
+      console.log(`Skill ${skillName} not found in ${skillsDir}`);
       return { success: true, skipped: true };
     }
 
     await fsp.rm(skillDir, { recursive: true, force: true });
-    console.log(`Skill ${skillName} removed from ${skillDir}`);
+    console.log(`Skill ${skillName} removed from ${skillDir}.`);
     return { success: true };
   } catch (error: unknown) {
     return handleOperationError(skillName, error, 'Removal failed');
@@ -554,6 +572,6 @@ export function resolveBundledSkillMdPath(): string {
   }
 
   throw new Error(
-    'SKILL.md not found in deveco-cli package; please reinstall deveco-cli.'
+    'SKILL.md not found in deveco-cli package. Reinstall deveco-cli.'
   );
 }

@@ -124,8 +124,19 @@ export class ToolProvider {
     this._emulatorLauncherPath = emulatorLauncherPath;
   }
 
+  public static enforceStudioMinVersion(installRoot: string): void {
+    const version = ToolProvider.parseProductInfoVersion(installRoot);
+    if (version === undefined) {
+      throw new Error(
+        `Failed to determine DevEco Studio version at ${installRoot}`
+      );
+    }
+    ToolProvider.assertMinVersion(installRoot, version);
+  }
+
   public static async checkVersion(): Promise<void> {
-    await ToolProvider.findDevEcoStudio();
+    const installRoot = await ToolProvider.findDevEcoStudio();
+    ToolProvider.enforceStudioMinVersion(installRoot);
   }
 
   public static async new(): Promise<ToolProvider> {
@@ -170,7 +181,7 @@ export class ToolProvider {
           ? ToolProvider.collectCandidatesMac()
           : (() => {
               throw new Error(
-                'Linux is not fully supported yet for automatic DevEco Studio detection'
+                'Linux is not fully supported yet for automatic DevEco Studio detection.'
               );
             })();
 
@@ -198,39 +209,69 @@ export class ToolProvider {
     };
 
     await ToolProvider.addFromUninstallKey(add);
-    await ToolProvider.addFromWow64Key(add);
+    await ToolProvider.addFromHuaweiStudioKeys(add);
     ToolProvider.addFromDefaultWindowsPath(add);
 
     if (unique.length === 0) {
       throw new Error(
-        'DevEco Studio installation not found in registry or default locations'
+        'DevEco Studio installation not found in registry or default locations.'
       );
     }
 
     return unique;
   }
 
+  private static readonly UNINSTALL_REGISTRY_PARENTS = [
+    'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+    'HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+  ] as const;
+
+  private static readonly HUAWEI_STUDIO_REGISTRY_KEYS = [
+    'HKLM\\SOFTWARE\\Huawei\\DevEco Studio',
+    'HKLM\\SOFTWARE\\WOW6432Node\\Huawei\\DevEco Studio',
+  ] as const;
+
+  private static isDevEcoStudioUninstallSubkey(name: string): boolean {
+    return name
+      .normalize('NFKC')
+      .trim()
+      .toLowerCase()
+      .startsWith('deveco studio');
+  }
+
   private static async addFromUninstallKey(
     add: (p: string | undefined, source: string) => void
   ): Promise<void> {
-    try {
-      const key =
-        'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DevEco Studio';
-      const result = await regList([key]);
-      const p = result[key]?.values?.InstallLocation?.value as
-        | string
-        | undefined;
-      add(p, 'Uninstall registry key');
-    } catch {
-      // registry key may not exist
+    for (const parent of ToolProvider.UNINSTALL_REGISTRY_PARENTS) {
+      try {
+        const result = await regList([parent]);
+        const subkeyNames = result[parent]?.keys ?? [];
+        const devEcoKeys = subkeyNames.filter(
+          ToolProvider.isDevEcoStudioUninstallSubkey
+        );
+        if (devEcoKeys.length === 0) {
+          continue;
+        }
+        const fullKeys = devEcoKeys.map((k) => `${parent}\\${k}`);
+        const subkeysResult = await regList(fullKeys);
+        for (const key of fullKeys) {
+          const p = subkeysResult[key]?.values?.InstallLocation?.value as
+            | string
+            | undefined;
+          add(p, `Uninstall registry key (${key})`);
+        }
+      } catch {
+        // registry parent or subkeys may not exist
+      }
     }
   }
 
-  private static async addFromWow64Key(
-    add: (p: string | undefined, source: string) => void
+  private static async addFromHuaweiStudioRegistryKey(
+    add: (p: string | undefined, source: string) => void,
+    huaweiKey: string,
+    sourceLabel: string
   ): Promise<void> {
     try {
-      const huaweiKey = 'HKLM\\SOFTWARE\\WOW6432Node\\Huawei\\DevEco Studio';
       const result = await regList([huaweiKey]);
       const versionKeys = result[huaweiKey]?.keys ?? [];
       if (versionKeys.length === 0) {
@@ -242,10 +283,21 @@ export class ToolProvider {
         const p = subkeysResult[subkey]?.values?.['']?.value as
           | string
           | undefined;
-        add(p, `WOW6432Node subkey ${subkey}`);
+        add(p, `${sourceLabel} subkey ${subkey}`);
       }
     } catch {
       // registry key may not exist
+    }
+  }
+
+  private static async addFromHuaweiStudioKeys(
+    add: (p: string | undefined, source: string) => void
+  ): Promise<void> {
+    for (const huaweiKey of ToolProvider.HUAWEI_STUDIO_REGISTRY_KEYS) {
+      const label = huaweiKey.includes('WOW6432Node')
+        ? 'Huawei DevEco Studio (WOW6432Node)'
+        : 'Huawei DevEco Studio';
+      await ToolProvider.addFromHuaweiStudioRegistryKey(add, huaweiKey, label);
     }
   }
 
@@ -299,7 +351,7 @@ export class ToolProvider {
 
     if (candidates.length === 0) {
       throw new Error(
-        'DevEco Studio not found in /Applications or ~/Applications'
+        'DevEco Studio not found in /Applications or ~/Applications.'
       );
     }
 
@@ -497,11 +549,10 @@ export class ToolProvider {
     return 0;
   }
 
-  // ---------- pick latest + version enforcement ----------
+  // ---------- pick latest ----------
 
   private static pickLatestByProductInfo(candidates: string[]): string {
     const best = ToolProvider.selectHighestVersion(candidates);
-    ToolProvider.assertMinVersion(best.installRoot, best.version);
     debugLog(
       `[ToolProvider] Selected DevEco Studio ${best.version} at ${best.installRoot}`
     );
@@ -522,7 +573,7 @@ export class ToolProvider {
         debugLog(`[ToolProvider] ${installRoot} => version ${version}`);
       } else {
         debugLog(
-          `[ToolProvider] Skipping ${installRoot}: could not read version (Info.plist / product-info.json)`
+          `[ToolProvider] Skipping ${installRoot}: could not read version (Info.plist / product-info.json).`
         );
       }
     }
@@ -557,7 +608,7 @@ export class ToolProvider {
       red(
         `Error: The detected DevEco Studio version is ${version}, ` +
           `which is below the minimum required version ${MIN_REQUIRED_VERSION}. ` +
-          `Please upgrade to the latest version before using deveco-cli:`
+          `Upgrade to the latest version before using deveco-cli:`
       ) +
         '\n' +
         DEVECO_DOWNLOAD_URL
@@ -628,7 +679,7 @@ export class ToolProvider {
         : platform === 'darwin'
           ? ToolProvider.resolveMacTools(devecoStudioPath)
           : (() => {
-              throw new Error('Linux is not fully supported yet');
+              throw new Error('Linux is not fully supported yet.');
             })();
 
     ToolProvider.verifyTools(
@@ -935,7 +986,7 @@ export class ToolProvider {
   ): SignatureVerificationResult {
     const powerShellPath = ToolProvider.findPowerShellPath();
     if (!powerShellPath) {
-        throw new Error(`The PowerShell application was not found`);
+        throw new Error(`PowerShell application not found`);
     }
     const { tmpDir, scriptPath } = ToolProvider.createSignatureScript();
     try {

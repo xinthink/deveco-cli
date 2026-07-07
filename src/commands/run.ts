@@ -37,14 +37,14 @@ async function selectDevice(
   const devices = await deviceManager.listDevices();
   if (devices.length === 0) {
     throw new Error(
-      'No active devices found. Please start an emulator or connect a physical device.'
+      'No active devices found. Start an emulator or connect a physical device.'
     );
   }
 
   if (!deviceArg && devices.length > 1) {
     const named = await deviceManager.listDevicesWithName();
     throw new Error(
-      'Multiple devices found. Please specify a target device using `--device <Name>` or `--device <ID>`.\nAvailable devices:\n' +
+      'Multiple devices found. Specify a target device using `--device <Name>` or `--device <ID>`.\nAvailable devices:\n' +
         named.map((d) => `  - ${d.name} (${d.serial})`).join('\n')
     );
   }
@@ -76,8 +76,7 @@ function identifyModule(project: Project, moduleArg?: string): string {
     return selected;
   }
 
-  throw new Error(
-    `No module specified. Please specify a module using --module <name>.\nAvailable runnable modules:\n` +
+  throw new Error(`Specify a module using --module <name>.\nAvailable runnable modules:\n` +
       runnableModules.map((m) => `  - ${m.name}`).join('\n')
   );
 }
@@ -128,7 +127,7 @@ async function performDeployment(
       bundleName
     );
     if (!uninstalled) {
-      console.log(`App ${bundleName} is not installed, skipping uninstall.`);
+      console.log(`App ${bundleName} not installed; skipping uninstallation.`);
     }
   }
 
@@ -152,10 +151,10 @@ const runCommand = new Command('run')
   )
   .option('--device <device>', 'Target device name or serial')
   .option('--product <product>', 'Product name (default: default)')
-  .option('--build-mode <mode>', 'Build mode (e.g. debug, release; default: debug)')
+  .option('--build-mode <mode>', 'Build mode (options: debug, release; default: debug)')
   .option('--ability <ability>', 'Ability name to launch')
   .option('--uninstall', 'Uninstall existing app before installation')
-  .option('--skip-build', 'Skip the build step and deploy the existing artifacts')
+  .option('--skip-build', 'Skip build step and deploy existing artifacts')
   .action(async (options: RunOptions) => {
     try {
       await runActionImpl(options);
@@ -184,15 +183,15 @@ async function runBuildPhase(
   await withBuildLock(
     project.rootDir,
     () => executeBuildSteps(ohpmAdapter, hvigorAdapter, productName, buildMode, buildTarget),
-    () => console.log('Another build is already running for this project. Waiting for it to finish...')
+    () => console.log('Another build is already running for this project. Waiting for completion...')
   );
 
-  console.log('\n' + green('Build completed successfully!'));
+  console.log('\n' + green('Build completed successfully.'));
 }
 
 async function runActionImpl(options: RunOptions): Promise<void> {
   const project = Project.discover(process.cwd());
-  console.warn(yellow('Please ensure the project source is trustworthy before proceeding.'));
+  console.warn(yellow('Ensure the project source is trusted before proceeding.'));
   const toolProvider = await ToolProvider.new();
 
   const moduleArg = identifyModule(project, options.module);
@@ -201,7 +200,7 @@ async function runActionImpl(options: RunOptions): Promise<void> {
   const type = project.getModuleType(moduleName);
   if (type !== 'entry' && type !== 'feature' && type !== 'shared') {
     throw new Error(
-      `Module '${moduleName}' is of type '${type}', which is not runnable. Please specify an entry or feature module.`
+      `Module '${moduleName}' '${type}' is not runnable. Specify an entry or feature module.`
     );
   }
 

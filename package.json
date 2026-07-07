@@ -61,7 +61,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@node-rs/jieba": "^2.0.1",
     "adm-zip": "^0.5.17",
-    "axios": "1.15.2",
+    "axios": "1.17.0",
     "colorette": "^2.0.20",
     "commander": "^13.1.0",
     "execa": "^9.6.1",

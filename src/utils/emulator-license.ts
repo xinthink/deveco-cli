@@ -377,12 +377,12 @@ export async function ensureEmulatorLicenseAccepted(
   });
 
   const combined = combinedEmulatorOutputText(probe.stdout, probe.stderr);
-  if (probe.exitCode === 0 && !isEmulatorLicenseBlockedOutput(combined)) {
-    acceptedCache.add(key);
-    return;
-  }
-  if (isEmulatorLicenseBlockedOutput(combined)) {
+  const isBlocked = isEmulatorLicenseBlockedOutput(combined);
+  if (isBlocked) {
     throw new EmulatorLicenseBlockedError();
+  }
+  if (probe.exitCode === 0) {
+    acceptedCache.add(key);
   }
 }
 
@@ -424,7 +424,7 @@ async function resolveEmuConfigPathForWrites(
   );
   const majorMinor = parseEmulatorMajorMinorFromVersionText(versionText);
   if (!majorMinor) {
-    throw new Error(`Cannot parse Emulator major.minor from:\n${versionText}`);
+    throw new Error(`Cannot parse Emulator major.minor from:\n${versionText}.`);
   }
   return resolveEmuConfigPathFromMajorMinor(majorMinor);
 }
@@ -555,7 +555,7 @@ export async function runEmulatorLicenseAccept(
   console.log(body);
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     console.error(
-      'devecocli emulator license accept requires an interactive terminal.'
+      '`devecocli emulator license accept` requires an interactive terminal.'
     );
     return 1;
   }

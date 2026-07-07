@@ -36,7 +36,7 @@ function validateOneOf<T extends string>(...allowed: T[]): (value: string) => T 
 function validatePositiveInt(value: string): number {
   const num = Number(value);
   if (!Number.isInteger(num) || num <= 0) {
-    throw new InvalidArgumentError('Must be a positive integer');
+    throw new InvalidArgumentError('Must be a positive integer.');
   }
   return num;
 }
@@ -87,7 +87,7 @@ docCommand
     try {
       const normalizedId = documentId.trim();
       if (!normalizedId) {
-        console.error(red('Document ID cannot be empty'));
+        console.error(red('Document ID cannot be empty.'));
         process.exit(1);
       }
 

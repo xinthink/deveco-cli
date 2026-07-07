@@ -8,42 +8,36 @@ import * as path from 'path';
 import { z } from 'zod';
 import {
   cleanupOldSiblingDirs,
-  diagnosticUriCandidates,
   findArktsLangServerPath,
   findDevEcoPath,
   findHarmonyProject,
   getMcpLogDirectory,
   getRequestId,
-  normalizeDiagnosticUri,
   normalizePath,
   sleep,
   toFileUri,
-  toStandardPath,
   devecoStudioContentRoot,
 } from '../utils/common.js';
 import { mcpLog } from '../utils/mcp-logger.js';
 import { ArktsLspManager } from '../lsp/ArktsLspManager.js';
 import { initializeLogger } from '../lsp/logger.js';
 import { toUnixPath } from '../lsp/utils.js';
+import { LSP_INIT_TIMEOUT_MS, LSP_METHOD } from '../lsp/constant.js';
 import type { LspMessage } from '../lsp/types.js';
 
-const DIAGNOSTIC_TIMEOUT_MS = 2 * 60 * 1000; // 诊断等待 2 分钟
-const INIT_INITIAL_TIMEOUT_MS = 5 * 60 * 1000; // 初始化总等待 5 分钟
-const INIT_RESET_TIMEOUT_MS = 3 * 60 * 1000; // 收到 indexingProgress 后重置为 3 分钟
 const INDEX_DIR_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // index 目录最大保留 7 天
 const LOG_DIR_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000; // log 目录最大保留 5 天
+/** legacy 模式下等待 publishDiagnostics 的超时（与老版本一致 2 分钟）。 */
+const DIAGNOSTIC_TIMEOUT_MS = 2 * 60 * 1000;
 
-type DiagnosticResolver = (value: unknown) => void;
-
-interface DiagnosticWaiter {
-  resolve: DiagnosticResolver;
+type DiagnosticWaiter = {
+  resolve: (value: unknown) => void;
   reject: (err: Error) => void;
   timer: NodeJS.Timeout;
-}
+};
 
 export class ArktsCheckTool {
   private manager: ArktsLspManager | null = null;
-  private diagnosticWaiters: Map<string, DiagnosticWaiter> = new Map();
 
   private initialized: boolean = false;
   private initializing: boolean = false;
@@ -55,9 +49,25 @@ export class ArktsCheckTool {
   private projectPath: string;
   /** DevEco Studio 安装路径；构造时可选，initialize 时若为空将自动查找 */
   private devecoPath: string | null;
-  /** arkts-lang-server (即 ace-server 的父目录)；在 initialize 时根据 devecoPath 计算 */
-  private arktsLangServerPath: string | null;
   private nodeMaxOldSpaceSize?: string;
+  /** 配置文件变化回调，透传给 ArktsLspManager，由 server 层设置 needsResync 标志位 */
+  private onConfigChangedCallback: (() => void) | null = null;
+  /** 是否使用标准 LSP 协议（doInitialize 时按 standardIndex/index.js 存在性设置）。 */
+  private useStandardProtocol: boolean = true;
+  /** legacy 模式：按 uri 等待 publishDiagnostics 的 waiter。 */
+  private readonly diagnosticWaiters = new Map<string, DiagnosticWaiter>();
+
+  /** feature 名称 → LSP method 字符串的映射（解决 camelCase → UPPER_SNAKE_CASE 不匹配） */
+  private static readonly FEATURE_METHOD_MAP: Record<string, string> = {
+    hover: LSP_METHOD.HOVER,
+    definition: LSP_METHOD.DEFINITION,
+    declaration: LSP_METHOD.DECLARATION,
+    references: LSP_METHOD.REFERENCES,
+    implementation: LSP_METHOD.IMPLEMENTATION,
+    completion: LSP_METHOD.COMPLETION,
+    signatureHelp: LSP_METHOD.SIGNATURE_HELP,
+    documentHighlight: LSP_METHOD.DOCUMENT_HIGHLIGHT,
+  };
 
   constructor(
     projectPath: string,
@@ -66,8 +76,12 @@ export class ArktsCheckTool {
   ) {
     this.projectPath = projectPath;
     this.devecoPath = devecoPath ?? '';
-    this.arktsLangServerPath = null;
     this.nodeMaxOldSpaceSize = nodeMaxOldSpaceSize;
+  }
+
+  /** 注册配置文件变化回调，透传给 ArktsLspManager */
+  setOnConfigChanged(callback: () => void): void {
+    this.onConfigChangedCallback = callback;
   }
 
   static getToolDefinition() {
@@ -113,8 +127,9 @@ export class ArktsCheckTool {
   }
 
   private async doInitialize(): Promise<void> {
-    const { harmonyRoot, devecoPath, arktsLangServerPath } =
+    const { harmonyRoot, devecoPath, arktsLangServerPath, useStandardProtocol } =
       this.resolveProjectAndDeveco();
+    this.useStandardProtocol = useStandardProtocol;
 
     const normalizedProjectRoot = normalizePath(harmonyRoot);
     const { logPath, indexPath } = this.getLogAndIndexPath(normalizedProjectRoot);
@@ -132,6 +147,7 @@ export class ArktsCheckTool {
       ? parseInt(this.nodeMaxOldSpaceSize, 10)
       : NaN;
     const nodeMaxOldSpaceSize = Number.isNaN(parsedMaxSize) ? undefined : parsedMaxSize;
+    mcpLog.info(`ArktsCheck nodeMaxOldSpaceSize: incoming='${this.nodeMaxOldSpaceSize ?? '(unset)'}', parsed=${nodeMaxOldSpaceSize ?? 'undefined → dynamic formula applies'}`);
 
     const sdkPath = path.join(devecoStudioContentRoot(devecoPath), 'sdk');
     mcpLog.info(`ArktsCheck devecoPath: ${devecoPath}, contentRoot: ${devecoStudioContentRoot(devecoPath)}, sdkPath: ${sdkPath}`);
@@ -141,13 +157,17 @@ export class ArktsCheckTool {
       workspaceRoot: toUnixPath(normalizedProjectRoot),
       indexLogPath: indexPath,
       nodeMaxOldSpaceSize,
+      useStandardProtocol,
     });
     this.manager.setOnMessage((msg) => this.handleLspMessage(msg));
+    if (this.onConfigChangedCallback) {
+      this.manager.setOnConfigChanged(this.onConfigChangedCallback);
+    }
 
     await new Promise<void>((resolve, reject) => {
       this.initResolve = resolve;
       this.initReject = reject;
-      this.armInitTimer(INIT_INITIAL_TIMEOUT_MS);
+      this.armInitTimer(LSP_INIT_TIMEOUT_MS);
       // start() 内部异步触发 arkts/initialized 或 arkts/initializationFailed
       this.manager!.start([]).catch((err: unknown) => {
         const e = err instanceof Error ? err : new Error(String(err));
@@ -161,6 +181,7 @@ export class ArktsCheckTool {
     harmonyRoot: string;
     devecoPath: string;
     arktsLangServerPath: string;
+    useStandardProtocol: boolean;
   } {
     const harmonyRoot = findHarmonyProject(this.projectPath);
     if (!harmonyRoot) {
@@ -181,9 +202,21 @@ export class ArktsCheckTool {
     if (!arktsLangServerPath) {
       throw new Error('arkts-lang-server path not found');
     }
-    this.arktsLangServerPath = arktsLangServerPath;
 
-    return { harmonyRoot, devecoPath, arktsLangServerPath };
+    const standardIndexServerPath = path.resolve(
+      arktsLangServerPath,
+      'ace-server',
+      'out',
+      'standardIndex',
+      'index.js',
+    );
+    const useStandardProtocol = fs.existsSync(standardIndexServerPath);
+    mcpLog.info(
+      `ArktsCheck protocol: ${useStandardProtocol ? 'standard LSP' : 'legacy ace-server'} ` +
+        `(standardIndex/index.js exists=${useStandardProtocol})`,
+    );
+
+    return { harmonyRoot, devecoPath, arktsLangServerPath, useStandardProtocol };
   }
 
   private armInitTimer(ms: number): void {
@@ -213,21 +246,59 @@ export class ArktsCheckTool {
   }
 
   /**
-   * 对单个文件进行诊断检查。返回 LSP 原始的 diagnostics 数组，或包含
-   * errorMessage 字段的对象。
+   * 对单个文件进行诊断检查。通过标准 LSP textDocument/diagnostic
+   * 拉取式请求获取诊断结果，返回 diagnostics 数组。
    */
   async checkFile(filePath: string): Promise<unknown> {
     if (!this.initialized) {
       await this.initialize();
     }
+    const manager = this.manager;
+    if (!manager) {
+      throw new Error('ArktsLspManager not initialized');
+    }
 
-    const key = normalizeDiagnosticUri(toFileUri(filePath));
-    const sendUri = toStandardPath(filePath);
+    const sendUri = toFileUri(filePath);
 
     const content = await fs.promises.readFile(filePath, 'utf8');
     const ext = path.extname(filePath).replace(/^\./, '');
     const languageId = `deveco.apptool.${ext || 'plaintext'}`;
 
+    if (manager.useStandardProtocol) {
+      return this.checkFileStandard(manager, sendUri, content, languageId);
+    }
+    return this.checkFileLegacy(manager, filePath, sendUri, content, languageId);
+  }
+
+  private async checkFileStandard(
+    manager: ArktsLspManager,
+    sendUri: string,
+    content: string,
+    languageId: string,
+  ): Promise<unknown> {
+    mcpLog.debug(`textDocument/didOpen uri=${sendUri} content_len=${content.length}`);
+    this.sendNotification('textDocument/didOpen', {
+      textDocument: { uri: sendUri, text: content, languageId, version: 1 },
+    });
+    try {
+      mcpLog.debug(`textDocument/diagnostic uri=${sendUri}`);
+      const result = await manager.diagnostic({ textDocument: { uri: sendUri } });
+      return extractDiagnosticItems(result);
+    } finally {
+      this.sendNotification('textDocument/didClose', { textDocument: { uri: sendUri } });
+    }
+  }
+
+  /** legacy：publish-wait（didOpen onAsyncOpenFile → 等 publishDiagnostics → didClose）。 */
+  private async checkFileLegacy(
+    manager: ArktsLspManager,
+    filePath: string,
+    sendUri: string,
+    content: string,
+    languageId: string,
+  ): Promise<unknown> {
+    const key = sendUri;
+    manager.registerDiagnosticCallback(sendUri);
     const diagnosticsPromise = new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         if (this.diagnosticWaiters.delete(key)) {
@@ -236,28 +307,16 @@ export class ArktsCheckTool {
       }, DIAGNOSTIC_TIMEOUT_MS);
       this.diagnosticWaiters.set(key, { resolve, reject, timer });
     });
-
-    const didOpenParams = {
-      textDocument: {
-        uri: sendUri,
-        text: content,
-        languageId,
-        version: content.length,
-      },
+    mcpLog.debug(`textDocument/didOpen(legacy) uri=${sendUri} content_len=${content.length}`);
+    manager.onAsyncOpenFile({
+      textDocument: { uri: sendUri, text: content, languageId, version: content.length },
       editorFiles: [sendUri],
       isFromEditor: false,
-    };
-
-    mcpLog.debug(`textDocument/didOpen uri=${sendUri} content_len=${content.length}`);
-    this.sendNotification('textDocument/didOpen', didOpenParams);
-
+    });
     try {
       return await diagnosticsPromise;
     } finally {
-      this.sendNotification('textDocument/didClose', {
-        textDocument: { uri: sendUri },
-        isManual: false,
-      });
+      manager.closeFileLegacy(sendUri, false);
     }
   }
 
@@ -285,6 +344,428 @@ export class ArktsCheckTool {
 
     await this.runDiagnosticsForFiles(validFiles, errors, infoMsgs);
     return this.formatCallResult(errors, infoMsgs);
+  }
+
+  /**
+   * 统一的语言特性请求入口（位置类，params = {textDocument, position}）。
+   * 覆盖：hover / definition / declaration / references / implementation / completion / signatureHelp / documentHighlight。
+   * 生命周期与 check 一致：didOpen → send request → await response → didClose。
+   */
+  async handleLspFeature(
+    feature: 'hover' | 'definition' | 'declaration' | 'references' | 'implementation' | 'completion' | 'signatureHelp' | 'documentHighlight',
+    args: { file: string; line: number; character: number }
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    if (!this.initialized) {
+      return this.buildNotReadyResponse();
+    }
+
+    const resolved = this.resolveSingleFile(args.file);
+    if (!resolved) {
+      return {
+        content: [{ type: 'text', text: `文件不存在或不是 .ets 文件: ${args.file}` }],
+        isError: true,
+      };
+    }
+
+    const method = ArktsCheckTool.FEATURE_METHOD_MAP[feature];
+    if (!method) {
+      return { content: [{ type: 'text', text: `Unknown feature: ${feature}` }], isError: true };
+    }
+
+    mcpLog.info(`handleLspFeature: ${feature} file=${resolved} line=${args.line} char=${args.character}`);
+
+    try {
+      const result = await this.withOpenFile(resolved, async (uri) => {
+        const params: Record<string, unknown> = {
+          textDocument: { uri },
+          position: { line: args.line, character: args.character },
+        };
+        if (feature === 'references') {
+          params.context = { includeDeclaration: true };
+        }
+        return this.manager!.sendFeatureRequest(method, params);
+      });
+      const text = result == null
+        ? `${feature}: no result`
+        : `${feature}: ${JSON.stringify(result, null, 2)}`;
+      return { content: [{ type: 'text', text }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      mcpLog.error(`handleLspFeature ${feature} failed: ${msg}`);
+      return {
+        content: [{ type: 'text', text: `${feature} failed: ${msg}` }],
+        isError: true,
+      };
+    }
+  }
+
+  /**
+   * workspaceSymbol：按名称搜索全工程符号。
+   * 不依赖具体文件，无需 didOpen/didClose，只需 LSP 处于 READY 状态。
+   */
+  async handleWorkspaceSymbol(
+    query: string
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    if (!this.initialized) {
+      return this.buildNotReadyResponse();
+    }
+
+    mcpLog.info(`handleWorkspaceSymbol: query="${query}"`);
+
+    try {
+      const result = await this.manager!.sendFeatureRequest(
+        LSP_METHOD.WORKSPACE_SYMBOL,
+        { query },
+      );
+      const text = result == null
+        ? `workspaceSymbol: no result`
+        : `workspaceSymbol: ${JSON.stringify(result, null, 2)}`;
+      return { content: [{ type: 'text', text }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      mcpLog.error(`handleWorkspaceSymbol failed: ${msg}`);
+      return {
+        content: [{ type: 'text', text: `workspaceSymbol failed: ${msg}` }],
+        isError: true,
+      };
+    }
+  }
+
+  /**
+   * documentSymbol：获取单个文件内的符号树（函数/类/变量列表 + range）。
+   * 需要 didOpen/didClose 生命周期（与 hover/definition 一致），
+   * 入参只需文件路径，不需要位置。
+   */
+  async handleDocumentSymbol(
+    file: string
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    if (!this.initialized) {
+      return this.buildNotReadyResponse();
+    }
+
+    const resolved = this.resolveSingleFile(file);
+    if (!resolved) {
+      return {
+        content: [{ type: 'text', text: `文件不存在或不是 .ets 文件: ${file}` }],
+        isError: true,
+      };
+    }
+
+    mcpLog.info(`handleDocumentSymbol: file=${resolved}`);
+
+    try {
+      const result = await this.withOpenFile(resolved, async (uri) => {
+        return this.manager!.sendFeatureRequest(
+          LSP_METHOD.DOCUMENT_SYMBOL,
+          { textDocument: { uri } },
+        );
+      });
+      const text = result == null
+        ? 'documentSymbol: no result'
+        : `documentSymbol: ${JSON.stringify(result, null, 2)}`;
+      return { content: [{ type: 'text', text }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      mcpLog.error(`handleDocumentSymbol failed: ${msg}`);
+      return {
+        content: [{ type: 'text', text: `documentSymbol failed: ${msg}` }],
+        isError: true,
+      };
+    }
+  }
+
+  /**
+   * callHierarchy：查询函数调用关系。
+   * 两步请求：prepareCallHierarchy 获取 item → incomingCalls/outgoingCalls 获取调用方/被调用方。
+   * direction: 'incoming' = 谁调用了这个函数；'outgoing' = 这个函数调用了谁。
+   */
+  async handleCallHierarchy(
+    args: { file: string; line: number; character: number; direction: 'incoming' | 'outgoing' }
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    if (!this.initialized) {
+      return this.buildNotReadyResponse();
+    }
+
+    const resolved = this.resolveSingleFile(args.file);
+    if (!resolved) {
+      return {
+        content: [{ type: 'text', text: `文件不存在或不是 .ets 文件: ${args.file}` }],
+        isError: true,
+      };
+    }
+
+    mcpLog.info(`handleCallHierarchy: file=${resolved} line=${args.line} char=${args.character} direction=${args.direction}`);
+
+    try {
+      const result = await this.withOpenFile(resolved, async (uri) => {
+        const prepareResult = await this.manager!.sendFeatureRequest(
+          LSP_METHOD.PREPARE_CALL_HIERARCHY,
+          { textDocument: { uri }, position: { line: args.line, character: args.character } },
+        );
+        const items = Array.isArray(prepareResult) ? prepareResult : (prepareResult ? [prepareResult] : []);
+        if (items.length === 0) {
+          return { items: [], calls: [] };
+        }
+
+        const callsMethod = args.direction === 'incoming'
+          ? LSP_METHOD.INCOMING_CALLS
+          : LSP_METHOD.OUTGOING_CALLS;
+
+        const allCalls: unknown[] = [];
+        for (const item of items) {
+          const calls = await this.manager!.sendFeatureRequest(callsMethod, { item });
+          if (Array.isArray(calls)) {
+            allCalls.push(...calls);
+          } else if (calls) {
+            allCalls.push(calls);
+          }
+        }
+        return { items, calls: allCalls };
+      });
+
+      const text = `callHierarchy (${args.direction}): ${JSON.stringify(result, null, 2)}`;
+      return { content: [{ type: 'text', text }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      mcpLog.error(`handleCallHierarchy failed: ${msg}`);
+      return {
+        content: [{ type: 'text', text: `callHierarchy failed: ${msg}` }],
+        isError: true,
+      };
+    }
+  }
+
+  /**
+   * codeAction：获取指定位置的快速修复建议。
+   * 入参 {file, line, character}，params 需要 range + context。
+   */
+  async handleCodeAction(
+    args: { file: string; line: number; character: number }
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    if (!this.initialized) {
+      return this.buildNotReadyResponse();
+    }
+    const resolved = this.resolveSingleFile(args.file);
+    if (!resolved) {
+      return { content: [{ type: 'text', text: `文件不存在或不是 .ets 文件: ${args.file}` }], isError: true };
+    }
+
+    mcpLog.info(`handleCodeAction: file=${resolved} line=${args.line} char=${args.character}`);
+    try {
+      const result = await this.withOpenFile(resolved, async (uri) => {
+        const pos = { line: args.line, character: args.character };
+        return this.manager!.sendFeatureRequest(LSP_METHOD.CODE_ACTION, {
+          textDocument: { uri },
+          range: { start: pos, end: pos },
+          context: { diagnostics: [] },
+        });
+      });
+      const text = result == null ? 'codeAction: no result' : `codeAction: ${JSON.stringify(result, null, 2)}`;
+      return { content: [{ type: 'text', text }] };
+    } catch (err) {
+      return this.buildErrorResponse('codeAction', err);
+    }
+  }
+
+  /**
+   * rename：重命名符号。两步请求 prepareRename → rename。
+   * 入参 {file, line, character, newName}。
+   */
+  async handleRename(
+    args: { file: string; line: number; character: number; newName: string }
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    if (!this.initialized) {
+      return this.buildNotReadyResponse();
+    }
+    const resolved = this.resolveSingleFile(args.file);
+    if (!resolved) {
+      return { content: [{ type: 'text', text: `文件不存在或不是 .ets 文件: ${args.file}` }], isError: true };
+    }
+
+    mcpLog.info(`handleRename: file=${resolved} line=${args.line} char=${args.character} newName=${args.newName}`);
+    try {
+      const result = await this.withOpenFile(resolved, async (uri) => {
+        const pos = { line: args.line, character: args.character };
+        const prepareResult = await this.manager!.sendFeatureRequest(LSP_METHOD.PREPARE_RENAME, {
+          textDocument: { uri }, position: pos,
+        });
+        if (prepareResult == null) {
+          throw new Error('Symbol at this position cannot be renamed');
+        }
+        return this.manager!.sendFeatureRequest(LSP_METHOD.RENAME, {
+          textDocument: { uri }, position: pos, newName: args.newName,
+        });
+      });
+      const text = result == null ? 'rename: no result' : `rename: ${JSON.stringify(result, null, 2)}`;
+      return { content: [{ type: 'text', text }] };
+    } catch (err) {
+      return this.buildErrorResponse('rename', err);
+    }
+  }
+
+  /**
+   * typeHierarchy：查询类型继承关系。两步请求 prepareTypeHierarchy → supertypes/subtypes。
+   * direction: 'supertypes' = 父类型链；'subtypes' = 子类型链。
+   */
+  async handleTypeHierarchy(
+    args: { file: string; line: number; character: number; direction: 'supertypes' | 'subtypes' }
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    if (!this.initialized) {
+      return this.buildNotReadyResponse();
+    }
+    const resolved = this.resolveSingleFile(args.file);
+    if (!resolved) {
+      return { content: [{ type: 'text', text: `文件不存在或不是 .ets 文件: ${args.file}` }], isError: true };
+    }
+
+    mcpLog.info(`handleTypeHierarchy: file=${resolved} line=${args.line} char=${args.character} direction=${args.direction}`);
+    try {
+      const result = await this.withOpenFile(resolved, async (uri) => {
+        const prepareResult = await this.manager!.sendFeatureRequest(LSP_METHOD.PREPARE_TYPE_HIERARCHY, {
+          textDocument: { uri }, position: { line: args.line, character: args.character },
+        });
+        const items = Array.isArray(prepareResult) ? prepareResult : (prepareResult ? [prepareResult] : []);
+        if (items.length === 0) {
+          return { items: [], results: [] };
+        }
+        const method = args.direction === 'supertypes' ? LSP_METHOD.SUPERTYPES : LSP_METHOD.SUBTYPES;
+        const allResults: unknown[] = [];
+        for (const item of items) {
+          const res = await this.manager!.sendFeatureRequest(method, { item });
+          if (Array.isArray(res)) { allResults.push(...res); } else if (res) { allResults.push(res); }
+        }
+        return { items, results: allResults };
+      });
+      const text = `typeHierarchy (${args.direction}): ${JSON.stringify(result, null, 2)}`;
+      return { content: [{ type: 'text', text }] };
+    } catch (err) {
+      return this.buildErrorResponse('typeHierarchy', err);
+    }
+  }
+
+  /**
+   * completionItem/resolve：解析补全项详情（文档、参数等）。
+   * 入参为 completion 返回的 item 对象，无需文件路径。
+   */
+  async handleCompletionItemResolve(
+    item: unknown
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    if (!this.initialized) {
+      return this.buildNotReadyResponse();
+    }
+    mcpLog.info('handleCompletionItemResolve');
+    try {
+      const result = await this.manager!.sendFeatureRequest(LSP_METHOD.COMPLETION_ITEM_RESOLVE, { item });
+      const text = result == null ? 'completionItemResolve: no result' : `completionItemResolve: ${JSON.stringify(result, null, 2)}`;
+      return { content: [{ type: 'text', text }] };
+    } catch (err) {
+      return this.buildErrorResponse('completionItemResolve', err);
+    }
+  }
+
+  // ---------- 低价值方法（实现但不暴露为 tool） ----------
+
+  /** inlayHint：获取文件内的内联类型提示。需要 range。 */
+  async handleInlayHint(
+    file: string
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    if (!this.initialized) {
+      return this.buildNotReadyResponse();
+    }
+    const resolved = this.resolveSingleFile(file);
+    if (!resolved) {
+      return { content: [{ type: 'text', text: `文件不存在或不是 .ets 文件: ${file}` }], isError: true };
+    }
+    try {
+      const content = await fs.promises.readFile(resolved, 'utf8');
+      const lineCount = content.split('\n').length;
+      const result = await this.withOpenFile(resolved, async (uri) => {
+        return this.manager!.sendFeatureRequest(LSP_METHOD.INLAY_HINT, {
+          textDocument: { uri },
+          range: { start: { line: 0, character: 0 }, end: { line: lineCount, character: 0 } },
+        });
+      });
+      const text = result == null ? 'inlayHint: no result' : `inlayHint: ${JSON.stringify(result, null, 2)}`;
+      return { content: [{ type: 'text', text }] };
+    } catch (err) {
+      return this.buildErrorResponse('inlayHint', err);
+    }
+  }
+
+  /** documentLink：获取文件内的可点击链接。 */
+  async handleDocumentLink(
+    file: string
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    if (!this.initialized) {
+      return this.buildNotReadyResponse();
+    }
+    const resolved = this.resolveSingleFile(file);
+    if (!resolved) {
+      return { content: [{ type: 'text', text: `文件不存在或不是 .ets 文件: ${file}` }], isError: true };
+    }
+    try {
+      const result = await this.withOpenFile(resolved, async (uri) => {
+        return this.manager!.sendFeatureRequest(LSP_METHOD.DOCUMENT_LINK, { textDocument: { uri } });
+      });
+      const text = result == null ? 'documentLink: no result' : `documentLink: ${JSON.stringify(result, null, 2)}`;
+      return { content: [{ type: 'text', text }] };
+    } catch (err) {
+      return this.buildErrorResponse('documentLink', err);
+    }
+  }
+
+  /** 统一错误响应构造。 */
+  private buildErrorResponse(
+    label: string,
+    err: unknown
+  ): { content: { type: string; text: string }[]; isError: boolean } {
+    const msg = err instanceof Error ? err.message : String(err);
+    mcpLog.error(`${label} failed: ${msg}`);
+    return { content: [{ type: 'text', text: `${label} failed: ${msg}` }], isError: true };
+  }
+
+  /**
+   * 打开文件 → 执行 action → 关闭文件。
+   * 复用 check 的 didOpen/didClose 生命周期，保证 ace-server 上下文一致。
+   */
+  private async withOpenFile<T>(
+    filePath: string,
+    action: (uri: string) => Promise<T>
+  ): Promise<T> {
+    const uri = toFileUri(filePath);
+    const content = await fs.promises.readFile(filePath, 'utf8');
+    const ext = path.extname(filePath).replace(/^\./, '');
+    const languageId = `deveco.apptool.${ext || 'plaintext'}`;
+
+    mcpLog.debug(`withOpenFile didOpen uri=${uri} len=${content.length}`);
+    this.sendNotification('textDocument/didOpen', {
+      textDocument: { uri, text: content, languageId, version: content.length },
+    });
+    try {
+      return await action(uri);
+    } finally {
+      this.sendNotification('textDocument/didClose', {
+        textDocument: { uri },
+        isManual: false,
+      });
+    }
+  }
+
+  /** 解析单个文件路径，返回绝对路径或 null。 */
+  private resolveSingleFile(fileArg: string): string | null {
+    const resolved = path.isAbsolute(fileArg)
+      ? fileArg
+      : path.join(this.projectPath, fileArg);
+    if (!fs.existsSync(resolved)) {
+      return null;
+    }
+    if (!fs.statSync(resolved).isFile()) {
+      return null;
+    }
+    if (!resolved.endsWith('.ets')) {
+      return null;
+    }
+    return resolved;
   }
 
   /** LSP 未就绪时构造统一的错误返回。 */
@@ -373,7 +854,9 @@ export class ArktsCheckTool {
   }
 
   async shutdown(): Promise<void> {
-    this.failAllPending(new Error('LSP shutting down'));
+    const reject = this.initReject;
+    this.clearInitHandlers();
+    reject?.(new Error('LSP shutting down'));
 
     if (this.manager) {
       try {
@@ -387,7 +870,6 @@ export class ArktsCheckTool {
     this.initialized = false;
     this.initializing = false;
     this.initPromise = null;
-    this.clearInitHandlers();
   }
 
   // ---------- LSP I/O ----------
@@ -408,17 +890,17 @@ export class ArktsCheckTool {
     }
 
     switch (method) {
-      case 'textDocument/publishDiagnostics':
-      case 'textDocument/didOpen':
+      case 'textDocument/publishDiagnostics': {
         this.handleDiagnosticsNotification(
-          record.params as Record<string, unknown> | undefined
+          record.params as Record<string, unknown> | undefined,
         );
         break;
+      }
 
       case 'arkts/indexingProgress':
         // 重置初始化超时
         if (this.initResolve) {
-          this.armInitTimer(INIT_RESET_TIMEOUT_MS);
+          this.armInitTimer(LSP_INIT_TIMEOUT_MS);
           mcpLog.debug('Received arkts/indexingProgress, reset init timeout');
         }
         break;
@@ -441,13 +923,19 @@ export class ArktsCheckTool {
         break;
       }
 
+      case 'workspace/didChangeConfiguration':
+        // 配置变化不再自动触发 sync，由 server 层通过 needsResync 标志位在下次 check 时处理
+        mcpLog.info('Received workspace/didChangeConfiguration, sync deferred to next check');
+        break;
+
       default:
         break;
     }
   }
 
+  /** legacy 模式：收到 publishDiagnostics 时 resolve 对应 waiter。 */
   private handleDiagnosticsNotification(
-    params: Record<string, unknown> | undefined
+    params: Record<string, unknown> | undefined,
   ): void {
     if (!params) {
       return;
@@ -456,12 +944,15 @@ export class ArktsCheckTool {
     if (!uri) {
       return;
     }
-
-    const waiter = this.resolveDiagnosticWaiter(uri);
+    let waiter = this.popDiagnosticWaiter(uri);
+    // URI 不匹配时，若只有一个 pending waiter（check 串行），回退到它
+    if (!waiter && this.diagnosticWaiters.size === 1) {
+      const fallbackKey = this.diagnosticWaiters.keys().next().value as string;
+      waiter = this.popDiagnosticWaiter(fallbackKey);
+    }
     if (!waiter) {
       return;
     }
-
     if (typeof params.errorMessage === 'string') {
       mcpLog.warn(`diagnostics error uri=${uri} message=${params.errorMessage}`);
       waiter.resolve({ errorMessage: params.errorMessage });
@@ -473,22 +964,6 @@ export class ArktsCheckTool {
     waiter.resolve(Array.isArray(diagnostics) ? diagnostics : []);
   }
 
-  /** Pop a waiter that matches `uri`, trying the normalized key first then any candidate URIs. */
-  private resolveDiagnosticWaiter(uri: string): DiagnosticWaiter | undefined {
-    const normalizedKey = normalizeDiagnosticUri(uri);
-    const direct = this.popDiagnosticWaiter(normalizedKey);
-    if (direct) {
-      return direct;
-    }
-    for (const candidate of diagnosticUriCandidates(uri)) {
-      const w = this.popDiagnosticWaiter(candidate);
-      if (w) {
-        return w;
-      }
-    }
-    return undefined;
-  }
-
   private popDiagnosticWaiter(key: string): DiagnosticWaiter | undefined {
     const w = this.diagnosticWaiters.get(key);
     if (!w) {
@@ -497,17 +972,6 @@ export class ArktsCheckTool {
     this.diagnosticWaiters.delete(key);
     clearTimeout(w.timer);
     return w;
-  }
-
-  private failAllPending(err: Error): void {
-    for (const [, w] of this.diagnosticWaiters) {
-      clearTimeout(w.timer);
-      w.reject(err);
-    }
-    this.diagnosticWaiters.clear();
-    const reject = this.initReject;
-    this.clearInitHandlers();
-    reject?.(err);
   }
 
   // ---------- log / index 目录管理 ----------
@@ -546,6 +1010,23 @@ export class ArktsCheckTool {
       return { logPath: 'auto', indexPath: 'auto' };
     }
   }
+}
+
+/**
+ * 从 textDocument/diagnostic 响应中提取 diagnostics 数组。
+ * 支持标准 FullDocumentDiagnosticReport ({ kind: 'full', items }) 和裸数组。
+ */
+function extractDiagnosticItems(result: unknown): unknown[] {
+  if (Array.isArray(result)) {
+    return result;
+  }
+  if (result && typeof result === 'object') {
+    const report = result as { kind?: unknown; items?: unknown };
+    if (report.kind === 'full' && Array.isArray(report.items)) {
+      return report.items;
+    }
+  }
+  return [];
 }
 
 /**

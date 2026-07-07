@@ -123,7 +123,7 @@ async function checkMultiDevice(
     return;
   }
   console.error(
-    red('Multiple devices connected. Please specify a device with:')
+    red('Multiple devices connected. Specify a device with:')
   );
   for (const device of devices) {
     const deviceName = await deviceManager.getDeviceName(device.serial);
