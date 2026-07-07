@@ -17,7 +17,13 @@ export default defineConfig({
   shims: true,
   minify: true,
   splitting: false,
-  external: ['@node-rs/jieba', '@node-rs/jieba/dict.js', 'better-sqlite3', 'yauzl'],
+  external: [
+    '@node-rs/jieba',
+    '@node-rs/jieba/dict.js',
+    'better-sqlite3',
+    '@sqlite.org/sqlite-wasm',
+    'yauzl',
+  ],
   env: {
     npm_package_version: pkg.version,
     npm_package_name: pkg.name,

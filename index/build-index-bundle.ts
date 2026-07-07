@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Huawei Device Co., Ltd.
+ * SPDX-License-Identifier: MIT
+ */
+
 import * as fs from 'fs';
 import * as path from 'path';
 import AdmZip from 'adm-zip';
