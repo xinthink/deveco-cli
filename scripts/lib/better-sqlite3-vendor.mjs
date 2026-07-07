@@ -22,6 +22,7 @@ export const BETTER_SQLITE3_VERSION = BETTER_SQLITE3_VERSION_MODERN;
 const DEFAULT_NPM_REGISTRY = 'https://registry.npmmirror.com';
 const GITHUB_RELEASE_BASE =
   'https://github.com/WiseLibs/better-sqlite3/releases/download';
+const PREBUILD_DOWNLOAD_TIMEOUT_MS = 15000;
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 export const packageRoot = join(scriptDir, '..', '..');
@@ -208,11 +209,23 @@ async function downloadPrebuildForTripleOnce(triple, destNodePath, version) {
   try {
     for (const url of releaseDownloadUrls(asset, version)) {
       try {
-        const response = await fetch(url, { redirect: 'follow' });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+        const controller = new AbortController();
+        const timeout = setTimeout(
+          () => controller.abort(),
+          PREBUILD_DOWNLOAD_TIMEOUT_MS
+        );
+        try {
+          const response = await fetch(url, {
+            redirect: 'follow',
+            signal: controller.signal,
+          });
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          await writeFile(tarPath, Buffer.from(await response.arrayBuffer()));
+        } finally {
+          clearTimeout(timeout);
         }
-        await writeFile(tarPath, Buffer.from(await response.arrayBuffer()));
         await extractNodeFromTarGz(tarPath, destNodePath);
         return { ok: true, method: 'download', url, triple, version };
       } catch (error) {

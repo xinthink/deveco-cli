@@ -73,7 +73,10 @@ interface SearchRow {
 }
 
 type BetterDatabase = import('better-sqlite3').Database;
-type BetterDatabaseCtor = typeof import('better-sqlite3').default;
+type BetterDatabaseCtor = new (
+  filename: string,
+  options?: { readonly?: boolean; fileMustExist?: boolean }
+) => BetterDatabase;
 
 let readonlyDb: BetterDatabase | null = null;
 let readonlyDbPath: string | null = null;
@@ -90,12 +93,13 @@ function openReadonlyDb(Database: BetterDatabaseCtor, dbPath: string): BetterDat
   }
 
   readonlyDb?.close();
-  readonlyDb = new Database(dbPath, { readonly: true, fileMustExist: true });
+  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  readonlyDb = db;
   readonlyDbPath = dbPath;
-  readonlyDb.pragma('mmap_size = 268435456');
-  readonlyDb.pragma('cache_size = -8000');
-  readonlyDb.pragma('query_only = ON');
-  return readonlyDb;
+  db.pragma('mmap_size = 268435456');
+  db.pragma('cache_size = -8000');
+  db.pragma('query_only = ON');
+  return db;
 }
 
 function openWritableDb(Database: BetterDatabaseCtor, dbPath: string): BetterDatabase {
@@ -459,7 +463,7 @@ function searchBetterIndex(
 
 export async function createBetterSqliteBackend(): Promise<SqliteBackend> {
   const module = await import('better-sqlite3');
-  const Database = module.default;
+  const Database = (module as unknown as { default: BetterDatabaseCtor }).default;
 
   return {
     kind: 'better-sqlite3',
