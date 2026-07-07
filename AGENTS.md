@@ -1,4 +1,4 @@
-# Agents.md
+﻿# Agents.md
 
 Guidance for AI coding assistants working in this repo.
 
@@ -49,7 +49,9 @@ src/
 │   ├── emulator-list-parse.ts       # Parses `emulator -list -details` (JSON / text)
 │   ├── emulator-start-strategies.ts # Builds `-start` / `-hvd` argv candidates + retries
 │   ├── emulator-manager.ts          # list/start/stop + image + create/delete virtual device
-│   ├── local-doc-service.ts         # Local HarmonyOS docs search + read (uses @vscode/ripgrep)
+│   ├── local-doc-service.ts         # Local HarmonyOS docs search + read (SQLite FTS5 + zip read)
+│   ├── doc-initializer.ts           # postinstall: install index.zip or fallback local build
+│   ├── doc-index/                   # SQLite FTS5 index, jieba tokenizer, docs.zip reader, search
 │   └── doc-portal-types.ts          # CatalogName / CATALOG_NAMES / CATALOG_TITLES
 ├── utils/
 │   ├── project.ts                  # Project discovery + JSON5 build-profile parsing
@@ -116,8 +118,8 @@ templates/application/        # Project scaffold copied by `devecocli create`
 - **`commands/skills.ts`** + **`skills/`** — `list` / `find` / `add` / `remove`. `remove` uses `--skill <name>` (option form, not positional). `list` supports `-l, --long` for detailed output. Downloads skill `.zip`s and extracts them into per-agent paths defined in `config/constants.ts → AGENT_SKILLS_CONFIG` (e.g. `~/.claude/skills/`, `~/.cursor/skills/`) and / or `<project>/.deveco/skills/`. With neither `--agent` nor `--project`, operates on every detected agent. The shared agent helpers (`parseAgentList` / `getAllExistingAgents` / `summarizeOperationResults`) live in `skills/agents.ts` so `init` can reuse them.
 - **`commands/init.ts`** — `devecocli init`. Two mutually exclusive modes: **`--skill`** (default) installs the bundled `deveco-cli` skill into per-agent / project paths, reusing `installLocalSkillToAgent` / `installLocalSkillToProjectAgent` / `installLocalSkillToPath`. **`--mcp`** configures the `deveco-mcp` MCP server (syntax checking) into agent config files via `installMcpConfigToAgentGlobal` / `installMcpConfigToAgentProject`. `--skill` and `--mcp` are mutually exclusive. `--force` is the overwrite / skip-validation switch (does not change global / project-level mode). `--mcp` without `--project` configures global MCP for all agents; `--mcp --project <path>` configures project-level MCP. Same `--agent` (comma-separated) / `--project` / `--path` / `-f` semantics as `skills add`.
 - **`commands/serve.ts`** — `devecocli serve mcp`. Starts a stdio-based MCP server (ArkTS/C++ syntax checking via LSP). Reads `PROJECT_PATH`, `DEVECO_PATH`, `NODE_MAX_OLD_SPACE_SIZE` (default 8192), `DEBUG` from env. Delegates to `mcp/src-server/index.ts → createMcpServer`. Handles SIGINT/SIGTERM/SIGBREAK for clean shutdown.
-- **`commands/doc.ts`** — Local HarmonyOS documentation search. Subcommands: `search <keywords...>` (with `--catalog`, `--format json|default`, `--limit`), `read <documentId>`, `catalog` (list all available catalogs). Uses `@vscode/ripgrep` via `service/local-doc-service.ts`.
-- **`commands/update.ts`** — `npm install -g <package>@latest` (package name from `process.env.npm_package_name`, falling back to `deveco-cli`).
+- **`commands/doc.ts`** — Local HarmonyOS documentation search. Subcommands: `search <keywords...>` (with `--catalog`, `--format json|default`, `--limit`), `read <documentId>`, `catalog`. `search`/`read`/`catalog` call `awaitDocReady()` first (spinner while postinstall installs index in background). Search uses SQLite FTS5 + jieba via `service/doc-index/sqlite-index.ts` (`better-sqlite3` downloaded at postinstall); `docs read` streams markdown from bundled `docs.zip` via `docs-zip-reader.ts`. postinstall extracts prebuilt `index.zip` only (not `docs.zip`); index lifecycle in `service/doc-initializer.ts` (no public init subcommand). Publish with `npm run build:index` when regenerating `index.zip`.
+- **`commands/update.ts`** — `npm install -g <package>@latest` (package name from `process.env.npm_package_name`, falling back to `deveco-cli`). On success, prompts that docs may update in background.
 - **`utils/project.ts`** — `Project.discover(startDir)` walks up to find the project-level `build-profile.json5` (one containing `app`). Provides `getModuleType` (`entry`/`feature`/`shared`/`har`), `collectNonHarDependentModuleList`, `findArtifactPath(moduleName, target, isEmulator, product)`, `getBundleName`, `getMainAbility`.
 - **`utils/template-provider.ts`** — Copies `templates/application/` into the target directory, replaces the seed `MyApplication` / `com.example.myapplication` placeholders with the user's `appName` / `bundleName`, and rewrites `sdkVersion` / `modelVersion` per the `API_CONFIGS` table. Performs a post-copy integrity check against an internal `REQUIRED_FILES` list and falls back to placeholder PNGs when the bundled DevEco Studio template assets are unavailable.
 - **`utils/tool-provider.ts`** — Locates DevEco Studio and resolves `nodePath` / `ohpmJsPath` / `hvigorJsPath` / `javaPath` / `hdcPath` / `emulatorPath` / `sdkPath` (hilog is not a separate executable here — it runs through `hdc shell hilog`). Also exposes `detectApiLevel()` consumed by `create`, and enforces minimum DevEco Studio version `6.1.0` by reading `product-info.json` (Windows) or `Contents/Info.plist` then `Contents/product-info.json` (macOS).
@@ -151,11 +153,11 @@ templates/application/        # Project scaffold copied by `devecocli create`
 
 ## Technology Stack
 
-- **Language**: TypeScript (strict, ESM, target Node.js >= 20)
+- **Language**: TypeScript (strict, ESM, target Node.js >= 18)
 - **Modules**: ES Modules (`"type": "module"`); internal imports must use `.js` even though sources are `.ts`
 - **Build**: `tsup` (single minified ESM `dist/cli.js`, `shims: true`, with `npm_package_version` / `npm_package_name` injected at build time)
 - **CLI framework**: Commander.js
-- **Runtime deps**: `commander`, `execa`, `axios`, `json5`, `regedit`, `fs-extra`, `adm-zip`, `colorette`, `ora`, `global-agent` (proxy support, bootstrapped in `cli.ts`), `natural`, `@modelcontextprotocol/sdk`, `@vscode/ripgrep`, `proper-lockfile`, `zod`
+- **Runtime deps**: `commander`, `execa`, `axios`, `json5`, `regedit`, `fs-extra`, `adm-zip`, `colorette`, `ora`, `global-agent` (proxy support, bootstrapped in `cli.ts`), `@modelcontextprotocol/sdk`, `@node-rs/jieba`, `unified`, `remark-parse`, `remark-gfm`, `mdast-util-to-string`, `proper-lockfile`, `yauzl`, `zod`. **Optional**: `better-sqlite3` (native module; prebuild downloaded in `postinstall` via `scripts/install-better-sqlite3.mjs` for the current Node ABI).
 - **Dev tooling**: `eslint` (typescript-eslint), `prettier`, `tsx`, `tsup`, `generate-license-file`, `@eslint/js`, `typescript`, `turndown`, `husky`, type stubs (`@types/adm-zip`, `@types/fs-extra`, `@types/global-agent`, `@types/turndown`, `@types/node`)
 - **Lint rules**: `curly` (all), `max-lines-per-function` (50), `max-depth` (4), `dot-notation`
 - **Prettier**: `semi: true`, `singleQuote: true`, `trailingComma: es5`
@@ -171,7 +173,7 @@ templates/application/        # Project scaffold copied by `devecocli create`
 
 ## Development Notes
 
-- Node.js >= 20 (runtime and build target).
+- Node.js >= 18 (runtime and build target).
 - Output bundle: `dist/cli.js` (bin: `devecocli`).
 - HarmonyOS project config is JSON5 (`build-profile.json5`, `module.json5`, `oh-package.json5`, `app.json5`).
 - `DEVECO_CLI_DEBUG=1` logs the raw `node` / `ohpm` / `hvigor` / `hdc` / `emulator` invocations (hilog is fetched via `hdc shell hilog`).

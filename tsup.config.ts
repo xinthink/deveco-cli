@@ -8,7 +8,7 @@ import fs from 'fs';
 const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
 
 export default defineConfig({
-  entry: ['src/cli.ts'],
+  entry: ['src/cli.ts', 'src/internal/doc-init-background.ts'],
   format: ['esm'],
   platform: 'node',
   target: 'node18',
@@ -17,6 +17,7 @@ export default defineConfig({
   shims: true,
   minify: true,
   splitting: false,
+  external: ['@node-rs/jieba', '@node-rs/jieba/dict.js', 'better-sqlite3', 'yauzl'],
   env: {
     npm_package_version: pkg.version,
     npm_package_name: pkg.name,
