@@ -228,10 +228,8 @@ function renameGitignoreFiles(projectPath: string): void {
 
   for (const gitignorePath of gitignoreRenames) {
     if (fs.existsSync(gitignorePath)) {
-      fs.renameSync(
-        gitignorePath,
-        gitignorePath.replace(/\/gitignore\.txt$/, '/.gitignore')
-      );
+      const dir = path.dirname(gitignorePath);
+      fs.renameSync(gitignorePath, path.join(dir, '.gitignore'));
     }
   }
 }
