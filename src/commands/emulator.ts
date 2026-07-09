@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { Command, Option } from 'commander';
+import { Argument, Command, Option } from 'commander';
 import { tryGetHdcShellParams } from '../utils/hdc-param.js';
 import { green, cyan, red, yellow, gray } from 'colorette';
 import ora, { type Ora } from 'ora';
@@ -10,7 +10,10 @@ import { exitWithListCommandError } from '../utils/ora-fail.js';
 import { renderTable, type TableRow } from '../utils/text-table.js';
 import type { EmulatorInfo } from '../service/emulator-types.js';
 import { normalizeListNameKey } from '../service/emulator-types.js';
-import { EmulatorManager } from '../service/emulator-manager.js';
+import {
+  EmulatorManager,
+  type EmulatorControlAction,
+} from '../service/emulator-manager.js';
 import { ToolProvider } from '../utils/tool-provider.js';
 import {
   DeviceManager,
@@ -32,6 +35,146 @@ const SERIAL_PARAM_KEYS = [
   'const.product.name',
   'const.product.model',
 ];
+
+const FOLDED_STATE_VALUES = [
+  'open',
+  'half-open',
+  'close',
+  'vertical-open',
+  'single',
+  'double',
+  'triple',
+  'left-folded-right-half-folded',
+  'left-half-folded-right-expanded',
+  'left-expanded-right-folded',
+  'left-half-folded-right-folded',
+  'left-expanded-right-half-folded',
+  'left-half-folded-right-half-folded',
+] as const;
+
+const FOLDED_STATE_HELP = `
+Folded state scene mappings:
+  foldableFold (3):
+    open       Fully expanded state
+    half-open  Semi-folded state
+    close      Fully folded state
+
+  2in1foldableFold (4):
+    open           Landscape unfolded state
+    vertical-open  Portrait unfolded state
+    half-open      Semi-folded state
+    close          Magnetic attachment state
+
+  tripleFold (9):
+    single
+    double
+    triple
+    left-folded-right-half-folded
+    left-half-folded-right-expanded
+    left-expanded-right-folded
+    left-half-folded-right-folded
+    left-expanded-right-half-folded
+    left-half-folded-right-half-folded
+`;
+
+interface EmulatorTargetOptions {
+  target: string;
+}
+
+interface BatteryOptions extends EmulatorTargetOptions {
+  level?: string;
+  status?: 'charging' | 'discharging';
+}
+
+interface GeolocationOptions extends EmulatorTargetOptions {
+  longitude?: string;
+  latitude?: string;
+  altitude?: string;
+  direction?: string;
+}
+
+interface SensorOptions extends EmulatorTargetOptions {
+  lightIntensity?: string;
+  humidity?: string;
+  temperature?: string;
+  steps?: string;
+  heartrate?: string;
+}
+
+function assertTarget(input: string): string {
+  const target = input.trim();
+  if (!target) {
+    throw new Error('--target must not be empty.');
+  }
+  return target;
+}
+
+function parseFoldedState(input: string): string {
+  const state = input.trim();
+  if (!FOLDED_STATE_VALUES.includes(state as never)) {
+    throw new Error(
+      `Invalid fold state "${input}". Available values: ${FOLDED_STATE_VALUES.join(', ')}`
+    );
+  }
+  return state;
+}
+
+function parseRangeInteger(
+  optionName: string,
+  input: string,
+  min: number,
+  max: number
+): number {
+  const text = input.trim();
+  if (!/^-?\d+$/.test(text)) {
+    throw new Error(`${optionName} must be an integer in [${min}, ${max}].`);
+  }
+  const value = Number(text);
+  if (value < min || value > max) {
+    throw new Error(`${optionName} must be in [${min}, ${max}].`);
+  }
+  return value;
+}
+
+function parseRangeNumberText(
+  optionName: string,
+  input: string,
+  min: number,
+  max: number,
+  maxDecimalPlaces?: number
+): string {
+  const text = input.trim();
+  const value = Number(text);
+  if (!text || Number.isNaN(value)) {
+    throw new Error(`${optionName} must be a number in [${min}, ${max}].`);
+  }
+  if (maxDecimalPlaces !== undefined && !hasValidDecimalPlaces(text, maxDecimalPlaces)) {
+    throw new Error(
+      `${optionName} supports at most ${maxDecimalPlaces} decimal place(s).`
+    );
+  }
+  if (value < min || value > max) {
+    throw new Error(`${optionName} must be in [${min}, ${max}].`);
+  }
+  return text;
+}
+
+function hasValidDecimalPlaces(input: string, maxDecimalPlaces: number): boolean {
+  const decimalPart = input.split('.')[1];
+  return decimalPart === undefined || decimalPart.length <= maxDecimalPlaces;
+}
+
+function parseRangeNumber(
+  optionName: string,
+  input: string,
+  min: number,
+  max: number,
+  maxDecimalPlaces?: number
+): number {
+  return Number(
+    parseRangeNumberText(optionName, input, min, max, maxDecimalPlaces)
+  );
+}
 
 function validateVirtualDeviceName(name: string): void {
   const n = name.trim();
@@ -459,6 +602,115 @@ async function initEmulatorManager(): Promise<{
   }
 }
 
+async function runEmulatorControlAction(
+  options: EmulatorTargetOptions,
+  actionFactory: () => EmulatorControlAction
+): Promise<void> {
+  try {
+    const target = assertTarget(options.target);
+    const action = actionFactory();
+    const { manager, toolProvider } = await initEmulatorManager();
+    const instanceName = await resolveEmulatorListName(
+      toolProvider.hdcPath,
+      target
+    );
+    await manager.controlEmulator(instanceName, action);
+    console.log(green(`Emulator "${target}" operation completed.`));
+  } catch (error) {
+    const target = options.target?.trim() || '<unknown>';
+    console.error(
+      red(`Failed to operate emulator "${target}": ${(error as Error).message}`)
+    );
+    process.exit(1);
+  }
+}
+
+function firstGeolocationAction(
+  options: GeolocationOptions
+): EmulatorControlAction {
+  const actions: EmulatorControlAction[] = [];
+  addGpsAction(actions, 'longitude', options.longitude, -180, 180, 8);
+  addGpsAction(actions, 'latitude', options.latitude, -90, 90, 8);
+  addGpsAction(actions, 'altitude', options.altitude, -10000, 10000, 2);
+  addGpsAction(actions, 'bearing', options.direction, 0, 360, 2);
+  return singleAction(actions, 'Specify one geolocation option.');
+}
+
+function firstSensorAction(options: SensorOptions): EmulatorControlAction {
+  const actions: EmulatorControlAction[] = [];
+  addSensorAction(actions, 'light', options.lightIntensity, 0, 100000, false);
+  addSensorAction(actions, 'humidity', options.humidity, 0, 100, false);
+  addSensorAction(actions, 'temperature', options.temperature, -273, 100, false);
+  addSensorAction(actions, 'steps', options.steps, 0, 10000, true);
+  addSensorAction(actions, 'heartrate', options.heartrate, 0, 255, true);
+  return singleAction(actions, 'Specify one sensor option.');
+}
+
+function singleAction(
+  actions: EmulatorControlAction[],
+  emptyMessage: string
+): EmulatorControlAction {
+  if (actions.length === 0) {
+    throw new Error(emptyMessage);
+  }
+  if (actions.length > 1) {
+    throw new Error('Only one operation option can be specified.');
+  }
+  return actions[0];
+}
+
+function addGpsAction(
+  actions: EmulatorControlAction[],
+  key: 'longitude' | 'latitude' | 'altitude' | 'bearing',
+  input: string | undefined,
+  min: number,
+  max: number,
+  maxDecimalPlaces: number
+): void {
+  if (input === undefined) {
+    return;
+  }
+  actions.push({
+    type: 'gps',
+    key,
+    value: parseRangeNumberText(`--${key}`, input, min, max, maxDecimalPlaces),
+  });
+}
+
+function addSensorAction(
+  actions: EmulatorControlAction[],
+  key: 'light' | 'humidity' | 'temperature' | 'steps' | 'heartrate',
+  input: string | undefined,
+  min: number,
+  max: number,
+  integer: boolean
+): void {
+  if (input === undefined) {
+    return;
+  }
+  const value = integer
+    ? parseRangeInteger(`--${key}`, input, min, max)
+    : parseRangeNumber(`--${key}`, input, min, max, 1);
+  actions.push({ type: 'sensor', key, value });
+}
+
+function batteryAction(options: BatteryOptions): EmulatorControlAction {
+  const actions: EmulatorControlAction[] = [];
+  if (options.level !== undefined) {
+    actions.push({
+      type: 'battery',
+      level: parseRangeInteger('--level', options.level, 0, 100),
+    });
+  }
+  if (options.status !== undefined) {
+    actions.push({
+      type: 'battery-status',
+      status: options.status === 'charging' ? 1 : 0,
+    });
+  }
+  return singleAction(actions, 'Specify --level or --status.');
+}
+
 const emulatorCommand = new Command('emulator').description(
   'Manage emulator instances'
 );
@@ -779,6 +1031,118 @@ licenseCommand
   });
 
 emulatorCommand.addCommand(licenseCommand);
+
+emulatorCommand
+  .command('shake')
+  .description('Trigger shake event')
+  .requiredOption('--target <nameOrSerial>', 'Target emulator name or serial')
+  .action((options: EmulatorTargetOptions) =>
+    runEmulatorControlAction(options, () => ({ type: 'shake' }))
+  );
+
+emulatorCommand
+  .command('power')
+  .description('Press power button (toggle screen on/off)')
+  .requiredOption('--target <nameOrSerial>', 'Target emulator name or serial')
+  .action((options: EmulatorTargetOptions) =>
+    runEmulatorControlAction(options, () => ({ type: 'power' }))
+  );
+
+emulatorCommand
+  .command('rotate')
+  .description('Rotate emulator')
+  .addOption(
+    new Option('--target <nameOrSerial>', 'Target emulator name or serial')
+      .makeOptionMandatory()
+  )
+  .addArgument(new Argument('<direction>').choices(['left', 'right']))
+  .action((direction: 'left' | 'right', options: EmulatorTargetOptions) =>
+    runEmulatorControlAction(options, () => ({ type: 'rotation', direction }))
+  );
+
+emulatorCommand
+  .command('volume')
+  .description('Change volume')
+  .addOption(
+    new Option('--target <nameOrSerial>', 'Target emulator name or serial')
+      .makeOptionMandatory()
+  )
+  .addArgument(new Argument('<direction>').choices(['up', 'down']))
+  .action((direction: 'up' | 'down', options: EmulatorTargetOptions) =>
+    runEmulatorControlAction(options, () => ({ type: 'volume', direction }))
+  );
+
+emulatorCommand
+  .command('fold <state>')
+  .description('Set foldable display state')
+  .requiredOption('--target <nameOrSerial>', 'Target emulator name or serial')
+  .addHelpText('after', FOLDED_STATE_HELP)
+  .action((state: string, options: EmulatorTargetOptions) =>
+    runEmulatorControlAction(options, () => ({
+      type: 'folded-state',
+      state: parseFoldedState(state),
+    }))
+  );
+
+emulatorCommand
+  .command('battery')
+  .description('Set battery level or charging status')
+  .requiredOption('--target <nameOrSerial>', 'Target emulator name or serial')
+  .option('--level <0-100>', 'Battery level, SOC (integer 0-100)')
+  .addOption(
+    new Option('--status <status>', 'Charging status').choices([
+      'charging',
+      'discharging',
+    ])
+  )
+  .action((options: BatteryOptions) =>
+    runEmulatorControlAction(options, () => batteryAction(options))
+  );
+
+emulatorCommand
+  .command('geolocation')
+  .description('Inject geographic coordinates and direction')
+  .requiredOption('--target <nameOrSerial>', 'Target emulator name or serial')
+  .option('--longitude <value>', 'Longitude (-180.0 to 180.0)')
+  .option('--latitude <value>', 'Latitude (-90.0 to 90.0)')
+  .option('--altitude <value>', 'Altitude (-10000.0 to 10000.0)')
+  .option('--direction <value>', 'Heading direction in degrees (0 to 360)')
+  .action((options: GeolocationOptions) =>
+    runEmulatorControlAction(options, () => firstGeolocationAction(options))
+  );
+
+emulatorCommand
+  .command('scene')
+  .description('Start motion simulation scene')
+  .requiredOption('--target <nameOrSerial>', 'Target emulator name or serial')
+  .addArgument(
+    new Argument('<type>').choices([
+      'outdoorRunning',
+      'outdoorCycling',
+      'drivingNavigation',
+    ])
+  )
+  .action((type: string, options: EmulatorTargetOptions) => {
+    const sceneActions: Record<string, EmulatorControlAction> = {
+      outdoorRunning: { type: 'outdoor-running' },
+      outdoorCycling: { type: 'outdoor-cycling' },
+      drivingNavigation: { type: 'driving-navigation' },
+    };
+    return runEmulatorControlAction(options, () => sceneActions[type]);
+  });
+
+emulatorCommand
+  .command('sensor')
+  .description('Inject sensor data')
+  .requiredOption('--target <nameOrSerial>', 'Target emulator name or serial')
+  .option('--light-intensity <value>', 'Light sensor (0 to 100000)')
+  .option('--humidity <value>', 'Humidity sensor (0 to 100)')
+  .option('--temperature <value>', 'Temperature sensor (-273.0 to 100)')
+  .option('--steps <value>', 'Steps sensor (integer 0 to 10000)')
+  .option('--heartrate <value>', 'Heart rate sensor (integer 0 to 255)')
+  .action((options: SensorOptions) =>
+    runEmulatorControlAction(options, () => firstSensorAction(options))
+  );
 
 emulatorCommand
   .command('list')

@@ -90,6 +90,7 @@ devecocli init --path D:\work\ARKTS\NewData
 | `devecocli run`           | 安装并运行应用                                   |
 | `devecocli device list`   | 查看当前连接设备                                  |
 | `devecocli emulator list` | 查看本地模拟器实例                                 |
+| `devecocli ui screenshot` | 对真机或模拟器执行 UI 截图                          |
 | `devecocli log`           | 查看 `hilog` 或崩溃日志                          |
 | `devecocli docs search`   | 搜索本地 HarmonyOS 文档                         |
 | `devecocli init`          | 安装内置技能或配置 `MCP`                           |
@@ -123,6 +124,7 @@ Commands:
   update                 Update deveco-cli to the latest version
   device                 Manage connected devices
   emulator               Manage emulator instances
+  ui                     Inspect and interact with UI on a connected device
   skills                 Manage HarmonyOS skills
   log [options]          Obtain device application logs
   create [options]       Scaffold a new HarmonyOS application project
@@ -369,6 +371,70 @@ devecocli emulator stop [names...]
 devecocli emulator stop Phone
 devecocli emulator stop 127.0.0.1:5555
 ```
+
+### `emulator` 场景操作
+
+控制运行中的模拟器实例，直接映射 DevEco Studio 内置 Emulator 公开命令行参数。新增场景控制命令要求 Emulator 7.0 或更高版本；低版本会直接提示升级。截图不属于模拟器场景操作，统一通过 `devecocli ui screenshot` 执行。
+
+**示例：**
+
+```bash
+devecocli emulator shake --target Phone
+devecocli emulator power --target Phone
+devecocli emulator rotate left --target Phone
+devecocli emulator volume up --target Phone
+devecocli emulator fold half-open --target Phone
+devecocli emulator battery --target Phone --level 90
+devecocli emulator battery --target Phone --status charging
+devecocli emulator geolocation --target Phone --longitude 116.400244
+devecocli emulator scene outdoorRunning --target Phone
+devecocli emulator sensor --target Phone --heartrate 80
+```
+
+**说明：**
+
+- `--target` 支持模拟器名称或 `127.0.0.1:<port>` 序列号。
+- `battery --level` 取值范围为整数 `[0, 100]`。
+- `battery --status` 取值为 `charging` 或 `discharging`。
+- `geolocation` 支持 `--longitude`、`--latitude`、`--altitude`、`--direction`。
+- `scene` 取值为 `outdoorRunning`、`outdoorCycling`、`drivingNavigation`。
+- `sensor` 支持 `--light-intensity`、`--humidity`、`--temperature`、`--steps`、`--heartrate`。
+- 折叠状态覆盖 3 类设备形态，去重后支持 13 个可输入 `state`，底层均映射为 `Emulator -instance <name> -foldedState <state>`。
+- 设置 `DEVECO_CLI_DEBUG=1` 可查看底层命令映射，例如 `Emulator -instance <name> -shake`。
+
+### `ui screenshot`
+
+对真机或模拟器执行 UI 截图。`devecocli ui` 当前只交付截图能力。
+
+**命令格式：**
+
+```bash
+devecocli ui screenshot [--device <name|serial>] [--path <path>]
+```
+
+**参数：**
+
+| 参数                       | 说明                       | 默认值       |
+| ------------------------ | ------------------------ | ---------- |
+| --device \<name\|serial> | 真机或模拟器名称/序列号；多设备时必填     | 单设备自动选择 |
+| --display \<displayId>   | 目标屏幕 ID，可选                | 默认屏幕     |
+| --path \<path>           | 截图输出路径，可选；目录或父目录必须已存在 | `./screenshot-<timestamp>.png` |
+
+**示例：**
+
+```bash
+devecocli ui screenshot --device Phone
+mkdir -p screenshots
+devecocli ui screenshot --device Phone --path ./screenshots/phone.png
+devecocli ui screenshot --device Phone --display 0 --path ./screenshots/phone.png
+```
+
+**说明：**
+
+- `ui screenshot` 支持真机和模拟器。
+- 仅有一个可用设备时可省略 `--device`，多个设备同时连接时必须指定。
+- 截图能力统一通过 `ui screenshot` 提供，不放在模拟器场景操作命令中。
+- 截图统一使用 `hdc shell snapshot_display` 和 `hdc file recv` 实现；设置 `DEVECO_CLI_DEBUG=1` 可查看实际执行命令。
 
 ### `emulator create`
 
