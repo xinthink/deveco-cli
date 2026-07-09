@@ -15,6 +15,7 @@ import runCommand from './commands/run.js';
 import updateCommand from './commands/update.js';
 import deviceCommand from './commands/device.js';
 import emulatorCommand from './commands/emulator.js';
+import uiCommand from './commands/ui.js';
 import skillsCommand from './commands/skills.js';
 
 import logCommand from './commands/log.js';
@@ -34,6 +35,7 @@ program.addCommand(runCommand);
 program.addCommand(updateCommand);
 program.addCommand(deviceCommand);
 program.addCommand(emulatorCommand);
+program.addCommand(uiCommand);
 
 program.addCommand(skillsCommand);
 program.addCommand(logCommand);

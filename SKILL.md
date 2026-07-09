@@ -8,7 +8,7 @@ description: >-
 
 `devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc`, emulator toolchain, and HarmonyOS-skills installer. **Prefer `devecocli` over invoking underlying tools directly.**
 
-Available commands: `build`, `run`, `update`, `device`, `emulator`, `skills`, `log`, `create`, `init`, `serve`, `docs`.
+Available commands: `build`, `run`, `update`, `device`, `emulator`, `ui`, `skills`, `log`, `create`, `init`, `serve`, `docs`.
 
 **Sandbox Rule**: Commands tagged `[Outside sandbox]` must be run outside the sandbox.
 
@@ -36,11 +36,25 @@ Manage local emulator instances and system images.
 - `list`: Show instances (status, serial, device type).
 - `start <names...>`: Start instances. Quote names with spaces. (See Troubleshooting if blocked).
 - `stop <names...>`: Stop by name or serial (`127.0.0.1:<port>`).
+- Scene control commands require Emulator 7.0 or later. Use `DEVECO_CLI_DEBUG=1` to inspect the underlying `Emulator` command mapping.
+- `shake` / `power` / `rotate <left|right>` / `volume <up|down>` (Req: `--target <nameOrSerial>`): Basic emulator controls.
+- `fold <state>` (Req: `--target <nameOrSerial>`): Set foldable display state.
+- `battery` (Req: `--target`; one of `--level <0-100>` or `--status <charging|discharging>`): Set battery state.
+- `geolocation` (Req: `--target`; one of `--longitude`, `--latitude`, `--altitude`, `--direction`): Inject GPS data.
+- `scene <outdoorRunning|outdoorCycling|drivingNavigation>` (Req: `--target`): Start motion simulation.
+- `sensor` (Req: `--target`; one of `--light-intensity`, `--humidity`, `--temperature`, `--steps`, `--heartrate`): Inject sensor data.
 - `create <name>` (Req: `--device-type`, `--os-version`): Create instance. Optional: `--force`.
 - `delete <name>`: Delete instance.
 - `image list`: List downloaded images. Opts: `--device-type <type>`, `--all`, `--format <table|json>`.
 - `image download` / `image remove` (Req: `--device-type`, `--os-version`): Download/remove image. (Takes 30+ min, set long timeout).
 *Device types*: `phone`, `foldable`, `widefold`, `triplefold`, `tablet`, `2in1`, `2in1 foldable`, `wearable`, `tv`.
+
+### `devecocli ui`
+Inspect UI on a connected physical device or running emulator.
+- `screenshot`: Capture a screenshot from a physical device or running emulator. `--device <name|serial>` is optional when exactly one device is connected, and required when multiple devices are connected.
+- Optional: `--display <displayId>`, `--path <path>` (existing directory or PNG file path whose parent exists; create the directory first; default: `./screenshot-<timestamp>.png`).
+- Implementation uses `hdc shell snapshot_display` and `hdc file recv`; set `DEVECO_CLI_DEBUG=1` to inspect the actual `hdc` commands.
+*Ex*: `mkdir -p screenshots && devecocli ui screenshot --device Phone --path ./screenshots/phone.png`
 
 ### `devecocli docs`
 Search/read local HarmonyOS docs.

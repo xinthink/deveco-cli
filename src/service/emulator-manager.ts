@@ -10,6 +10,7 @@ import { spawnEmulatorDetached } from '../utils/emulator-spawn.js';
 import { runAllEmulatorStartStrategies } from './emulator-start-strategies.js';
 import { isEmulatorRunningByHdcName } from '../utils/emulator-hdc-targets.js';
 import { parseEmulatorListOutput } from './emulator-list-parse.js';
+import { debugLog } from '../utils/logger.js';
 import {
   parseDownloadedImageEntriesFromImageList,
   parseDownloadedOsVersionsFromImageList,
@@ -17,6 +18,29 @@ import {
 } from '../utils/emulator-image-list-parse.js';
 
 const EMULATOR_UNINSTALL_NO_IMAGE_RE = /no images are available/i;
+const MIN_CONTROL_EMULATOR_VERSION = '7.0.0';
+
+export type EmulatorControlAction =
+  | { type: 'shake' }
+  | { type: 'power' }
+  | { type: 'rotation'; direction: 'left' | 'right' }
+  | { type: 'volume'; direction: 'up' | 'down' }
+  | { type: 'folded-state'; state: string }
+  | { type: 'battery'; level: number }
+  | { type: 'battery-status'; status: 0 | 1 }
+  | {
+      type: 'gps';
+      key: 'longitude' | 'latitude' | 'altitude' | 'bearing';
+      value: string;
+    }
+  | { type: 'outdoor-running' }
+  | { type: 'outdoor-cycling' }
+  | { type: 'driving-navigation' }
+  | {
+      type: 'sensor';
+      key: 'light' | 'humidity' | 'temperature' | 'steps' | 'heartrate';
+      value: number;
+    };
 
 function normalizeToken(value: string): string {
   return value.normalize('NFKC').trim().toLowerCase();
@@ -27,7 +51,49 @@ function isNoImagesAvailableError(error: unknown): boolean {
   return EMULATOR_UNINSTALL_NO_IMAGE_RE.test(message);
 }
 
+function parseFirstVersionText(text: string): string | undefined {
+  return text.normalize('NFKC').match(/(\d+(?:\.\d+){1,3})/)?.[1];
+}
+
+function compareVersionText(a: string, b: string): number {
+  const left = a.split('.').map((segment) => Number(segment));
+  const right = b.split('.').map((segment) => Number(segment));
+  const length = Math.max(left.length, right.length);
+  for (let i = 0; i < length; i++) {
+    const diff = (left[i] ?? 0) - (right[i] ?? 0);
+    if (diff !== 0) {
+      return diff;
+    }
+  }
+  return 0;
+}
+
+function commandText(command: string, args: string[]): string {
+  return `${command} ${args.join(' ')}`.trim();
+}
+
+function formatControlAction(action: EmulatorControlAction): string {
+  switch (action.type) {
+    case 'gps':
+      return `${action.type}:${action.key}=${action.value}`;
+    case 'sensor':
+      return `${action.type}:${action.key}=${action.value}`;
+    case 'rotation':
+    case 'volume':
+      return `${action.type}:${action.direction}`;
+    case 'folded-state':
+      return `${action.type}:${action.state}`;
+    case 'battery':
+      return `${action.type}:${action.level}`;
+    case 'battery-status':
+      return `${action.type}:${action.status}`;
+    default:
+      return action.type;
+  }
+}
+
 export class EmulatorManager {
+  private static supportedControlPaths = new Set<string>();
   private emulatorPath: string;
   private sdkPath: string;
   private hdcPath: string;
@@ -49,6 +115,7 @@ export class EmulatorManager {
   private async executeEmulator(
     args: string[]
   ): Promise<{ stdout: string; stderr: string }> {
+    debugLog(`Executing: ${commandText(this.emulatorPath, args)}`);
     return execa(this.emulatorPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, DEVECO_SDK_HOME: this.sdkPath },
@@ -158,7 +225,83 @@ export class EmulatorManager {
     return 'stopped';
   }
 
+  public async controlEmulator(
+    instance: string,
+    action: EmulatorControlAction
+  ): Promise<void> {
+    await this.assertControlCommandSupported();
+    const args = this.buildControlArgs(instance, action);
+    debugLog(
+      `[EmulatorManager] control ${formatControlAction(action)} -> ${commandText(this.emulatorPath, args)}`
+    );
+    await this.runEmulatorChecked(args, {
+      printOutputOnSuccess: false,
+    });
+  }
+
+  private async assertControlCommandSupported(): Promise<void> {
+    const cacheKey = this.emulatorPath;
+    if (EmulatorManager.supportedControlPaths.has(cacheKey)) {
+      return;
+    }
+    const args = ['-version'];
+    debugLog(`Executing: ${commandText(this.emulatorPath, args)}`);
+    const { stdout, stderr, exitCode } = await execa(this.emulatorPath, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, DEVECO_SDK_HOME: this.sdkPath },
+      reject: false,
+      maxBuffer: 1024 * 1024,
+    });
+    const text = [stdout, stderr].filter(Boolean).join('\n').trim();
+    const version = parseFirstVersionText(text);
+    if (exitCode !== 0 || !version) {
+      throw new Error(
+        'Emulator scene control commands require Emulator 7.0 or later. Unable to determine the current Emulator version.'
+      );
+    }
+    if (compareVersionText(version, MIN_CONTROL_EMULATOR_VERSION) < 0) {
+      throw new Error(
+        `Emulator scene control commands require Emulator 7.0 or later. Current Emulator version is ${version}. Please upgrade DevEco Studio or the Emulator SDK.`
+      );
+    }
+    EmulatorManager.supportedControlPaths.add(cacheKey);
+  }
+
+  private buildControlArgs(
+    instance: string,
+    action: EmulatorControlAction
+  ): string[] {
+    const base = ['-instance', instance];
+    switch (action.type) {
+      case 'shake':
+        return [...base, '-shake'];
+      case 'power':
+        return [...base, '-power'];
+      case 'rotation':
+        return [...base, '-rotation', action.direction];
+      case 'volume':
+        return [...base, '-volume', action.direction];
+      case 'folded-state':
+        return [...base, '-foldedState', action.state];
+      case 'battery':
+        return [...base, '-battery', String(action.level)];
+      case 'battery-status':
+        return [...base, '-batteryStatus', String(action.status)];
+      case 'gps':
+        return [...base, '-gps', `-${action.key}`, action.value];
+      case 'outdoor-running':
+        return [...base, '-outdoorRunning'];
+      case 'outdoor-cycling':
+        return [...base, '-outdoorCycling'];
+      case 'driving-navigation':
+        return [...base, '-drivingNavigation'];
+      case 'sensor':
+        return [...base, '-sensor', `-${action.key}`, String(action.value)];
+    }
+  }
+
   private async executeEmulatorInherit(args: string[]): Promise<void> {
+    debugLog(`Executing: ${commandText(this.emulatorPath, args)}`);
     const { exitCode } = await execa(this.emulatorPath, args, {
       stdio: 'inherit',
       env: { ...process.env, DEVECO_SDK_HOME: this.sdkPath },
@@ -371,6 +514,7 @@ export class EmulatorManager {
       transformOutput?: (text: string) => string;
     }
   ): Promise<void> {
+    debugLog(`Executing: ${commandText(this.emulatorPath, args)}`);
     const { stdout, stderr, exitCode } = await execa(this.emulatorPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, DEVECO_SDK_HOME: this.sdkPath },
