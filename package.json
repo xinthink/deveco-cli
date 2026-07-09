@@ -62,6 +62,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@node-rs/jieba": "^2.0.1",
+    "@sqlite.org/sqlite-wasm": "^3.49.1-build4",
     "adm-zip": "^0.5.17",
     "axios": "1.17.0",
     "colorette": "^2.0.20",
@@ -83,7 +84,7 @@
     "zod": "^4.4.3"
   },
   "optionalDependencies": {
-    "better-sqlite3": "^12.10.0"
+    "better-sqlite3": "^12.11.1"
   },
   "overrides": {
     "dotenv": "16.4.7"

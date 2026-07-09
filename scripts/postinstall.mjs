@@ -7,7 +7,7 @@ import { spawn } from 'child_process';
 import { existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { ensureBetterSqlite3NativeBinary } from './install-better-sqlite3.mjs';
+import { ensureBetterSqlite3ForDocs } from './install-better-sqlite3.mjs';
 import { getDocInitLogPath } from './lib/doc-init-log-path.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -15,9 +15,12 @@ const logPath = getDocInitLogPath();
 process.env.DEVECO_DOC_INIT_LOG = logPath;
 mkdirSync(dirname(logPath), { recursive: true });
 
-const nativeResult = await ensureBetterSqlite3NativeBinary();
+const nativeResult = await ensureBetterSqlite3ForDocs();
 if (!nativeResult.ok && !nativeResult.skipped) {
-  console.warn(`[deveco-cli]\n${nativeResult.hint ?? 'better-sqlite3 native install failed'}\n`);
+  console.warn(
+    `[deveco-cli] better-sqlite3 install via npm failed; docs search will use sqlite-wasm fallback.\n` +
+      `${nativeResult.error ?? ''}\n`
+  );
 }
 const initScript = join(root, 'dist', 'internal', 'doc-init-background.js');
 
