@@ -5,14 +5,13 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { homedir } from 'os';
 import { fileURLToPath } from 'url';
+import { getCliDataDir } from '../../utils/cli-data-dir.js';
 
-const APP_NAME = 'deveco-cli';
 const DOCS_DIR_NAME = 'docs';
 
 export function getDocsDir(): string {
-  return path.join(homedir(), '.local', 'share', APP_NAME, DOCS_DIR_NAME);
+  return path.join(getCliDataDir(), DOCS_DIR_NAME);
 }
 
 export function getIndexDir(): string {
@@ -40,7 +39,11 @@ export function getIndexTmpDir(): string {
 }
 
 export function getDocInitLogDir(): string {
-  return path.join(homedir(), '.local', 'share', APP_NAME, 'logs');
+  return path.join(getCliDataDir(), 'logs');
+}
+
+export function getDocInitLogPath(): string {
+  return path.join(getDocInitLogDir(), 'doc-init.log');
 }
 
 function getDistDir(currentFilePath: string, currentDir: string): string {
@@ -97,4 +100,3 @@ export function findBundledIndexZip(): string | null {
 export function getBuildLexiconDir(): string {
   return path.join(getPackageRoot(), 'index', 'data');
 }
-

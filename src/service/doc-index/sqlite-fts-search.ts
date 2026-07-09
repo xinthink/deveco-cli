@@ -25,6 +25,7 @@ export interface FtsSearchRow {
   doc_title: string;
   section_title: string;
   lead_text: string;
+  excerpt_truncated: number;
   catalog_id: number;
   bm25: number;
 }
@@ -34,8 +35,8 @@ export interface FtsDbReader {
 }
 
 export const FTS_SEARCH_SQL = `
-  SELECT d.document_id, d.doc_title, s.section_title, s.lead_text, d.catalog_id,
-         bm25(segments_fts) AS bm25
+  SELECT d.document_id, d.doc_title, s.section_title, s.lead_text, s.excerpt_truncated,
+         d.catalog_id, bm25(segments_fts) AS bm25
   FROM segments_fts
   JOIN segments s ON s.id = segments_fts.rowid
   JOIN documents d ON d.id = s.doc_id
@@ -45,8 +46,8 @@ export const FTS_SEARCH_SQL = `
 `;
 
 export const FTS_SEARCH_CATALOG_SQL = `
-  SELECT d.document_id, d.doc_title, s.section_title, s.lead_text, d.catalog_id,
-         bm25(segments_fts) AS bm25
+  SELECT d.document_id, d.doc_title, s.section_title, s.lead_text, s.excerpt_truncated,
+         d.catalog_id, bm25(segments_fts) AS bm25
   FROM segments_fts
   JOIN segments s ON s.id = segments_fts.rowid
   JOIN documents d ON d.id = s.doc_id
@@ -262,6 +263,8 @@ export function runFtsSearch(
     title: row.doc_title,
     documentId: row.document_id,
     sectionTitle: row.section_title || undefined,
-    snippet: extractSearchSnippet(row.lead_text, query),
+    snippet: extractSearchSnippet(row.lead_text, query, {
+      excerptTruncated: Boolean(row.excerpt_truncated),
+    }),
   }));
 }

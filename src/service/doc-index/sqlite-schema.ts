@@ -16,7 +16,8 @@ CREATE TABLE segments (
   doc_id INTEGER NOT NULL REFERENCES documents(id),
   section_title TEXT NOT NULL DEFAULT '',
   lead_text TEXT NOT NULL DEFAULT '',
-  search_text TEXT NOT NULL
+  search_text TEXT NOT NULL,
+  excerpt_truncated INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE VIRTUAL TABLE segments_fts USING fts5(

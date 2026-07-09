@@ -36,6 +36,7 @@ import {
   filterSubsumedTokens,
   ohosModuleLastSegment,
 } from './api-identifiers.js';
+import { truncateAtWordBoundary } from './sqlite-snippet.js';
 
 const API_SYMBOL_RE =
   /[A-Z][a-zA-Z0-9]+(?:\.[a-zA-Z][a-zA-Z0-9]+)*/g;
@@ -312,12 +313,21 @@ function capHeadings(headings: string[]): string {
   return joined.slice(0, DOC_HEADINGS_MAX_CHARS);
 }
 
-function buildLeadText(bodySample: string): string {
+function buildLeadText(bodySample: string): { leadText: string; excerptTruncated: boolean } {
   const text = normalizeWhitespace(bodySample);
-  if (text.length <= DOC_LEAD_TEXT_CHARS) {
-    return text;
-  }
-  return text.slice(0, DOC_LEAD_TEXT_CHARS);
+  const { text: leadText, excerptTruncated } = truncateAtWordBoundary(text, DOC_LEAD_TEXT_CHARS);
+  return { leadText, excerptTruncated };
+}
+
+function resolveSectionExcerptTruncated(
+  bodySample: string,
+  sectionTitle: string
+): { leadText: string; excerptTruncated: boolean } {
+  const { leadText, excerptTruncated } = buildLeadText(bodySample);
+  return {
+    leadText,
+    excerptTruncated: excerptTruncated || Boolean(sectionTitle.trim()),
+  };
 }
 
 function appendNodeToSection(node: Content, section: MarkdownSection): void {
@@ -518,6 +528,7 @@ function buildSegmentIndexSource(
       : `${meta.docTitle} ${normalized.symbolName ?? sectionTitle}`
     : meta.docTitle;
   const allText = [meta.docTitle, headingsText, ...section.bodyParts].join(' ');
+  const { leadText, excerptTruncated } = resolveSectionExcerptTruncated(bodySample, sectionTitle);
 
   return {
     documentId: meta.documentId,
@@ -533,7 +544,8 @@ function buildSegmentIndexSource(
       section.codeBlocks
     ),
     bodySample,
-    leadText: buildLeadText(bodySample),
+    leadText,
+    excerptTruncated,
   };
 }
 function walkDocumentNodes(nodes: Content[], parsed: ParsedDocument): void {
@@ -578,6 +590,7 @@ export function buildDocumentIndexSource(
   const docTitle = meta.docTitle?.trim() || meta.documentId;
   const bodySample = sampleBodyText(parsed.bodyParts);
   const allText = [docTitle, ...parsed.headings, bodySample].join(' ');
+  const { leadText, excerptTruncated } = buildLeadText(bodySample);
 
   return {
     documentId: meta.documentId,
@@ -588,7 +601,8 @@ export function buildDocumentIndexSource(
     headingsText: capHeadings(parsed.headings),
     apiSymbols: prepareApiSymbols(extractApiSymbols(allText, parsed.codeBlocks)),
     bodySample,
-    leadText: buildLeadText(bodySample),
+    leadText,
+    excerptTruncated,
   };
 }
 

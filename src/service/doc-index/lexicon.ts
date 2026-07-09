@@ -15,6 +15,17 @@ export const INDEX_LEXICON_FILES = [
 
 export type IndexLexiconFile = (typeof INDEX_LEXICON_FILES)[number];
 
+export class LexiconNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LexiconNotFoundError';
+  }
+}
+
+export function isLexiconNotFoundError(error: unknown): error is LexiconNotFoundError {
+  return error instanceof LexiconNotFoundError;
+}
+
 let lexiconDirOverride: string | null = null;
 
 export function setLexiconDirOverride(dir: string | null): void {
@@ -42,9 +53,13 @@ function resolveLexiconSourceDir(): string {
     return buildDir;
   }
 
-  throw new Error(
+  throw new LexiconNotFoundError(
     'Lexicon files not found. Install the documentation index first (index.zip).'
   );
+}
+
+export function assertIndexLexiconReady(): void {
+  resolveLexiconSourceDir();
 }
 
 export function readIndexLexiconFile(name: IndexLexiconFile): string {

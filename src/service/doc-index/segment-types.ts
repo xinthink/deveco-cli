@@ -14,6 +14,8 @@ export interface DocumentIndexSource {
   apiSymbols: string[];
   bodySample: string;
   leadText: string;
+  /** True when lead_text was truncated or this row is a document section slice. */
+  excerptTruncated: boolean;
 }
 
 export interface BuildMeta {

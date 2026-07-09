@@ -5,8 +5,8 @@
 
 import { CATALOG_NAMES, CATALOG_TITLES } from '../doc-portal-types.js';
 
-export const INDEX_VERSION = '1.8.0';
-export const INDEX_DB_MAX_BYTES = 40 * 1024 * 1024;
+export const INDEX_VERSION = '1.9.1';
+export const INDEX_DB_MAX_BYTES = 48 * 1024 * 1024;
 export const DOC_CHUNK_MIN_LINES = 280;
 export const DOC_CHUNK_MIN_H4_SECTIONS = 6;
 export const DOC_CHUNK_MIN_LINES_RELAXED = 100;
@@ -33,7 +33,9 @@ export const DOC_SECTION_BUDGET_API_SYMBOLS = 200;
 export const DOC_SECTION_BUDGET_HEADINGS = 60;
 export const DOC_SECTION_BUDGET_BODY = 200;
 export const DOC_API_SYMBOLS_MAX_COUNT = 40;
-export const DOC_LEAD_TEXT_CHARS = 120;
+export const DOC_LEAD_TEXT_CHARS = 200;
+export const DOC_SNIPPET_MAX_CHARS = 200;
+export const DOC_SNIPPET_CONTEXT_CHARS = 40;
 export const INSERT_BATCH_SIZE = 500;
 
 export const CATALOG_TITLE_TO_ID: Record<string, number> = Object.fromEntries(
