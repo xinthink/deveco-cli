@@ -155,7 +155,7 @@ async function runBuildPhase(
 
   await withBuildLock(
     project.rootDir,
-    () => executeBuildSteps(ohpmAdapter, hvigorAdapter, productName, buildMode, buildTarget),
+    () => executeBuildSteps(ohpmAdapter, hvigorAdapter, productName, buildMode, buildTarget, project.rootDir),
     () => console.log('Another build is already running for this project. Waiting for completion...')
   );
 

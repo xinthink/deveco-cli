@@ -39,8 +39,7 @@ export interface McpServerConfig {
   nodeMaxOldSpaceSize?: string;
   /** debug 模式：true=console输出，false=文件输出（带轮转） */
   debug?: boolean;
-  /** 强制每次启动都执行 sync（来自环境变量 DEVECO_MCP_FORCE_SYNC） */
-  forceSync?: boolean;
+
 }
 
 /**
@@ -951,7 +950,7 @@ export class DevecoCliMcpServer {
   private async ensureProjectSynced(): Promise<boolean> {
     const projectPath = this.config.projectPath!;
 
-    const syncCheck = checkSyncRequired(projectPath, this.config.forceSync ?? false);
+    const syncCheck = checkSyncRequired(projectPath);
     if (!syncCheck.required) {
       mcpLog.info(`Sync skipped: ${syncCheck.reason}`);
       return true;

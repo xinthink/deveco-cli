@@ -18,4 +18,7 @@ export {
   buildMcpConfigForAgent,
 } from './mcp';
 
+// 项目相关常量，用于 CLI 和 MCP 共享
+export { ProjectConstants } from './project';
+
 
