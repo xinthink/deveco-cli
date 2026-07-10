@@ -6,10 +6,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import * as path from 'path';
+import * as fs from 'fs';
 import { z } from 'zod';
 import { ToolRouter, createToolRouter } from './router.js';
 import { ArktsCheckTool, CppCheckTool } from './tools/index.js';
-import { findHarmonyProject, isSupportedCppFile, smartFindToolPath, devecoStudioContentRoot } from './utils/common.js';
+import { findArktsLangServerPath, findDevEcoPath, findHarmonyProject, isSupportedCppFile, smartFindToolPath, devecoStudioContentRoot } from './utils/common.js';
 import { CommonUtils } from '../../src/utils/common-utils.js';
 import { initMcpLogger, disposeMcpLogger, flushMcpLogger, getMcpLogFilePath, mcpLog } from './utils/mcp-logger.js';
 import { ArktsLspManager } from './lsp/ArktsLspManager.js';
@@ -65,6 +66,8 @@ export class DevecoCliMcpServer {
   private configChangedTriggeredResync: boolean = false;  // 配置文件变化触发的重新同步标记，用于区分提示消息
   private syncSkippedDueToLock: boolean = false;  // sync 因锁被占用而跳过，用于返回更精确的提示消息
   private syncSkipStartedAt: number = 0;          // 首次因锁竞争跳过 sync 的时间戳，超过 SYNC_SKIP_TIMEOUT_MS 后进入 ERROR 状态
+  /** 是否支持标准 LSP 协议（standardIndex/index.js 存在）。false=legacy ace-server，不注册位置类语言特性工具。 */
+  private standardProtocolAvailable: boolean = false;
 
   constructor(config: McpServerConfig = {}) {
     this.config = config;
@@ -98,6 +101,11 @@ export class DevecoCliMcpServer {
 
     // Create tool router
     this.toolRouter = createToolRouter();
+
+    // 检测是否支持标准 LSP 协议（standardIndex/index.js 是否存在）。
+    // legacy 模式（老版本 ace-server 私有协议）下不支持 hover/definition/references 等位置类语言特性，
+    // 因此不注册这些 MCP 工具，避免客户端调用到不可用的实现。
+    this.standardProtocolAvailable = this.detectStandardProtocolAvailable();
 
     // Register tools
     this.registerTools();
@@ -142,6 +150,15 @@ export class DevecoCliMcpServer {
 
   /** 注册位置相关 ArkTS 语言特性工具（hover/definition/declaration/references/implementation）。 */
   private registerLspFeatureTools(): void {
+    if (!this.standardProtocolAvailable) {
+      mcpLog.info(
+        'Skip registering LSP feature tools (hover/definition/declaration/references/implementation, ' +
+          'workspaceSymbol, documentSymbol, callHierarchy): standard LSP protocol unavailable ' +
+          '(standardIndex/index.js not found). These tools require a DevEco Studio version that ships the standard LSP server entry.',
+      );
+      return;
+    }
+
     const lspPositionSchema = z.object({
       file: z.string().describe('ArkTS (.ets) file path, relative to the project root'),
       line: z.number().describe('Line number (0-based)'),
@@ -214,6 +231,43 @@ export class DevecoCliMcpServer {
       },
       async (args: Record<string, unknown>) => this.handleCallHierarchyCall(args)
     );
+  }
+
+  /**
+   * 检测当前 DevEco Studio 是否支持标准 LSP 协议。
+   * 判据：`<arktsLangServer>/ace-server/out/standardIndex/index.js` 是否存在。
+   * 与 ArktsCheckTool.resolveProjectAndDeveco 的检测逻辑保持一致。
+   * false=legacy ace-server 私有协议（仅 check 可用，位置类语言特性不可用）。
+   */
+  private detectStandardProtocolAvailable(): boolean {
+    try {
+      const devecoPath = this.config.devecoPath ?? findDevEcoPath();
+      if (!devecoPath) {
+        mcpLog.info('Standard LSP protocol unavailable: DevEco Studio installation path not found');
+        return false;
+      }
+      const arktsLangServerPath = findArktsLangServerPath(devecoPath);
+      if (!arktsLangServerPath) {
+        mcpLog.info('Standard LSP protocol unavailable: arkts-lang-server path not found');
+        return false;
+      }
+      const standardIndexServerPath = path.join(
+        arktsLangServerPath,
+        'ace-server',
+        'out',
+        'standardIndex',
+        'index.js',
+      );
+      const available = fs.existsSync(standardIndexServerPath);
+      mcpLog.info(
+        `ArktsCheck protocol: ${available ? 'standard LSP' : 'legacy ace-server'} ` +
+          `(standardIndex/index.js exists=${available})`,
+      );
+      return available;
+    } catch (err) {
+      mcpLog.warn(`Failed to detect standard LSP protocol availability: ${err}`);
+      return false;
+    }
   }
 
   /**
