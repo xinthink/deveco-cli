@@ -70,8 +70,5 @@ program.parseAsync(process.argv).catch((err) => {
   const message =
     err instanceof Error ? err.message : String(err ?? 'Unknown error');
   console.error(red(`Error: ${message}`));
-  if (process.env.DEVECO_CLI_DEBUG === '1' && err instanceof Error && err.stack) {
-    console.error(err.stack);
-  }
   process.exit(1);
 });
