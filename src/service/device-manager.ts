@@ -5,6 +5,7 @@
 import { execa } from 'execa';
 import { ToolProvider } from '../utils/tool-provider.js';
 import { tryGetHdcShellParams } from '../utils/hdc-param.js';
+import { debugLog } from '../utils/logger.js';
 
 /**
  * `hdc list targets` shows local emulators as `127.0.0.1:<port>`. This is the
@@ -97,10 +98,13 @@ export class DeviceManager {
       if (!serial || serial.startsWith('[Empty]')) {
         continue;
       }
-      devices.push({
-        serial,
-        status: parts.length >= 2 ? parts[1] : 'device',
-      });
+      const status = parts.length >= 2 ? parts[1] : 'device';
+      // 未授权设备无法执行任何 hdc shell 操作，统一过滤
+      if (status.toLowerCase() === 'unauthorized') {
+        debugLog(`[DeviceManager] Skipping unauthorized device: ${serial}`);
+        continue;
+      }
+      devices.push({ serial, status });
     }
 
     return devices;
