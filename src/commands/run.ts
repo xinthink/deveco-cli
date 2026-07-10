@@ -14,7 +14,7 @@ import { withBuildLock } from '../utils/build-lock.js';
 import { executeBuildSteps, processModuleTasks } from './build.js';
 
 interface RunOptions {
-  module?: string;
+  module?: string[];
   device?: string;
   product?: string;
   buildMode?: string;
@@ -60,9 +60,9 @@ async function selectDevice(
   return picked.serial;
 }
 
-function identifyModule(project: Project, moduleArg?: string): string {
-  if (moduleArg) {
-    return moduleArg;
+function identifyModules(project: Project, moduleArgs?: string[]): string[] {
+  if (moduleArgs && moduleArgs.length > 0) {
+    return moduleArgs;
   }
 
   const runnableModules = project.profile.modules.filter((m) => {
@@ -73,43 +73,12 @@ function identifyModule(project: Project, moduleArg?: string): string {
   if (runnableModules.length === 1) {
     const selected = runnableModules[0].name;
     console.log(`Auto-selected module: ${selected}`);
-    return selected;
+    return [selected];
   }
 
-  throw new Error(`Specify a module using --module <name>.\nAvailable runnable modules:\n` +
+  throw new Error(`Specify module(s) using --module <name> [<name>...].\nAvailable runnable modules:\n` +
       runnableModules.map((m) => `  - ${m.name}`).join('\n')
   );
-}
-
-function resolveArtifacts(
-  project: Project,
-  moduleName: string,
-  targetName: string,
-  isEmulator: boolean,
-  productName: string
-): string[] {
-  const artifactsToInstall: string[] = [];
-  const nonHarModules = project.collectNonHarDependentModuleList(moduleName);
-
-  for (const hsp of nonHarModules) {
-    const p = project.findArtifactPath(
-      hsp,
-      targetName,
-      isEmulator,
-      productName
-    );
-    artifactsToInstall.push(p);
-  }
-
-  const mainHapPath = project.findArtifactPath(
-    moduleName,
-    targetName,
-    isEmulator,
-    productName
-  );
-  artifactsToInstall.push(mainHapPath);
-
-  return artifactsToInstall;
 }
 
 async function performDeployment(
@@ -146,8 +115,8 @@ async function performDeployment(
 const runCommand = new Command('run')
   .description('Build and run the project on a connected device')
   .option(
-    '--module <module>',
-    'Module to run (format: module or module@target)'
+    '--module <modules...>',
+    'Module(s) to run (format: module or module@target)'
   )
   .option('--device <device>', 'Target device name or serial')
   .option('--product <product>', 'Product name (default: default)')
@@ -167,16 +136,20 @@ const runCommand = new Command('run')
 async function runBuildPhase(
   project: Project,
   toolProvider: ToolProvider,
-  moduleName: string,
-  targetName: string,
+  parsedModules: { moduleName: string; targetName: string }[],
   productName: string,
   buildMode: string
 ): Promise<void> {
   const ohpmAdapter = new OhpmAdapter(toolProvider, project.rootDir);
   const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
 
-  const nonHarModules = project.collectNonHarDependentModuleList(moduleName);
-  const modulesToBuild = nonHarModules.map((m) => `${m}@${targetName}`);
+  const moduleSet = new Set<string>();
+  for (const { moduleName, targetName } of parsedModules) {
+    for (const m of project.collectNonHarDependentModuleList(moduleName)) {
+      moduleSet.add(`${m}@${targetName}`);
+    }
+  }
+  const modulesToBuild = [...moduleSet];
   const moduleTasks = processModuleTasks(project, modulesToBuild);
   const buildTarget = { type: 'modules' as const, modulesToBuild, moduleTasks };
 
@@ -194,14 +167,16 @@ async function runActionImpl(options: RunOptions): Promise<void> {
   console.warn(yellow('Ensure the project source is trusted before proceeding.'));
   const toolProvider = await ToolProvider.new();
 
-  const moduleArg = identifyModule(project, options.module);
-  const { moduleName, targetName } = parseModuleArg(moduleArg);
+  const moduleArgs = identifyModules(project, options.module);
+  const parsedModules = moduleArgs.map(parseModuleArg);
 
-  const type = project.getModuleType(moduleName);
-  if (type !== 'entry' && type !== 'feature' && type !== 'shared') {
-    throw new Error(
-      `Module '${moduleName}' '${type}' is not runnable. Specify an entry or feature module.`
-    );
+  for (const { moduleName } of parsedModules) {
+    const type = project.getModuleType(moduleName);
+    if (type !== 'entry' && type !== 'feature' && type !== 'shared') {
+      throw new Error(
+        `Module '${moduleName}' '${type}' is not runnable. Specify an entry or feature module.`
+      );
+    }
   }
 
   const hdcAdapter = new HdcAdapter(toolProvider);
@@ -212,28 +187,31 @@ async function runActionImpl(options: RunOptions): Promise<void> {
     targetDeviceId.includes('localhost');
 
   const productName = options.product || 'default';
-  project.validateProduct(productName); 
+  project.validateProduct(productName);
   const buildMode = options.buildMode || 'debug';
 
   if (!options.skipBuild) {
-    await runBuildPhase(project, toolProvider, moduleName, targetName, productName, buildMode);
+    await runBuildPhase(project, toolProvider, parsedModules, productName, buildMode);
   }
 
-  const artifactsToInstall = resolveArtifacts(
-    project,
-    moduleName,
-    targetName,
-    isEmulator,
-    productName
-  );
+  const artifactSet = new Set<string>();
+  for (const { moduleName, targetName } of parsedModules) {
+    const nonHarModules = project.collectNonHarDependentModuleList(moduleName);
+    for (const hsp of nonHarModules) {
+      artifactSet.add(project.findArtifactPath(hsp, targetName, isEmulator, productName));
+    }
+    artifactSet.add(project.findArtifactPath(moduleName, targetName, isEmulator, productName));
+  }
+  const allArtifacts = [...artifactSet];
+
   const bundleName = project.getBundleName();
-  const mainAbility = project.getMainAbility(moduleName, options.ability);
+  const mainAbility = project.getMainAbility(parsedModules[0].moduleName, options.ability);
 
   await performDeployment(
     hdcAdapter,
     targetDeviceId,
     bundleName,
-    artifactsToInstall,
+    allArtifacts,
     mainAbility,
     !!options.uninstall
   );
