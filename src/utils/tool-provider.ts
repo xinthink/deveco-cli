@@ -361,10 +361,6 @@ export class ToolProvider {
   // ---------- install version resolution (product-info.json / macOS Info.plist) ----------
 
   private static productInfoPath(installRoot: string): string {
-    const platform = os.platform();
-    if (platform === 'darwin') {
-      return path.join(installRoot, 'Contents', 'product-info.json');
-    }
     return path.join(installRoot, 'product-info.json');
   }
 
@@ -373,7 +369,7 @@ export class ToolProvider {
   }
 
   /**
-   * macOS: read a string key from the app Info.plist (XML or binary plist) via `defaults read`.
+   * macOS: read a string key from Info.plist. PlistBuddy first, plutil -extract as fallback.
    */
   private static readMacInfoPlistKey(
     plistPath: string,
@@ -383,19 +379,40 @@ export class ToolProvider {
       debugLog(`[ToolProvider] Info.plist not found at: ${plistPath}`);
       return undefined;
     }
-    try {
-      const out = execFileSync('defaults', ['read', plistPath, key], {
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: 5000,
-      }).trim();
-      if (out.length > 0 && out !== '(null)') {
-        return out;
+    const readers = [
+      {
+        command: '/usr/libexec/PlistBuddy',
+        args: ['-c', `Print :${key}`, plistPath],
+        label: `PlistBuddy Print :${key}`,
+      },
+      {
+        command: 'plutil',
+        args: ['-extract', key, 'raw', '-o', '-', plistPath],
+        label: `plutil -extract ${key}`,
+      },
+    ] as const;
+    for (const { command, args, label } of readers) {
+      try {
+        const out = execFileSync(command, args, {
+          encoding: 'utf-8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 5000,
+        }).trim();
+        if (out.length > 0 && !out.includes('Does Not Exist')) {
+          return out;
+        }
+      } catch (err) {
+        const execErr = err as NodeJS.ErrnoException & {
+          stderr?: Buffer | string;
+          status?: number;
+        };
+        const stderr = execErr.stderr ? String(execErr.stderr).trim() : '';
+        const exit = execErr.status ?? execErr.code ?? '?';
+        debugLog(
+          `[ToolProvider] ${label} failed for ${plistPath} (exit ${exit})` +
+            `${stderr ? `: ${stderr}` : ''}`
+        );
       }
-    } catch {
-      debugLog(
-        `[ToolProvider] defaults read failed for ${plistPath} key ${key}`
-      );
     }
     return undefined;
   }
@@ -501,10 +518,7 @@ export class ToolProvider {
     installRoot: string
   ): string | undefined {
     if (os.platform() === 'darwin') {
-      const fromPlist = ToolProvider.parseMacInfoPlistVersion(installRoot);
-      if (fromPlist !== undefined) {
-        return fromPlist;
-      }
+      return ToolProvider.parseMacInfoPlistVersion(installRoot);
     }
 
     const infoPath = ToolProvider.productInfoPath(installRoot);
@@ -522,9 +536,11 @@ export class ToolProvider {
         return undefined;
       }
       return version.trim();
-    } catch {
+    } catch (err) {
       debugLog(
-        `[ToolProvider] Failed to parse product-info.json at: ${infoPath}`
+        `[ToolProvider] Failed to parse product-info.json at ${infoPath}: ${
+          err instanceof Error ? err.message : String(err)
+        }`
       );
       return undefined;
     }
@@ -573,7 +589,7 @@ export class ToolProvider {
         debugLog(`[ToolProvider] ${installRoot} => version ${version}`);
       } else {
         debugLog(
-          `[ToolProvider] Skipping ${installRoot}: could not read version (Info.plist / product-info.json).`
+          `[ToolProvider] Skipping ${installRoot}: could not read version from Info.plist.`
         );
       }
     }
@@ -582,7 +598,7 @@ export class ToolProvider {
       const tried = candidates.join('\n  ');
       const hint =
         os.platform() === 'darwin'
-          ? 'Contents/Info.plist (CFBundleShortVersionString / CFBundleVersion) and Contents/product-info.json'
+          ? 'Contents/Info.plist (CFBundleShortVersionString / CFBundleVersion)'
           : 'product-info.json';
       throw new Error(
         `Failed to determine DevEco Studio version from ${hint}.\n` +
