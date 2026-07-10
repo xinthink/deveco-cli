@@ -88,8 +88,8 @@ async function buildBetterIndex(
   const db = openWritableDb(Database, dbPath);
   const docIdCache = new Map<string, number>();
   const insertSegment = db.prepare(`
-    INSERT INTO segments(doc_id, section_title, lead_text, search_text)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO segments(doc_id, section_title, lead_text, search_text, excerpt_truncated)
+    VALUES (?, ?, ?, ?, ?)
   `);
 
   const total = sources.length;
@@ -109,7 +109,8 @@ async function buildBetterIndex(
           docId,
           row.source.sectionTitle,
           row.source.leadText,
-          row.searchText
+          row.searchText,
+          row.source.excerptTruncated ? 1 : 0
         );
       }
     });

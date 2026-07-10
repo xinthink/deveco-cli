@@ -1,4 +1,4 @@
-﻿# Agents.md
+# Agents.md
 
 Guidance for AI coding assistants working in this repo.
 
@@ -178,3 +178,4 @@ templates/application/        # Project scaffold copied by `devecocli create`
 - HarmonyOS project config is JSON5 (`build-profile.json5`, `module.json5`, `oh-package.json5`, `app.json5`).
 - `DEVECO_CLI_DEBUG=1` logs the raw `node` / `ohpm` / `hvigor` / `hdc` / `emulator` invocations (hilog is fetched via `hdc shell hilog`).
 - `DEVECO_CLI_SKIP_VERSION_CHECK=1` bypasses the DevEco Studio version check at startup.
+- `DEVECO_CLI_DATA_DIR` overrides the user data root (default `~/.local/share/deveco-cli` on all platforms). Derives `docs/.index/search.db`, `logs/doc-init.log`, etc.

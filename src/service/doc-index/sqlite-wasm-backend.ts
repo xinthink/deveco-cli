@@ -91,7 +91,13 @@ async function insertIndexedBatch(
   db.exec('BEGIN');
   for (const row of batch) {
     const docId = getOrCreateDocId(row.source);
-    insertSegment.bind([docId, row.source.sectionTitle, row.source.leadText, row.searchText]);
+    insertSegment.bind([
+      docId,
+      row.source.sectionTitle,
+      row.source.leadText,
+      row.searchText,
+      row.source.excerptTruncated ? 1 : 0,
+    ]);
     insertSegment.step();
     insertSegment.reset();
   }
@@ -143,7 +149,7 @@ async function buildWasmIndex(
     'INSERT INTO documents(document_id, catalog_id, doc_title) VALUES (?, ?, ?)'
   );
   const insertSegment = db.prepare(
-    'INSERT INTO segments(doc_id, section_title, lead_text, search_text) VALUES (?, ?, ?, ?)'
+    'INSERT INTO segments(doc_id, section_title, lead_text, search_text, excerpt_truncated) VALUES (?, ?, ?, ?, ?)'
   );
 
   const getOrCreateDocId = createDocIdResolver(db, docIdCache, insertDocument);

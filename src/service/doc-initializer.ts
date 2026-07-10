@@ -27,7 +27,7 @@ import {
 import {
   findDocsZip,
   getBuildLockFile,
-  getDocInitLogDir,
+  getDocInitLogPath,
   getIndexDir,
   getIndexTmpDir,
 } from './doc-index/doc-paths.js';
@@ -65,9 +65,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function appendLog(message: string): Promise<void> {
-  const logPath =
-    process.env.DEVECO_DOC_INIT_LOG ??
-    path.join(getDocInitLogDir(), 'doc-init.log');
+  const logPath = getDocInitLogPath();
   await fs.promises.mkdir(path.dirname(logPath), { recursive: true });
   await fs.promises.appendFile(logPath, `${new Date().toISOString()} ${message}\n`);
 }
@@ -300,9 +298,7 @@ async function runSetup(spinner: ReturnType<typeof ora>, force = false): Promise
   await DocInitializer.run({ builtBy: 'doc-init', force, quiet: true });
 }
 
-export async function awaitDocReady(): Promise<void> {
-  await assertDocNativeDeps();
-
+async function ensureIndexReady(): Promise<void> {
   if (isIndexReady()) {
     return;
   }
@@ -331,4 +327,9 @@ export async function awaitDocReady(): Promise<void> {
     spinner.fail((error as Error).message);
     throw error;
   }
+}
+
+export async function awaitDocReady(): Promise<void> {
+  await ensureIndexReady();
+  await assertDocNativeDeps();
 }

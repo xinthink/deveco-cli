@@ -5,14 +5,13 @@
 
 import { spawn } from 'child_process';
 import { existsSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
+import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { ensureBetterSqlite3ForDocs } from './install-better-sqlite3.mjs';
 import { getDocInitLogPath } from './lib/doc-init-log-path.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const logPath = getDocInitLogPath();
-process.env.DEVECO_DOC_INIT_LOG = logPath;
 mkdirSync(dirname(logPath), { recursive: true });
 
 const nativeResult = await ensureBetterSqlite3ForDocs();
@@ -38,7 +37,6 @@ const child = spawn(
       ...process.env,
       DEVECO_CLI_SKIP_VERSION_CHECK: '1',
       DEVECO_CLI_POSTINSTALL: '1',
-      DEVECO_DOC_INIT_LOG: logPath,
     },
   }
 );
