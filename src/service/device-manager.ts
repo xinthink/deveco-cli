@@ -78,6 +78,7 @@ export class DeviceManager {
   private async executeHdc(
     args: string[]
   ): Promise<{ stdout: string; stderr: string }> {
+    debugLog(`Executing: ${this.hdcPath} ${args.join(' ')}`);
     return execa(this.hdcPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
