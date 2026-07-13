@@ -2,180 +2,134 @@
 
 Guidance for AI coding assistants working in this repo.
 
-## Project Overview
+## What this repo is
 
-**deveco-cli** wraps the DevEco Studio toolchain (`ohpm`, `hvigor`, `hdc`, `emulator`, `hilog`, bundled `node` + JBR + SDK) plus the HarmonyOS skills installer, and a project-scaffolding template engine — all behind a single `devecocli` binary, with no need to set `PATH` / `DEVECO_SDK_HOME` / `JAVA_HOME`.
+`deveco-cli` wraps the DevEco Studio toolchain (`ohpm`, `hvigor`, `hdc`, `emulator`, `hilog`, bundled `node` + JBR + SDK) plus a HarmonyOS skills installer and a project-scaffolding template engine — all behind a single `devecocli` binary. Distribution is one minified ESM bundle `dist/cli.js` (bin: `devecocli`).
 
-Capabilities: scaffold a new application project from the bundled template (`create`), build & package (`.hap` / `.hsp` / `.har` / `.app`), manage devices and emulators, install + launch (`run`), fetch `hilog` / crash logs, install / remove HarmonyOS skills for AI agents (Claude, Cursor, Gemini, OpenCode, …), and self-update.
+Commands shipped: `build`, `run`, `update`, `device`, `emulator`, `skills`, `log`, `create`, `init`, `serve`, `docs`, `ui`.
 
-Distribution: a single ESM bundle (`dist/cli.js`), exposed as the `devecocli` bin.
+User-facing invocation guide for AI agents lives in `SKILL.md` — update it whenever a command or flag changes.
 
-## Commonly Used Commands
+## Commands
 
 ```bash
-npm run build      # tsup → dist/cli.js
+npm run build      # tsup → dist/cli.js (prepublishOnly runs lint → license → build)
 npm run dev        # tsx watch mode
-npm start          # tsx (one-shot, no build)
-npm run lint       # eslint
+npm start          # tsx one-shot, no build
+npm run lint       # eslint src
 npm run lint:fix   # eslint --fix
-npm run format     # prettier --write
+npm run format     # prettier --write src
 npm run license    # regenerate THIRD-PARTY-LICENSES
+npm run build:index # regenerate index.zip for `devecocli docs` search
 ```
 
-`prepublishOnly` runs `lint → license → build`.
+There is **no test framework** (no vitest/jest, no `*.test.ts`). Verification = `npm run lint` + manual smoke. `prepublishOnly` is the closest thing to CI locally.
+
+## Conventions that bite
+
+- **Modules**: ESM, `"type": "module"`. Internal imports **must** use `.js` even when the source is `.ts`.
+- **Output bundle**: edits to `src/` are not visible until `npm run build` (or `npm run dev` / `npm start`).
+- **Husky**: pre-commit runs `npm run lint`; `prepare-commit-msg` auto-appends `Signed-off-by:` (DCO).
+
+## Env vars
+
+- `DEVECO_CLI_DEBUG=1` — log raw `node` / `ohpm` / `hvigor` / `hdc` / `emulator` invocations via `utils/logger.ts → debugLog`. Also prints stack traces on error from `cli.ts`.
+- `DEVECO_CLI_SKIP_VERSION_CHECK=1` — bypass the DevEco Studio 6.1.0+ version check on startup. (`update` is the only command exempt by default; see `TOOLCHAIN_FREE_COMMANDS` in `src/cli.ts`.)
+- `DEVECO_CLI_DATA_DIR` — override user data root (default `~/.local/share/deveco-cli`). Derives `docs/.index/search.db`, `logs/doc-init.log`, etc.
+- `HTTP_PROXY` / `HTTPS_PROXY` — honoured by `global-agent` bootstrapped in `src/cli.ts`.
 
 ## Architecture
 
-### Directory Structure
-
-```text
+```
 src/
-├── cli.ts                    # Entry point; registers all commands with Commander
-├── commands/                 # One file per CLI subcommand
-│   ├── create.ts             # Scaffold a new project from templates/application
-│   ├── build.ts   run.ts   update.ts
-│   ├── device.ts  emulator.ts  log.ts
-│   ├── skills.ts  init.ts
-│   ├── serve.ts              # MCP server subcommand (serve mcp)
-│   └── doc.ts                # Local HarmonyOS docs search/read/catalog (CLI command: `docs`)
-├── skills/                   # HarmonyOS skills marketplace client (api + installer + agents)
-│   ├── api.ts                       # HarmonyOS skills HTTP client + installed-agent discovery
-│   ├── installer.ts                 # Download / extract / remove skill packages
-│   ├── agents.ts                    # parseAgentList / getAllExistingAgents / summarizeOperationResults
-│   └── mcp-installer.ts             # installMcpConfigToAgentGlobal / installMcpConfigToAgentProject / removeMcpConfigFromAgentGlobal / removeMcpConfigFromAgentProject
-├── service/                  # Domain helpers
-│   ├── device-manager.ts            # Connected-device discovery + name / device-type lookup
-│   ├── emulator-types.ts            # `EmulatorInfo` + `normalizeListNameKey`
-│   ├── emulator-list-parse.ts       # Parses `emulator -list -details` (JSON / text)
-│   ├── emulator-start-strategies.ts # Builds `-start` / `-hvd` argv candidates + retries
-│   ├── emulator-manager.ts          # list/start/stop + image + create/delete virtual device
-│   ├── local-doc-service.ts         # Local HarmonyOS docs search + read (SQLite FTS5 + zip read)
-│   ├── doc-initializer.ts           # postinstall: install index.zip or fallback local build
-│   ├── doc-index/                   # SQLite FTS5 index, jieba tokenizer, docs.zip reader, search
-│   └── doc-portal-types.ts          # CatalogName / CATALOG_NAMES / CATALOG_TITLES
-├── utils/
-│   ├── project.ts                  # Project discovery + JSON5 build-profile parsing
-│   ├── tool-provider.ts            # Locate DevEco Studio + resolve toolchain paths
-│   ├── template-provider.ts        # Copy templates/application + render API-level fields
-│   ├── ohpm-adapter.ts   hvigor-adapter.ts
-│   ├── hdc-adapter.ts    hilog-adapter.ts    hdc-param.ts
-│   ├── emulator-spawn.ts           # Detached Emulator.exe spawn (parameterized argv)
-│   ├── emulator-hdc-targets.ts     # `hdc list targets` filter for emulator serials
-│   ├── emulator-image-list-parse.ts # Parses `emulator -imageList` JSON for downloaded osVersions
-│   ├── emulator-license.ts         # Emulator SDK license agreement helpers
-│   ├── build-lock.ts               # Per-project file lock to serialise builds
-│   ├── common-utils.ts             # Shared validators (bundle / level / crash / duration / tail)
-│   ├── spinner-helper.ts           # Stateful ora wrapper (start / stop / succeed / fail)
-│   ├── ora-fail.ts                 # `exitWithListCommandError` helper
-│   ├── text-table.ts               # Fixed-width table renderer used by `list` commands
-│   ├── http-client.ts  cmd.ts  config.ts
-│   └── logger.ts                   # debugLog (gated by DEVECO_CLI_DEBUG)
-├── config/                   # constants (AGENT_SKILLS_CONFIG, AGENT_MCP_CONFIG), network, skills
-│   ├── constants.ts                  # Re-exports from network, skills, and mcp modules
-│   ├── mcp.ts                        # AgentMcpConfig / AGENT_MCP_CONFIG / buildMcpConfigForAgent / buildOpenCodeMcpConfig / buildMcpServerConfig
-│   ├── network.ts                    # Network-related constants
-│   └── skills.ts                     # Skills API constants and agent skills config paths
-├── data/                     # Bundled data files
-│   └── emulator-privacy-bundled.ts    # Bundled emulator privacy agreement data
-└── types/                    # Shared type defs (SkillOperationResult, InitOptions with mcp/skill flags, McpConfigResult, HttpRequestConfig, HttpResponse)
+├── cli.ts                    # Commander entry; global-agent bootstrap; preAction version check
+├── commands/                 # One file per subcommand. Keep it thin: CLI shape + spinner + render.
+├── skills/                   # HarmonyOS skills marketplace client (api + installer + agents + mcp-installer)
+├── service/                  # Domain helpers (device, emulator, doc)
+├── utils/                    # Adapters (hdc, hilog, ohpm, hvigor) + tool-provider + shared validators
+├── config/                   # constants, network, skills, mcp
+├── data/                     # Bundled data files (e.g. emulator-privacy-bundled.ts)
+├── types/                    # Shared type defs
+└── internal/                 # Internal entry points (e.g. doc-init-background.ts, also a tsup entry)
 
-mcp/src-server/               # Bundled MCP server (ArkTS/Cpp syntax checking via LSP)
-├── index.ts                  # Exports createMcpServer, ArktsCheckTool, CppCheckTool
-├── server.ts                 # DevecoCliMcpServer — stdio MCP server orchestrator
-├── router.ts                 # ToolRouter — registers + dispatches MCP tools
-├── tools/arkts-check.ts      # ArkTS syntax check via DevEco LSP
-├── tools/cpp-check.ts        # C/C++ syntax check via clangd
-├── lsp/                      # LSP client + ArkTS proxy (completion, diagnostics, symbols)
-│   ├── ArktsLspManager.ts    # Lifecycle manager for ArkTS LSP process
-│   ├── LspServerProxy.ts     # LSP protocol proxy
-│   ├── core/                 # LSP client, callbacks, diagnostics, protocol handling
-│   ├── model/                # LSP type models (Completion, Symbol, Capabilities, etc.)
-│   ├── parse/                # JSON5 config parsers (build-profile, module, oh-package)
-│   ├── sync/                 # ohpm install + build project orchestration
-│   ├── watcher/              # ConfigFileWatcher + DependencyMapWatcher
-│   ├── common/               # Shared utilities (CallbackRegistry, typeGuards)
-│   ├── constant.ts           # LSP-related constants
-│   ├── types.ts              # LSP type definitions
-│   ├── utils.ts              # LSP utility helpers
-│   ├── logger.ts             # LSP logger
-│   └── lspTypeGuards.ts      # LSP type guard functions
-└── utils/                    # MCP logger, constants, common helpers
-
+mcp/src-server/               # Bundled stdio MCP server (ArkTS/C++ syntax checking via LSP)
 templates/application/        # Project scaffold copied by `devecocli create`
+scripts/                      # postinstall + better-sqlite3 vendoring
+index/                        # Source for `npm run build:index` (regenerates index.zip)
 ```
 
-### Key Components
+**Real entrypoints**: `src/cli.ts` is the user-facing bin. `src/internal/doc-init-background.ts` is a second tsup entry spawned after install to populate the docs search index. `mcp/src-server/index.ts → createMcpServer` is the MCP orchestrator started by `devecocli serve mcp`.
+**Toolchain resolution**: `utils/tool-provider.ts` finds DevEco Studio (Win: registry → `C:\Program Files\Huawei\DevEco Studio`; macOS: `~/Applications` + `/Applications` for `*DevEco*.app`; **Linux unsupported**). It resolves `nodePath` / `ohpmJsPath` / `hvigorJsPath` / `javaPath` / `hdcPath` / `emulatorPath` / `sdkPath`. hilog is not a separate binary — it runs through `hdc shell hilog`.
+**Build pipeline**: `commands/build.ts` runs `ohpm install --all → hvigor --sync → hvigor assemble*`. The artifact path resolver lives in `utils/project.ts → findArtifactPath`.
+**Device selection**: `service/device-manager.ts` is the single source for "what's connected". Commands that accept a device use a shared resolver that maps a user-supplied name or serial to a concrete serial.
+**Skills / MCP init**: `commands/init.ts` and `commands/skills.ts` share `src/skills/agents.ts` helpers (`parseAgentList` / `getAllExistingAgents` / `summarizeOperationResults`). `--skill` and `--mcp` are mutually exclusive; default is `--skill`.
+**Docs index**: `commands/doc.ts` triggers `awaitDocReady()` (spinner while postinstall installs the index in background). The postinstall script extracts the prebuilt `index.zip` only — `docs.zip` is read on demand. To refresh the index: `npm run build:index` then republish.
 
-- **`cli.ts`** — Commander entry; bootstraps `global-agent` to honour HTTP_PROXY env vars, registers 11 subcommands. `--version` is read from `process.env.npm_package_version` (injected by tsup). Also normalizes `devecocli <command> help` to `devecocli <command> --help` for leaf commands. Calls `ToolProvider.checkVersion()` on startup unless `DEVECO_CLI_SKIP_VERSION_CHECK=1`.
-- **`commands/create.ts`** — Scaffolds a new application project. Requires `--app-name` (1–200 chars, letter-start, letters/digits/underscores only). `--project-path` defaults to `./<app-name>` (the auto path must not exist; an explicit `--project-path` may point at an existing directory only if it is empty). Path normalization: backslashes → forward slashes (Windows); consecutive slashes reduced to single. Deep paths auto-created with `mkdir -p` semantics; the closest existing parent must be writable. Validates `--bundle-name` (7–128 chars, ≥3 dot-separated segments, no consecutive dots). `--api-level` validated to ≥17 (max determined by SDK); auto-detected from SDK or defaults to `23`. Delegates file copy + config rendering to `utils/template-provider.ts`.
-- **`commands/build.ts`** — Default action: pipeline `ohpm install --all → hvigor --sync → hvigor assemble*`. Auto-detects the entry module, resolves transitive HSP deps, and propagates `@target` suffixes. With `--product <name>` only, builds the whole-product `.app`; with `--modules <names…>`, builds specific modules; otherwise builds per-module `.hap` / `.hsp` / `.har`. Subcommand `build clean` runs `hvigor clean` then `hvigor --stop-daemon` to remove build outputs and stop the daemon.
-- **`commands/run.ts`** — Auto-selects the runnable module (`entry`/`feature`/`shared`) and the device (name substring or exact serial), then installs HSP deps + the main `.hap` via `HdcAdapter.installApp` (which `hdc file send`s the artifacts to a temp dir and runs `hdc shell bm install -p`), and launches the ability (defaults to `EntryAbility` or the first ability from `module.json5`). Supports `--build-mode` (defaults to `debug`), `--skip-build` to deploy existing artifacts without rebuilding, `--ability <name>` to specify the ability, and `--uninstall` to uninstall the existing app before installation.
-- **`commands/device.ts`** — Subcommands: `list` (currently active real devices and running emulators, each annotated with its device type), `view` (detailed info). Multi-device hosts must pass `-t <serial>` to `view`. Use `devecocli emulator list` to see installed-but-stopped emulators.
-- **`commands/emulator.ts`** — CLI for local emulator `list` / `start` / `stop` / `create` / `delete` plus system-image helpers under `image`: `download` / `remove` / `list`, and license helpers under `license`: `view` / `accept`. `list` shows every instance with its status, serial and device type (running rows surfaced first). `image download` / `image remove` / `create` all require `--device-type` (lowercase only, one of `phone`, `foldable`, `widefold`, `triplefold`, `tablet`, `2in1`, `2in1 foldable`, `wearable`, `tv`) and `--os-version`; `image list` accepts `--device-type`, `--all` (downloaded + not downloaded), and `--format table|json`.
-- **`service/emulator-manager.ts`** — `EmulatorManager` orchestrates list/start/stop + system-image install/uninstall/list + create/delete local virtual devices. List parsing: `service/emulator-list-parse.ts`; start strategies: `service/emulator-start-strategies.ts`; detached spawn: `utils/emulator-spawn.ts`.
-- **`service/device-manager.ts`** — `DeviceManager` is the single entry point for connected-target discovery (real devices + running emulators) and friendly-name / device-type lookup. Consumed by `commands/device.ts` and `utils/hilog-adapter.ts`.
-- **`commands/log.ts`** — Thin shell over `HilogAdapter`: `--crash` switches to crash dump; otherwise common hilog with `--level` / `--bundle-name` / `--keyword` filters. `--from <s|m>` / `--to <s|m>` carve a relative time window (default unit is seconds), `--tail <n>` keeps the latest N lines of the filtered output, and `--follow` streams in real time (incompatible with `--to`).
-- **`commands/skills.ts`** + **`skills/`** — `list` / `find` / `add` / `remove`. `remove` uses `--skill <name>` (option form, not positional). `list` supports `-l, --long` for detailed output. Downloads skill `.zip`s and extracts them into per-agent paths defined in `config/constants.ts → AGENT_SKILLS_CONFIG` (e.g. `~/.claude/skills/`, `~/.cursor/skills/`) and / or `<project>/.deveco/skills/`. With neither `--agent` nor `--project`, operates on every detected agent. The shared agent helpers (`parseAgentList` / `getAllExistingAgents` / `summarizeOperationResults`) live in `skills/agents.ts` so `init` can reuse them.
-- **`commands/init.ts`** — `devecocli init`. Two mutually exclusive modes: **`--skill`** (default) installs the bundled `deveco-cli` skill into per-agent / project paths, reusing `installLocalSkillToAgent` / `installLocalSkillToProjectAgent` / `installLocalSkillToPath`. **`--mcp`** configures the `deveco-mcp` MCP server (syntax checking) into agent config files via `installMcpConfigToAgentGlobal` / `installMcpConfigToAgentProject`. `--skill` and `--mcp` are mutually exclusive. `--force` is the overwrite / skip-validation switch (does not change global / project-level mode). `--mcp` without `--project` configures global MCP for all agents; `--mcp --project <path>` configures project-level MCP. Same `--agent` (comma-separated) / `--project` / `--path` / `-f` semantics as `skills add`.
-- **`commands/serve.ts`** — `devecocli serve mcp`. Starts a stdio-based MCP server (ArkTS/C++ syntax checking via LSP). Reads `PROJECT_PATH`, `DEVECO_PATH`, `NODE_MAX_OLD_SPACE_SIZE` (default 8192), `DEBUG` from env. Delegates to `mcp/src-server/index.ts → createMcpServer`. Handles SIGINT/SIGTERM/SIGBREAK for clean shutdown.
-- **`commands/doc.ts`** — Local HarmonyOS documentation search. Subcommands: `search <keywords...>` (with `--catalog`, `--format json|default`, `--limit`), `read <documentId>`, `catalog`. `search`/`read`/`catalog` call `awaitDocReady()` first (spinner while postinstall installs index in background). Search uses SQLite FTS5 + jieba via `service/doc-index/sqlite-index.ts` (`better-sqlite3` downloaded at postinstall); `docs read` streams markdown from bundled `docs.zip` via `docs-zip-reader.ts`. postinstall extracts prebuilt `index.zip` only (not `docs.zip`); index lifecycle in `service/doc-initializer.ts` (no public init subcommand). Publish with `npm run build:index` when regenerating `index.zip`.
-- **`commands/update.ts`** — `npm install -g <package>@latest` (package name from `process.env.npm_package_name`, falling back to `deveco-cli`). On success, prompts that docs may update in background.
-- **`utils/project.ts`** — `Project.discover(startDir)` walks up to find the project-level `build-profile.json5` (one containing `app`). Provides `getModuleType` (`entry`/`feature`/`shared`/`har`), `collectNonHarDependentModuleList`, `findArtifactPath(moduleName, target, isEmulator, product)`, `getBundleName`, `getMainAbility`.
-- **`utils/template-provider.ts`** — Copies `templates/application/` into the target directory, replaces the seed `MyApplication` / `com.example.myapplication` placeholders with the user's `appName` / `bundleName`, and rewrites `sdkVersion` / `modelVersion` per the `API_CONFIGS` table. Performs a post-copy integrity check against an internal `REQUIRED_FILES` list and falls back to placeholder PNGs when the bundled DevEco Studio template assets are unavailable.
-- **`utils/tool-provider.ts`** — Locates DevEco Studio and resolves `nodePath` / `ohpmJsPath` / `hvigorJsPath` / `javaPath` / `hdcPath` / `emulatorPath` / `sdkPath` (hilog is not a separate executable here — it runs through `hdc shell hilog`). Also exposes `detectApiLevel()` consumed by `create`, and enforces minimum DevEco Studio version `6.1.0` by reading `product-info.json` (Windows) or `Contents/Info.plist` then `Contents/product-info.json` (macOS).
-  - **Windows**: registry (`HKLM\…\Uninstall\DevEco Studio`, then `HKLM\…\WOW6432Node\Huawei\DevEco Studio`), then default `C:\Program Files\Huawei\DevEco Studio`.
-  - **macOS**: scans `~/Applications` and `/Applications` for any `*DevEco*.app` bundle.
-  - **Linux**: not yet supported.
-- **`utils/{ohpm,hvigor}-adapter.ts`** — Spawn the bundled `node` against `pm-cli.js` / `hvigorw.js` with the right env (`PATH` prepended with the bundled JBR `bin`, `DEVECO_SDK_HOME` set).
-- **`utils/hdc-adapter.ts`** — Wraps the bundled `hdc` for device discovery, file-push install (`file send` + `bm install -p`), and ability launch.
-- **`utils/hilog-adapter.ts`** — Reuses `hdc shell hilog` (and `hdc shell hidumper` for crashes) to fetch logs and post-filters them via `common-utils.ts`.
-- **`utils/hdc-param.ts`** — Wraps `hdc shell param get` (single + batched). Returns clean values to callers, transparently swallowing hdc's failure / "channel-still-establishing" chatter (with retry).
-- **`utils/text-table.ts`** — Fixed-width table renderer shared by `device list`, `emulator list` and `emulator image list`.
-- **`utils/common-utils.ts`** — Shared validators (bundle name, hilog level, crash filename) and parsers (positive integer, duration `s`/`m`, time-window log filter, tail).
-- **`utils/spinner-helper.ts` / `utils/ora-fail.ts`** — Small ora helpers for stateful spinner reuse and uniform "list command failed" exits.
-- **`utils/logger.ts`** — `debugLog` only prints when `DEVECO_CLI_DEBUG=1`; useful for inspecting the raw command lines being spawned.
-- **`utils/emulator-license.ts`** — Emulator SDK license agreement helpers (check / accept / view).
-- **`utils/build-lock.ts`** — Per-project file lock (via `proper-lockfile`) used by `build` and `run` to serialise builds.
+## Standard paradigm: how to add a new domain module
 
-### MCP Server
+When adding a new cross-command capability (UI inspection, screenshots, simulators, etc.), extract the domain logic out of `commands/` into a dedicated domain module under `src/`. Don't invent a new shape — use this structure:
 
-`mcp/src-server/` is a bundled stdio MCP server providing ArkTS and C/C++ syntax checking via LSP.
+```
+src/<domain>/
+├── index.ts                 # Single barrel — re-export adapters + types only
+├── <capability-a>/
+│   ├── types.ts             # Domain types
+│   ├── <verb-or-noun>.ts    # One or more pure modules named for what they do
+│   └── <adapter>.ts         # Adapter class wrapping external IO + the pure modules
+└── <capability-b>/
+    ├── types.ts
+    └── <adapter>.ts
+```
 
-- **`server.ts`** (`DevecoCliMcpServer`) — orchestrator; receives configuration (`projectPath`, `devecoPath`, `nodeMaxOldSpaceSize`, `debug`) via `createMcpServer`.
-- **`tools/arkts-check.ts`** — ArkTS syntax check via DevEco LSP (`.ets` files).
-- **`tools/cpp-check.ts`** — C/C++ syntax check via clangd.
-- **`lsp/`** — Full LSP client: `ArktsLspManager.ts` (process lifecycle), `LspServerProxy.ts` (protocol proxy), `core/` (client, callbacks, diagnostics), `parse/` (JSON5 config parsers), `sync/` (ohpm install + build), `watcher/` (file/dependency watchers).
-- Started by `devecocli serve mcp` or configured into agents via `devecocli init --mcp`.
+**Naming — name files after what they contain, not after a generic role:**
 
-### SKILL.md
+- Pick names that describe the content (e.g. `parsers.ts`, `collapse.ts`). **Never** use `helpers.ts`, `utils.ts`, `common.ts` — these are a smell.
+- A capability **does not need a pure module** if the logic fits in `types.ts` or the adapter. Don't add files for symmetry.
+- The adapter is usually the only file doing IO; the `-adapter` suffix is optional — use it only when it disambiguates.
 
-`SKILL.md` is consumed by AI agents to learn how to invoke `devecocli`.
+## Rules
 
-## Technology Stack
+### Domain module rules
 
-- **Language**: TypeScript (strict, ESM, target Node.js >= 18)
-- **Modules**: ES Modules (`"type": "module"`); internal imports must use `.js` even though sources are `.ts`
-- **Build**: `tsup` (single minified ESM `dist/cli.js`, `shims: true`, with `npm_package_version` / `npm_package_name` injected at build time)
-- **CLI framework**: Commander.js
-- **Runtime deps**: `commander`, `execa`, `axios`, `json5`, `regedit`, `fs-extra`, `adm-zip`, `colorette`, `ora`, `global-agent` (proxy support, bootstrapped in `cli.ts`), `@modelcontextprotocol/sdk`, `@node-rs/jieba`, `unified`, `remark-parse`, `remark-gfm`, `mdast-util-to-string`, `proper-lockfile`, `yauzl`, `zod`. **Optional**: `better-sqlite3` (native module; prebuild downloaded in `postinstall` via `scripts/install-better-sqlite3.mjs` for the current Node ABI).
-- **Dev tooling**: `eslint` (typescript-eslint), `prettier`, `tsx`, `tsup`, `generate-license-file`, `@eslint/js`, `typescript`, `turndown`, `husky`, type stubs (`@types/adm-zip`, `@types/fs-extra`, `@types/global-agent`, `@types/turndown`, `@types/node`)
-- **Lint rules**: `curly` (all), `max-lines-per-function` (50), `max-depth` (4), `dot-notation`
-- **Prettier**: `semi: true`, `singleQuote: true`, `trailingComma: es5`
+Rules (enforced by convention; not lint):
 
-## CLI Conventions
+1. **One barrel per domain.** `src/<domain>/index.ts` is the only thing `src/commands/*` imports from. **Never** import from `src/<domain>/<capability>/*` directly.
+2. **Three-layer split inside each capability**: `types.ts` → pure helpers (parsers, fold/collapse, normalizers) → adapter class that composes the helpers with external IO (hdc, http, fs). The pure layer is the only thing that should be unit-testable in isolation.
+3. **Cross-capability coupling goes through the adapter**, not through shared types. If capability A needs data from capability B, A's adapter instantiates B's adapter and calls it — don't duplicate B's types into A's `types.ts`.
+4. **Adapter methods are case-shaped**, not verb-shaped. Expose specific methods like `getFullTree(serial, depth, windowId)` and `getCollapsedTree(...)`, not one generic `get(options)`. Keep the IO orchestration (`buildRemoteX → recv → parse → cleanup`) as private methods on the adapter.
+5. **Commands stay thin**: `Options` interface + commander option chain + `handle*` async function that does spinner → call adapter → format output. Renderers (`renderTree`, `renderTable`, JSON shape) live in the command file or a small util, not in the domain.
+6. **No business logic in commands.** If `commands/<x>.ts` grows past ~200 lines and is mostly orchestration, you're missing a `<domain>/<capability>/<adapter>.ts`. Follow the standard paradigm above instead.
+7. **Adding the command**: put `import { ... } from '../<domain>/index.js'` at the top of the new `commands/<x>.ts`, register it in `src/cli.ts` alongside the other `program.addCommand(...)` calls. Don't touch the barrel beyond adding the new export.
 
-- **kebab-case for long options** (`--build-mode`, `--bundle-name`). No camelCase / underscore in user-facing flags.
-- **`--device <name|serial>` accepts name OR serial** (substring match for name, exact match for serial like `127.0.0.1:5555`). For `device view`, the equivalent is `-t, --target <serial>`. Docs should describe `--device` as "name or serial".
-- **Multi-device hosts** must list available serials and exit non-zero rather than silently picking one when no device flag is given.
-- **`devecocli init` mode flags**: `--skill` (skill only) and `--mcp` (MCP config only) are mutually exclusive. Default (no flag) = `--skill`. `--force` is the overwrite / skip-validation switch only; it does not change global / project-level mode.
-- **MCP global / project-level**: `--mcp` without `--project` configures global MCP for supported agents (except Qoder). `--mcp --project <path>` configures project-level MCP for supported agents (except Qoder).
-- **When adding a new flag / command**, update the matching prose section in `SKILL.md` and `README.md`'s command overview.
+### General rules
 
-## Development Notes
+8. **No `process.exit` in business logic.** All code must throw or return a failure result. The single termination point is `src/cli.ts`. `utils/ora-fail.ts` is a legacy exception — **new or modified code must not call it**.
+9. **Log every spawned command line.** Before spawning any external CLI (`hdc`, `hvigor`, `ohpm`, `emulator`, bundled `node`, etc.), emit `debugLog(`Executing: ${cmd} ${args.join(' ')}`)` from `utils/logger.ts`.
+10. **Comments**: keep comments brief — state purpose only, no verbose explanations. Existing `Copyright (c) 2026 Huawei Device Co., Ltd.` SPDX headers are mandatory — preserve them.
+11. **CLI flags**: kebab-case. `--device <name|serial>` accepts either. Multi-device hosts must list available devices and exit non-zero rather than pick a default.
+12. **Format per file, not globally.** Use `npx prettier --write <file>` and `npx eslint --fix <file>` on changed files only. Never run `npm run format` or `npm run lint:fix` on the whole tree.
+13. **Adding a flag or command?** Update the matching prose in **both** `SKILL.md` and `README.md`.
 
-- Node.js >= 18 (runtime and build target).
-- Output bundle: `dist/cli.js` (bin: `devecocli`).
-- HarmonyOS project config is JSON5 (`build-profile.json5`, `module.json5`, `oh-package.json5`, `app.json5`).
-- `DEVECO_CLI_DEBUG=1` logs the raw `node` / `ohpm` / `hvigor` / `hdc` / `emulator` invocations (hilog is fetched via `hdc shell hilog`).
-- `DEVECO_CLI_SKIP_VERSION_CHECK=1` bypasses the DevEco Studio version check at startup.
-- `DEVECO_CLI_DATA_DIR` overrides the user data root (default `~/.local/share/deveco-cli` on all platforms). Derives `docs/.index/search.db`, `logs/doc-init.log`, etc.
+### How to migrate existing code to this shape (gradual)
+
+The seven rules above are the **destination**, not a one-shot rewrite mandate. Most `commands/*` files today predate the paradigm and still hold orchestration that belongs in a `<domain>/<capability>/<adapter>.ts`. We migrate **opportunistically, one touch at a time** — every change to a legacy file should leave it a little closer to the shape, without growing the diff beyond what the change actually requires.
+
+When you touch an existing `commands/<x>.ts` (or any module that doesn't follow the shape), apply this judgement in order. **Stop at the first step that already passes**; don't refactor past the line you're already crossing:
+
+1. **Am I adding a new capability?** → Create `src/<domain>/<capability>/{types,pure-helpers,adapter}.ts` and the barrel export **first**; then write the thin `commands/<x>.ts`. (Rules 1–7 apply in full — this is the easy case.)
+2. **Am I editing a file that already follows the shape?** → Respect the layer you're in. Don't reach across layers (helper from adapter is fine; adapter logic from pure helpers is not). No structural change needed.
+3. **Am I editing a legacy `commands/<x>.ts`?** → Keep the change minimal, but if the touched block is clearly orchestration that belongs in an adapter (e.g. building a remote command, parsing device output, talking to `hdc`/`hvigor`/`ohpm`/`emulator`/bundled `node`), **move that block into a new or existing `<domain>/<capability>/<adapter>.ts`** and call it from the command. Don't move unrelated code in the same PR.
+4. **Am I adding new logic to a legacy file for a brand-new capability that has no domain yet?** → Same as step 1, but it's OK to do it from inside the legacy command first **only if** the legacy command is being deleted/rewritten anyway. Otherwise, create the domain module and route through the barrel from the start.
+5. **Am I doing a pure refactor with no behaviour change?** → Use a dedicated commit. The migration is the _point_ of the commit, not a side effect.
+
+**What "closer to the shape" looks like, concretely:**
+
+- A `commands/<x>.ts` block that does `hdc shell ... → parse stdout → return result` becomes one adapter call from the command.
+- A duplicated type in two places gets removed; the second place imports it from the owning domain's barrel.
+- A `commands/<x>.ts` that grows past ~200 lines and is mostly orchestration is the next migration target — but only migrate it when something in that file genuinely needs to change, or in a dedicated refactor commit.
+
+**The bar is "each commit leaves the codebase a bit closer to the paradigm, never further."** New code follows the seven rules strictly. Old code converges one block at a time.
+
+## Misc operational gotchas
+
+- **JSON5 everywhere** for HarmonyOS configs (`build-profile.json5`, `module.json5`, `oh-package.json5`, `app.json5`) — use `json5` to parse, not native `JSON.parse`.
