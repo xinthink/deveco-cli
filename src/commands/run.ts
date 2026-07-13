@@ -81,12 +81,38 @@ function identifyModules(project: Project, moduleArgs?: string[]): string[] {
   );
 }
 
+function resolveMainAbility(
+  project: Project,
+  parsedModules: { moduleName: string; targetName: string }[],
+  ability?: string
+): string | undefined {
+  if (ability) {
+    return ability;
+  }
+
+  const entryModule = parsedModules.find(
+    ({ moduleName }) => project.getModuleType(moduleName) === 'entry'
+  );
+  if (entryModule) {
+    return project.getMainAbility(entryModule.moduleName);
+  }
+
+  const featureModule = parsedModules.find(
+    ({ moduleName }) => project.getModuleType(moduleName) === 'feature'
+  );
+  if (featureModule) {
+    return project.getMainAbility(featureModule.moduleName);
+  }
+
+  return undefined;
+}
+
 async function performDeployment(
   hdcAdapter: HdcAdapter,
   targetDeviceId: string,
   bundleName: string,
   artifactsToInstall: string[],
-  mainAbility: string,
+  mainAbility: string | undefined,
   uninstall: boolean
 ): Promise<void> {
   if (uninstall) {
@@ -103,13 +129,17 @@ async function performDeployment(
   console.log(`\nInstalling artifacts to device ${targetDeviceId}...`);
   await hdcAdapter.installApp(targetDeviceId, artifactsToInstall);
 
-  console.log(`Launching ${bundleName}/${mainAbility}...`);
-  const launchResult = await hdcAdapter.launchApp(
-    targetDeviceId,
-    bundleName,
-    mainAbility
-  );
-  console.log(green(`\nApplication '${bundleName}': ${launchResult}`));
+  if (mainAbility) {
+    console.log(`Launching ${bundleName}/${mainAbility}...`);
+    const launchResult = await hdcAdapter.launchApp(
+      targetDeviceId,
+      bundleName,
+      mainAbility
+    );
+    console.log(green(`\nApplication '${bundleName}': ${launchResult}`));
+  } else {
+    console.log(`\nApplication '${bundleName}' installed successfully (no ability to launch).`);
+  }
 }
 
 const runCommand = new Command('run')
@@ -205,7 +235,7 @@ async function runActionImpl(options: RunOptions): Promise<void> {
   const allArtifacts = [...artifactSet];
 
   const bundleName = project.getBundleName();
-  const mainAbility = project.getMainAbility(parsedModules[0].moduleName, options.ability);
+  const mainAbility = resolveMainAbility(project, parsedModules, options.ability);
 
   await performDeployment(
     hdcAdapter,
