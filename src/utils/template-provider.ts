@@ -19,6 +19,7 @@ const API_CONFIGS: Record<
   22: { sdkVersion: '6.0.2(22)', modelVersion: '6.0.2' },
   23: { sdkVersion: '6.1.0(23)', modelVersion: '6.1.0' },
   24: { sdkVersion: '6.1.1(24)', modelVersion: '6.1.1' },
+  26: { sdkVersion: '26.0.0', modelVersion: '26.0.0' },
 };
 
 const REQUIRED_FILES = [
