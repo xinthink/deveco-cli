@@ -28,6 +28,7 @@ import {
   ensureEmulatorSdkAgreementForImageDownload,
   ensureEmulatorServiceAgreementConfig,
   runEmulatorLicenseAccept,
+  runEmulatorLicenseAcceptDirectly,
   runEmulatorLicenseView,
 } from '../utils/emulator-license.js';
 const SERIAL_PARAM_KEYS = [
@@ -1003,12 +1004,12 @@ imageCommand
 emulatorCommand.addCommand(imageCommand);
 
 const licenseCommand = new Command('license').description(
-  'local emulator license'
+  'Review and accept emulator license agreements interactively (prints full text + y/N prompt)'
 );
 
 licenseCommand
   .command('view')
-  .description('Review agreement text(read-only)')
+  .description('Review agreement text (read-only, no changes)')
   .action(async () => {
     const { toolProvider } = await initEmulatorManager();
     const code = await runEmulatorLicenseView(
@@ -1020,15 +1021,26 @@ licenseCommand
 
 licenseCommand
   .command('accept')
-  .description('review and accept agreements')
+  .description(
+    'Accept all emulator license agreements non-interactively (skips review and prompt)'
+  )
   .action(async () => {
     const { toolProvider } = await initEmulatorManager();
-    const code = await runEmulatorLicenseAccept(
+    const code = await runEmulatorLicenseAcceptDirectly(
       toolProvider.emulatorPath,
       toolProvider.sdkPath
     );
     process.exit(code);
   });
+
+licenseCommand.action(async () => {
+  const { toolProvider } = await initEmulatorManager();
+  const code = await runEmulatorLicenseAccept(
+    toolProvider.emulatorPath,
+    toolProvider.sdkPath
+  );
+  process.exit(code);
+});
 
 emulatorCommand.addCommand(licenseCommand);
 
