@@ -136,30 +136,28 @@ export async function executeBuildSteps(
   buildTarget: BuildTarget,
   projectRoot: string
 ) {
-  // 1. 检查是否需要执行 ohpm install + hvigor sync
+  // ohpm install always runs; hvigor sync is skipped when configurations are unchanged
   const checkResult = checkSyncRequired(projectRoot);
 
-  // 2. 如果需要，执行 ohpm install + hvigor sync
-  if (checkResult.required) {
-    console.log('\n[1/3] Running ohpm install...');
-    try {
-      await ohpmAdapter.installAll();
-    } catch (error) {
-      logAdapterFailureAndThrow('ohpm install', error);
-    }
+  console.log('\n[ohpm install] Running...');
+  try {
+    await ohpmAdapter.installAll();
+  } catch (error) {
+    logAdapterFailureAndThrow('ohpm install', error);
+  }
 
-    console.log('\n[2/3] Running hvigor sync...');
+  if (checkResult.required) {
+    console.log('\n[hvigor sync] Running...');
     try {
       await hvigorAdapter.sync(productName, buildMode);
     } catch (error) {
       logAdapterFailureAndThrow('hvigor sync', error);
     }
-
-    console.log('\n[3/3] Running hvigor build...');
   } else {
-    console.log('\n[skip] ohpm install & hvigor sync (configurations unchanged)');
-    console.log('\n[1/1] Running hvigor build...');
+    console.log('\n[hvigor sync] Skipped (configurations unchanged)');
   }
+
+  console.log('\n[hvigor build] Running...');
   try {
     if (buildTarget.type === 'product') {
       await hvigorAdapter.buildProduct(productName, buildMode);
