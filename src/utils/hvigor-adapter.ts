@@ -103,6 +103,18 @@ export class HvigorAdapter {
     await this.runHvigor(['--stop-daemon']);
   }
 
+  /**
+   * 只触发 native（c/c++）编译，不生成 hap/har。
+   */
+  public async compileNative(productName: string, moduleName?: string): Promise<void> {
+    const args: string[] = ['--mode', 'module'];
+    if (moduleName) {
+      args.push('-p', `module=${moduleName}`);
+    }
+    args.push('-p', `product=${productName}`, 'compileNative', '--analyze=normal');
+    await this.runHvigor(args);
+  }
+
   private async runHvigor(args: string[]): Promise<void> {
     const cmd = this.toolProvider.nodePath;
     const cmdArgs = [this.toolProvider.hvigorJsPath, ...args];
