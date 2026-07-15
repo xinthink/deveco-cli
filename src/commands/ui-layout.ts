@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { Command, InvalidArgumentError, Option } from 'commander';
-import { ToolProvider } from '../utils/tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import { ArkUiDumpAdapter } from '../ui/index.js';
 import ora from 'ora';
 import type { ArkUiNode } from '../ui/index.js';

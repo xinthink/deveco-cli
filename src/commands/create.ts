@@ -8,7 +8,7 @@ import process from 'process';
 import os from 'os';
 import { Command } from 'commander';
 import { green, red, cyan, yellow } from 'colorette';
-import { ToolProvider } from '../utils/tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import {
   createProject,
   CreateProjectResult,
@@ -315,7 +315,6 @@ const createCommand = new Command('create')
       const toolProvider = await tryGetToolProvider();
       const apiLevel = resolveApiLevel(options, toolProvider);
       console.log(`API level: ${apiLevel}`);
-
       const devecoStudioPath = toolProvider?.devecoStudioPath;
 
       const result: CreateProjectResult = createProject(

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { HilogOptions } from './config.js';
-import { ToolProvider } from './tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import { DeviceManager } from '../service/device-manager.js';
 import { cyan } from 'colorette';
 import { CommonUtils } from './common-utils.js';
@@ -409,7 +409,9 @@ export class HilogAdapter {
         // 一次性读取模式在结果返回后统一处理，不在流回调中输出
       },
       (error) => {
-        debugLog(`Callback triggered when an error occurs during a single hilog streaming read: ${error.message}`);
+        debugLog(
+          `Callback triggered when an error occurs during a single hilog streaming read: ${error.message}`
+        );
       },
       () => {
         // 非 follow 场景下无需额外处理 close，等待 Promise 结束即可
@@ -647,9 +649,7 @@ export class HilogAdapter {
       throw sentinel;
     }
     if (result.exitCode !== 0 && result.stderr) {
-      console.error(
-        `Warning: Failed to fetch crash logs: ${result.stderr}`
-      );
+      console.error(`Warning: Failed to fetch crash logs: ${result.stderr}`);
     }
 
     const combinedOutput = result.stdout + result.stderr;

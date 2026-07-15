@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { execa } from 'execa';
-import { ToolProvider } from '../utils/tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import type { EmulatorInfo } from './emulator-types.js';
 import { normalizeListNameKey } from './emulator-types.js';
 import { spawnEmulatorDetached } from '../utils/emulator-spawn.js';
@@ -53,19 +53,6 @@ function isNoImagesAvailableError(error: unknown): boolean {
 
 function parseFirstVersionText(text: string): string | undefined {
   return text.normalize('NFKC').match(/(\d+(?:\.\d+){1,3})/)?.[1];
-}
-
-function compareVersionText(a: string, b: string): number {
-  const left = a.split('.').map((segment) => Number(segment));
-  const right = b.split('.').map((segment) => Number(segment));
-  const length = Math.max(left.length, right.length);
-  for (let i = 0; i < length; i++) {
-    const diff = (left[i] ?? 0) - (right[i] ?? 0);
-    if (diff !== 0) {
-      return diff;
-    }
-  }
-  return 0;
 }
 
 function commandText(command: string, args: string[]): string {
@@ -259,7 +246,7 @@ export class EmulatorManager {
         'Emulator scene control commands require Emulator 7.0 or later. Unable to determine the current Emulator version.'
       );
     }
-    if (compareVersionText(version, MIN_CONTROL_EMULATOR_VERSION) < 0) {
+    if (ToolProvider.compareVersion(version, MIN_CONTROL_EMULATOR_VERSION) < 0) {
       throw new Error(
         `Emulator scene control commands require Emulator 7.0 or later. Current Emulator version is ${version}. Please upgrade DevEco Studio or the Emulator SDK.`
       );

@@ -5,7 +5,7 @@
 import { Command } from 'commander';
 import { green, red, yellow } from 'colorette';
 import { Project } from '../utils/project.js';
-import { ToolProvider } from '../utils/tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import { HvigorAdapter } from '../utils/hvigor-adapter.js';
 import { OhpmAdapter } from '../utils/ohpm-adapter.js';
 import { withBuildLock } from '../utils/build-lock.js';
@@ -196,6 +196,7 @@ const buildCommand = new Command('build')
       const project = Project.discover(currentDir);
       console.warn(yellow('Ensure the project source is trustworthy before proceeding.'));
       const toolProvider = await ToolProvider.new();
+      toolProvider.assertJava();
 
       validateProjectConfig(project, options);
 
@@ -257,6 +258,7 @@ buildCommand
       const project = Project.discover(currentDir);
       console.warn(yellow('Ensure the project source is trusted before proceeding.'));
       const toolProvider = await ToolProvider.new();
+      toolProvider.assertJava();
 
       const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
       await withBuildLock(

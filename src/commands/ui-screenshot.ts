@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { execa } from 'execa';
 import { green, red } from 'colorette';
 import { DeviceManager } from '../service/device-manager.js';
-import { ToolProvider } from '../utils/tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import { debugLog } from '../utils/logger.js';
 
 interface ScreenshotOptions {

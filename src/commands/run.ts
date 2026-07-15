@@ -5,7 +5,7 @@
 import { Command } from 'commander';
 import { green, red, yellow } from 'colorette';
 import { Project } from '../utils/project.js';
-import { ToolProvider } from '../utils/tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import { HdcAdapter } from '../utils/hdc-adapter.js';
 import { HvigorAdapter } from '../utils/hvigor-adapter.js';
 import { OhpmAdapter } from '../utils/ohpm-adapter.js';
@@ -196,6 +196,9 @@ async function runActionImpl(options: RunOptions): Promise<void> {
   const project = Project.discover(process.cwd());
   console.warn(yellow('Ensure the project source is trusted before proceeding.'));
   const toolProvider = await ToolProvider.new();
+  if (!options.skipBuild) {
+    toolProvider.assertJava();
+  }
 
   const moduleArgs = identifyModules(project, options.module);
   const parsedModules = moduleArgs.map(parseModuleArg);

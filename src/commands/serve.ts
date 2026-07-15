@@ -4,7 +4,7 @@
  */
 import { Command } from 'commander';
 import { createMcpServer } from '../../mcp/src-server/index.js';
-import { ToolProvider } from '../utils/tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import { startArktsLspServer } from './serve-lsp.js';
 
 /**
@@ -12,12 +12,12 @@ import { startArktsLspServer } from './serve-lsp.js';
  */
 async function startStdioMcpServer(): Promise<void> {
   const PROJECT_PATH = process.env.PROJECT_PATH || '';
-  const DEVECO_PATH = process.env.DEVECO_PATH;
   const NODE_MAX_OLD_SPACE_SIZE = process.env.NODE_MAX_OLD_SPACE_SIZE;
   const DEBUG = process.env.DEBUG === 'true' || process.env.DEBUG === '1';
   const toolProvider = await ToolProvider.new();
+  toolProvider.require({ clt: false });
   const projectPath = PROJECT_PATH;
-  const devecoPath = DEVECO_PATH ?? toolProvider.devecoStudioPath;
+  const devecoPath = toolProvider.devecoStudioPath;
 
   const server = createMcpServer({
     projectPath,
