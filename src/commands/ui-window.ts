@@ -4,7 +4,7 @@
  */
 import { Command, Option } from 'commander';
 import { yellow } from 'colorette';
-import { ToolProvider } from '../utils/tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import { WindowAdapter } from '../ui/index.js';
 import { renderTable } from '../utils/text-table.js';
 import ora from 'ora';

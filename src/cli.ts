@@ -23,7 +23,7 @@ import initCommand from './commands/init.js';
 import serveCommand from './commands/serve.js';
 import docCommand from './commands/doc.js';
 import uiCommand from './commands/ui.js';
-import { ToolProvider } from './utils/tool-provider.js';
+import { ToolProvider } from './toolchain/index.js';
 
 program
   .name('devecocli')

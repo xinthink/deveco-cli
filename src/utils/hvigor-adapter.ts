@@ -4,7 +4,7 @@
  */
 import { execa } from 'execa';
 import * as path from 'path';
-import { ToolProvider } from './tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import { debugLog } from './logger.js';
 
 export class HvigorAdapter {
@@ -19,11 +19,16 @@ export class HvigorAdapter {
     const javaBinDir = path.dirname(toolProvider.javaPath);
     const newPath = `${javaBinDir}${path.delimiter}${process.env.PATH || ''}`;
 
-    this.env = {
+    const env: Record<string, string> = {
       ...process.env,
       PATH: newPath,
       DEVECO_SDK_HOME: toolProvider.sdkPath,
-    } as Record<string, string>;
+    };
+    if (toolProvider.sourceType === 'clt' && toolProvider.javaPath) {
+      env.JAVA_HOME = path.dirname(javaBinDir);
+    }
+
+    this.env = env as Record<string, string>;
   }
 
   public async sync(productName: string, buildMode: string): Promise<void> {

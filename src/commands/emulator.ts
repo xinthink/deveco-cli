@@ -14,7 +14,6 @@ import {
   EmulatorManager,
   type EmulatorControlAction,
 } from '../service/emulator-manager.js';
-import { ToolProvider } from '../utils/tool-provider.js';
 import {
   DeviceManager,
   isLocalEmulatorSerial,
@@ -31,6 +30,8 @@ import {
   runEmulatorLicenseAcceptDirectly,
   runEmulatorLicenseView,
 } from '../utils/emulator-license.js';
+import { ToolProvider } from '../toolchain/index.js';
+
 const SERIAL_PARAM_KEYS = [
   'ohos.qemu.hvd.name',
   'const.product.name',
