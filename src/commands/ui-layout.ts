@@ -99,7 +99,8 @@ function outputNodesById(tree: ArkUiNode[], id: string) {
   if (nodes.length === 0) {
     throw new Error(`Node '${id}' not found.`);
   }
-  console.log(JSON.stringify(nodes, null, 2));
+  const stripped = nodes.map((node) => ({ ...node, children: [] }));
+  console.log(JSON.stringify(stripped, null, 2));
 }
 
 function outputTree(tree: ArkUiNode[], format: 'default' | 'json') {
