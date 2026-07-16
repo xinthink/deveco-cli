@@ -219,6 +219,24 @@ async function runActionImpl(options: RunOptions): Promise<void> {
   await runNormalFlow(options, project, toolProvider);
 }
 
+function collectArtifacts(
+  project: Project,
+  parsedModules: { moduleName: string; targetName: string }[],
+  isEmulator: boolean,
+  productName: string
+): string[] {
+  const artifactSet = new Set<string>();
+  for (const { moduleName, targetName } of parsedModules) {
+    for (const m of project.collectNonHarDependentModuleList(moduleName)) {
+      artifactSet.add(project.findArtifactPath(m, targetName, isEmulator, productName));
+      for (const remoteHsp of project.findRemoteHspPaths(m, targetName, productName)) {
+        artifactSet.add(remoteHsp);
+      }
+    }
+  }
+  return [...artifactSet];
+}
+
 async function runNormalFlow(
   options: RunOptions, project: Project, toolProvider: ToolProvider
 ): Promise<void> {
@@ -249,16 +267,7 @@ async function runNormalFlow(
     await runBuildPhase(project, toolProvider, parsedModules, productName, buildMode);
   }
 
-  const artifactSet = new Set<string>();
-  for (const { moduleName, targetName } of parsedModules) {
-    const nonHarModules = project.collectNonHarDependentModuleList(moduleName);
-    for (const hsp of nonHarModules) {
-      artifactSet.add(project.findArtifactPath(hsp, targetName, isEmulator, productName));
-    }
-    artifactSet.add(project.findArtifactPath(moduleName, targetName, isEmulator, productName));
-  }
-  const allArtifacts = [...artifactSet];
-
+  const allArtifacts = collectArtifacts(project, parsedModules, isEmulator, productName);
   const bundleName = project.getBundleName();
   const mainAbility = resolveMainAbility(project, parsedModules, options.ability);
 
