@@ -32,7 +32,7 @@ interface HdcResult {
 }
 
 function timestamp(): string {
-  return new Date().toISOString().replace(/[:.]/g, '-');
+  return String(Date.now());
 }
 
 function resolveLocalPath(input: string | undefined): string {
@@ -164,8 +164,8 @@ async function formatAvailableDevices(
 
 function buildSnapshotArgs(ctx: ScreenshotContext, type?: string): string[] {
   const args = ['-t', ctx.serial, 'shell', 'snapshot_display'];
-  if (ctx.display?.trim()) {
-    args.push('-i', parseDisplayId(ctx.display));
+  if (ctx.display !== undefined) {
+    args.push('-i', ctx.display);
   }
   args.push('-f', ctx.remotePath);
   if (type) {
@@ -364,6 +364,10 @@ async function captureScreenshot(ctx: ScreenshotContext): Promise<void> {
 
 async function screenshotAction(options: ScreenshotOptions): Promise<void> {
   try {
+    const display =
+      options.display !== undefined
+        ? parseDisplayId(options.display)
+        : undefined;
     const toolProvider = await ToolProvider.new();
     const serial = await resolveTargetSerial(toolProvider, options.device);
     const localPath = resolveLocalPath(options.path);
@@ -373,7 +377,7 @@ async function screenshotAction(options: ScreenshotOptions): Promise<void> {
       serial,
       localPath,
       remotePath,
-      display: options.display,
+      display,
     });
     console.log(green(`Screenshot saved to ${localPath}`));
   } catch (error) {
@@ -390,9 +394,9 @@ export const screenshotCommand = new Command('screenshot')
     '--device <name|serial>',
     'Target device name or serial; required when multiple devices are connected'
   )
-  .option('--display <displayId>', 'Target display id')
+  .option('--display <displayId>', 'Target display id; omit for default screen')
   .option(
     '--path <path>',
-    'Existing directory or PNG file path whose parent exists'
+    'Save path: directory or full file path with name; PNG only (default: ./screenshot-<timestamp>.png)'
   )
   .action(screenshotAction);

@@ -634,15 +634,31 @@ function firstGeolocationAction(
   addGpsAction(actions, 'longitude', options.longitude, -180, 180, 8);
   addGpsAction(actions, 'latitude', options.latitude, -90, 90, 8);
   addGpsAction(actions, 'altitude', options.altitude, -10000, 10000, 2);
-  addGpsAction(actions, 'bearing', options.direction, 0, 360, 2);
+  addGpsAction(
+    actions,
+    'bearing',
+    options.direction,
+    0,
+    359.99,
+    2,
+    '--direction'
+  );
   return singleAction(actions, 'Specify one geolocation option.');
 }
 
 function firstSensorAction(options: SensorOptions): EmulatorControlAction {
   const actions: EmulatorControlAction[] = [];
-  addSensorAction(actions, 'light', options.lightIntensity, 0, 100000, false);
+  addSensorAction(
+    actions,
+    'light',
+    options.lightIntensity,
+    0,
+    100000,
+    false,
+    '--light-intensity'
+  );
   addSensorAction(actions, 'humidity', options.humidity, 0, 100, false);
-  addSensorAction(actions, 'temperature', options.temperature, -273, 100, false);
+  addSensorAction(actions, 'temperature', options.temperature, -273.1, 100, false);
   addSensorAction(actions, 'steps', options.steps, 0, 10000, true);
   addSensorAction(actions, 'heartrate', options.heartrate, 0, 255, true);
   return singleAction(actions, 'Specify one sensor option.');
@@ -667,7 +683,8 @@ function addGpsAction(
   input: string | undefined,
   min: number,
   max: number,
-  maxDecimalPlaces: number
+  maxDecimalPlaces: number,
+  optionName = `--${key}`
 ): void {
   if (input === undefined) {
     return;
@@ -675,7 +692,7 @@ function addGpsAction(
   actions.push({
     type: 'gps',
     key,
-    value: parseRangeNumberText(`--${key}`, input, min, max, maxDecimalPlaces),
+    value: parseRangeNumberText(optionName, input, min, max, maxDecimalPlaces),
   });
 }
 
@@ -685,14 +702,15 @@ function addSensorAction(
   input: string | undefined,
   min: number,
   max: number,
-  integer: boolean
+  integer: boolean,
+  optionName = `--${key}`
 ): void {
   if (input === undefined) {
     return;
   }
   const value = integer
-    ? parseRangeInteger(`--${key}`, input, min, max)
-    : parseRangeNumber(`--${key}`, input, min, max, 1);
+    ? parseRangeInteger(optionName, input, min, max)
+    : parseRangeNumber(optionName, input, min, max, 1);
   actions.push({ type: 'sensor', key, value });
 }
 
@@ -1119,7 +1137,7 @@ emulatorCommand
   .option('--longitude <value>', 'Longitude (-180.0 to 180.0)')
   .option('--latitude <value>', 'Latitude (-90.0 to 90.0)')
   .option('--altitude <value>', 'Altitude (-10000.0 to 10000.0)')
-  .option('--direction <value>', 'Heading direction in degrees (0 to 360)')
+  .option('--direction <value>', 'Heading direction in degrees (0.00 to 359.99)')
   .action((options: GeolocationOptions) =>
     runEmulatorControlAction(options, () => firstGeolocationAction(options))
   );
@@ -1150,7 +1168,7 @@ emulatorCommand
   .requiredOption('--target <nameOrSerial>', 'Target emulator name or serial')
   .option('--light-intensity <value>', 'Light sensor (0 to 100000)')
   .option('--humidity <value>', 'Humidity sensor (0 to 100)')
-  .option('--temperature <value>', 'Temperature sensor (-273.0 to 100)')
+  .option('--temperature <value>', 'Temperature sensor (-273.1 to 100)')
   .option('--steps <value>', 'Steps sensor (integer 0 to 10000)')
   .option('--heartrate <value>', 'Heart rate sensor (integer 0 to 255)')
   .action((options: SensorOptions) =>
