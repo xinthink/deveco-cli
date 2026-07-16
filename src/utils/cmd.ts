@@ -67,7 +67,7 @@ function toCommandResult(state: StreamingState, code: number | null): CommandRes
   return {
     stdout: state.stdoutChunks.join(''),
     stderr: state.stderrChunks.join(''),
-    exitCode: code ?? 0,
+    exitCode: code ?? -1,
   };
 }
 
@@ -126,9 +126,6 @@ function bindStreamingEvents(
     flushTailLine(state.stderrLineBuffer, 'stderr', handlers);
     handlers.onClose(code);
     const result = toCommandResult(state, code);
-    if (result.exitCode !== 0) {
-      handlers.onError(new Error(`Command process exited with code ${result.exitCode}`));
-    }
     resolve(result);
   });
 }

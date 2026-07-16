@@ -32,7 +32,7 @@ function detectHdcSentinel(
   const cls = classifyHdcOutput(probe);
   if (cls === 'transient') {
     return new Error(
-      `${context}: Device communication channel unavailabel. Retry in a few seconds.`
+      `${context}: Device communication channel unavailable. Retry in a few seconds.`
     );
   }
   if (cls === 'fatal') {
@@ -73,15 +73,15 @@ export class HilogAdapter {
     this.deviceManager = DeviceManager.from(toolProvider);
   }
 
-  private createFollowLineHandler(options: HilogOptions): HilogDataHandler {
+  private createFollowLineHandler(): HilogDataHandler {
     return (lines, source) => {
-      const visibleLines = options.keyword
-        ? lines.filter((line) => line.includes(options.keyword as string))
-        : lines;
       if (source === 'stderr') {
+        for (const line of lines) {
+          console.error(line);
+        }
         return;
       }
-      for (const line of visibleLines) {
+      for (const line of lines) {
         console.log(line);
       }
     };
@@ -148,7 +148,7 @@ export class HilogAdapter {
 
     throw new Error(
       'Multiple devices found. Specify a target device using `--device <name>` or `--device <serial>`.\nAvailable devices:\n' +
-        this.formatConnectedDeviceList(connectedDevices)
+      this.formatConnectedDeviceList(connectedDevices)
     );
   }
 
@@ -335,9 +335,10 @@ export class HilogAdapter {
     let last: HdcCommandResult = { stdout: '', stderr: '', exitCode: -1 };
     for (let attempt = 0; attempt < attempts; attempt++) {
       last = await this.followHilog(command, args, onData, onError, onClose);
-      const probe =
-        last.exitCode === 0 ? last.stdout : last.stderr || last.stdout;
-      if (classifyHdcOutput(probe) !== 'transient') {
+      if (
+        last.exitCode === 0 ||
+        classifyHdcOutput(last.stderr) !== 'transient'
+      ) {
         return last;
       }
       if (attempt >= attempts - 1) {
@@ -351,6 +352,26 @@ export class HilogAdapter {
     return last;
   }
 
+  private async runHilogStreamingCollect(
+    command: string,
+    args: string[],
+    context: string
+  ): Promise<HdcCommandResult> {
+    return this.runHilogWithSpawnRetry(
+      command,
+      args,
+      () => {
+        // 结果在 Promise 返回后统一处理，不在流回调中输出
+      },
+      (error) => {
+        debugLog(`Callback triggered when an error occurs during ${context}: ${error.message}`);
+      },
+      () => {
+        // 无需额外处理 close，等待 Promise 结束即可
+      }
+    );
+  }
+
   private async printTailSnapshotIfNeeded(
     hdcPath: string,
     deviceId: string,
@@ -362,13 +383,20 @@ export class HilogAdapter {
     }
 
     const snapshotOptions = { ...options, isFollow: false };
-    const [, snapshotArgs] = this.buildHilogCommand(
+    const [command, args] = this.buildHilogCommand(
       hdcPath,
       deviceId,
       snapshotOptions,
       pid
     );
-    const snapshotResult = await runHdcWithRetry(hdcPath, snapshotArgs);
+    debugLog(
+      `Ready to run hilog snapshot command: ${command} ${args.join(' ')}`
+    );
+    const snapshotResult = await this.runHilogStreamingCollect(
+      command,
+      args,
+      'a hilog snapshot streaming read'
+    );
     const sentinel = detectHdcSentinel(snapshotResult, 'Failed to get hilog');
     if (sentinel) {
       throw sentinel;
@@ -402,20 +430,10 @@ export class HilogAdapter {
     );
     debugLog(`Ready to run hilog command: ${command} ${args.join(' ')}`);
 
-    const result = await this.runHilogWithSpawnRetry(
+    const result = await this.runHilogStreamingCollect(
       command,
       args,
-      () => {
-        // 一次性读取模式在结果返回后统一处理，不在流回调中输出
-      },
-      (error) => {
-        debugLog(
-          `Callback triggered when an error occurs during a single hilog streaming read: ${error.message}`
-        );
-      },
-      () => {
-        // 非 follow 场景下无需额外处理 close，等待 Promise 结束即可
-      }
+      'a single hilog streaming read'
     );
     const sentinel = detectHdcSentinel(result, 'Failed to get hilog');
     if (sentinel) {
@@ -441,7 +459,13 @@ export class HilogAdapter {
     options: HilogOptions,
     pid: string
   ): Promise<string> {
-    await this.printTailSnapshotIfNeeded(hdcPath, deviceId, options, pid);
+    try {
+      await this.printTailSnapshotIfNeeded(hdcPath, deviceId, options, pid);
+    } catch (error) {
+      console.error(
+        `Warning: Failed to fetch log snapshot, continuing with live stream: ${(error as Error).message}`
+      );
+    }
 
     const [command, args] = this.buildHilogCommand(
       hdcPath,
@@ -455,9 +479,9 @@ export class HilogAdapter {
     const result = await this.runHilogWithSpawnRetry(
       command,
       args,
-      this.createFollowLineHandler(options),
+      this.createFollowLineHandler(),
       (error) => {
-        console.error(error.message);
+        debugLog(`Spawn error during hilog follow: ${error.message}`);
       },
       () => {
         // close 回调预留给外部处理，这里保持安静退出
@@ -575,7 +599,11 @@ export class HilogAdapter {
 
     debugLog(`Running command: ${hdcPath} ${listArgs.join(' ')}`);
 
-    const result = await runHdcWithRetry(hdcPath, listArgs);
+    const result = await this.runHilogStreamingCollect(
+      hdcPath,
+      listArgs,
+      'a crash log list streaming read'
+    );
     const sentinel = detectHdcSentinel(result, 'Failed to list crash logs');
     if (sentinel) {
       throw sentinel;
@@ -588,8 +616,14 @@ export class HilogAdapter {
 
     debugLog(`Crash logs list output:\n${result.stdout}`);
 
-    // 解析输出，提取文件名
-    const filenames: string[] = result.stdout
+    return this.parseCrashLogFilenames(result.stdout, bundleName);
+  }
+
+  private parseCrashLogFilenames(
+    stdout: string,
+    bundleName?: string
+  ): string[] {
+    return stdout
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line.length > 0)
@@ -602,14 +636,11 @@ export class HilogAdapter {
         }
       })
       .filter((line) => {
-        // 如果提供了 bundleName，只保留包含该名称的行（忽略大小写）
         if (!bundleName) {
           return true;
         }
         return line.toLowerCase().includes(bundleName.toLowerCase());
       });
-
-    return filenames;
   }
 
   /**
@@ -640,7 +671,11 @@ export class HilogAdapter {
 
     debugLog(`Executing command: ${hdcPath} ${fetchArgs.join(' ')}`);
 
-    const result = await runHdcWithRetry(hdcPath, fetchArgs);
+    const result = await this.runHilogStreamingCollect(
+      hdcPath,
+      fetchArgs,
+      'a crash log streaming read'
+    );
     const sentinel = detectHdcSentinel(
       result,
       'Failed to fetch crash log content'

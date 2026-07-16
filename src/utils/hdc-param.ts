@@ -70,8 +70,7 @@ export async function runHdcWithRetry(
   let last: HdcCommandResult = { stdout: '', stderr: '', exitCode: -1 };
   for (let attempt = 0; attempt < attempts; attempt++) {
     last = await runCommand(hdcPath, args);
-    const probe = last.exitCode === 0 ? last.stdout : last.stderr || last.stdout;
-    if (classifyHdcOutput(probe) !== 'transient') {
+    if (last.exitCode === 0 || classifyHdcOutput(last.stderr) !== 'transient') {
       return last;
     }
     if (attempt >= attempts - 1) {
