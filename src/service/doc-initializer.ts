@@ -10,7 +10,6 @@ import lockfile from 'proper-lockfile';
 import ora, { type Ora } from 'ora';
 import {
   getBundledDocsZipSha256,
-  hasBundledIndexZip,
   isBuildInProgress,
   isIndexReady,
   needsIndexInstall,
@@ -23,6 +22,8 @@ import {
 } from './doc-index/index-state.js';
 import {
   installBundledIndex,
+  isBundledIndexUsable,
+  resetBundledInstallScratch,
 } from './doc-index/index-bundle.js';
 import {
   findDocsZip,
@@ -99,20 +100,58 @@ async function commitTmpIndex(): Promise<void> {
   await fs.promises.rm(path.join(indexDir, 'orama.dpack'), { force: true });
 }
 
-async function installBundledIndexWithStatus(
+async function attemptBundledInstall(
   docsZipSha256: string,
-  spinner?: Ora
+  spinner: Ora | undefined,
+  message: string
 ): Promise<void> {
-  spinner?.start('Installing documentation index…');
+  spinner?.start(message);
   await updateBuildStatus({
     state: 'installing',
     phase: 1,
     phaseLabel: 'Installing index',
-    message: 'Installing documentation index…',
+    message,
   });
   await installBundledIndex(docsZipSha256);
+  resetSearchDbCache();
   if (spinner) {
     spinner.text = 'Documentation index installed.';
+  }
+}
+
+/** Tier 1: install bundle. Tier 2: clean scratch and retry. Returns false → local rebuild. */
+async function runBundledInstallPath(
+  docsZipSha256: string,
+  spinner?: Ora
+): Promise<boolean> {
+  try {
+    await attemptBundledInstall(
+      docsZipSha256,
+      spinner,
+      'Installing documentation index…'
+    );
+    await finalizeSuccess(spinner);
+    return true;
+  } catch {
+    // Tier 2: reset partial install state and re-extract index.zip.
+  }
+
+  try {
+    await resetBundledInstallScratch();
+    resetSearchDbCache();
+    await attemptBundledInstall(
+      docsZipSha256,
+      spinner,
+      'Retrying documentation index install…'
+    );
+    await finalizeSuccess(spinner);
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await appendLog(
+      `Bundled index install failed; falling back to local rebuild: ${message}`
+    );
+    return false;
   }
 }
 
@@ -240,9 +279,10 @@ async function runInitPipeline(
     return;
   }
 
-  if (hasBundledIndexZip() && !options.force) {
-    await installBundledIndexWithStatus(docsZipSha256, spinner);
-    await finalizeSuccess(spinner);
+  const canUseBundled =
+    !options.force && isBundledIndexUsable(docsZipSha256);
+
+  if (canUseBundled && (await runBundledInstallPath(docsZipSha256, spinner))) {
     return;
   }
 
@@ -299,7 +339,8 @@ async function runSetup(spinner: ReturnType<typeof ora>, force = false): Promise
 }
 
 async function ensureIndexReady(): Promise<void> {
-  if (isIndexReady()) {
+  const rebuildNeeded = (await needsRebuildIndex()) !== null;
+  if (isIndexReady() && !rebuildNeeded) {
     return;
   }
 
