@@ -632,20 +632,21 @@ devecocli device view -t "My Device Name"
 **命令格式：**
 
 ```bash
-devecocli run --module <module> --device <device> --product <product> --build-mode <mode> --ability <ability> --uninstall --skip-build
+devecocli run --module <module> --device <device> --product <product> --build-mode <mode> --ability <ability> --uninstall --skip-build --apply <txtFile>
 ```
 
 **参数：**
 
-| 参数名          | 说明                                                                                                     |
-| ------------ | ------------------------------------------------------------------------------------------------------ |
-| --module     | 可选，模块名称。如需指定模块的 `target` 信息，使用 `module@target` 形式。当工程中只有一个可运行模块（ `entry` / `feature` / `shared` ）时，可缺省 |
-| --device     | 设备名称或设备序列号，单设备时可选，多设备时必选                                                                               |
-| --product    | 可选，产品的名称，默认为 `default`                                                                                 |
-| --build-mode | 可选，构建模式名称，默认为 `debug`                                                                                  |
-| --ability    | 可选，待启动的 `Ability` ，默认：模块 `module.json5` 中的`mainElement`                                                |
-| --uninstall  | 可选，安装前先卸载已有应用                                                                                          |
-| --skip-build | 可选，跳过构建操作，直接安装应用 。\*\*说明：\*\*使用该参数时，需确保对应模块已有构建产物                                                      |
+| 参数名          | 说明                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------ |--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| --module     | 可选，模块名称。如需指定模块的 `target` 信息，使用 `module@target` 形式。当工程中只有一个可运行模块（ `entry` / `feature` / `shared` ）时，可缺省                                                                                                                                                                                                                                                                                                                                                       |
+| --device     | 设备名称或设备序列号，单设备时可选，多设备时必选                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --product    | 可选，产品的名称，默认为 `default`                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --build-mode | 可选，构建模式名称，默认为 `debug`                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --ability    | 可选，待启动的 `Ability` ，默认：模块 `module.json5` 中的`mainElement`                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --uninstall  | 可选，安装前先卸载已有应用                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| --skip-build | 可选，跳过构建操作，直接安装应用 。\*\*说明：\*\*使用该参数时，需确保对应模块已有构建产物                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --apply \<fileName\> | 可选，**快速增量部署**：仅重编改动文件 → signed hqf → `bm quickfix -a -f -o` 安装 → 重启，比全量 `run` 快。`<fileName>` 是工程 `.hvigor/` 目录下的**纯文件名**（调用方把清单写到此目录，文件名做安全校验防穿越）；内容为本轮改动的源文件路径清单（每行一个相对工程根路径；`#`/空行忽略；`.ets`/`.ts`/`.cpp`/资源文件；changeFileList 增量累积，只需列本轮改的，历史文件自动保留）。模块从清单路径自动识别（无需 `--module`）。**前提**：DevEco Studio ≥6.1.1（hvigor `assembleDevHqf` 支持，低于拒绝并提示升级）；先 `devecocli run` 全量构建部署一次（生成 buildConfig.json 缓存）；**没生效排查**：检查 `<module>/build/config/buildConfig.json` 有无内容（空/无 = 没跑过 `devecocli run`）；**失败兜底**：直接 `devecocli run` |
 
 **示例：**
 
@@ -656,6 +657,7 @@ devecocli run --module library@phone --device 127.0.0.1:5555
 devecocli run --product oversea --module entry --ability EntryAbility
 devecocli run --build-mode release
 devecocli run --uninstall
+devecocli run --apply changes.txt
 ```
 
 ### `log`
