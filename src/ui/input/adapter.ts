@@ -4,35 +4,15 @@
  */
 
 import { ToolProvider } from '../../toolchain/tool-provider.js';
-import { DeviceManager } from '../../service/device-manager.js';
+import { resolveDeviceSerial } from '../../utils/device-selector.js';
 import { ArkUiDumpAdapter } from '../layout/dump-adapter.js';
 import { findNodesInTree } from '../layout/parsers.js';
 import { runHdcWithRetry } from '../../utils/hdc-param.js';
 
-export async function initTooling(): Promise<{
-  hdcPath: string;
-  deviceManager: DeviceManager;
-}> {
+export async function initDevice(deviceArg?: string) {
   const toolProvider = await ToolProvider.new();
-  const deviceManager = DeviceManager.from(toolProvider);
-  return { hdcPath: toolProvider.hdcPath, deviceManager };
-}
-
-export async function resolveSerial(
-  deviceManager: DeviceManager,
-  deviceArg?: string
-): Promise<string> {
-  const devices = await deviceManager.listDevices();
-  if (devices.length === 0) {
-    throw new Error(
-      'No active devices found. Start an emulator or connect a physical device.'
-    );
-  }
-  const picked = await deviceManager.getDeviceInfo(devices, deviceArg);
-  if (!picked) {
-    throw new Error('No active devices found.');
-  }
-  return picked.serial;
+  const deviceId = await resolveDeviceSerial(toolProvider, deviceArg);
+  return { hdcPath: toolProvider.hdcPath, deviceId };
 }
 
 export async function resolveTarget(
