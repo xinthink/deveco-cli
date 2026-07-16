@@ -67,6 +67,11 @@ Build, install, and launch.
 - `--ability <ability>`: Default from `module.json5`.
 - `--uninstall`: Uninstall existing app first (Fixes signing key issues).
 - `--skip-build`: Deploy existing artifacts.
+- `--apply <fileName>`: **Fast incremental deploy** — rebuilds only changed files into a signed hqf, installs via `bm quickfix -a -f -o`, then restarts the app. Much faster than a full `devecocli run` for iterating on code changes. Modules are auto-detected from the file paths in `<fileName>` (no `--module` needed).
+  - `<fileName>`: a plain file name (no path separators) under the project's `.hvigor/` directory; the caller writes the changed-file list there. File name is sanitized to prevent path traversal. Content: list of **source file paths changed this round** (one per line, relative to project root or absolute; `#` comments and blank lines ignored; typically `.ets`/`.ts`/`.cpp`/resource files). The changeFileList is **incrementally merged** — only list files changed since the last apply; previously listed files are retained automatically.
+  - **Prereq**: DevEco Studio ≥6.1.1 (hvigor `assembleDevHqf` support; below is rejected with an upgrade hint); run `devecocli run` once first (full build + deploy + generates the `buildConfig.json` cache that `--apply` reuses).
+  - **If changes don't take effect**: check `<module>/build/config/buildConfig.json` has content — empty/missing means `devecocli run` wasn't run; on any apply failure, fall back to a full `devecocli run`.
+*Ex*: `devecocli run` → edit code → write `.hvigor/changes.txt` → `devecocli run --apply changes.txt`
 
 ### `devecocli log`
 Fetch hilog or crash logs. Req `--device <name|serial>` on multi-device hosts.

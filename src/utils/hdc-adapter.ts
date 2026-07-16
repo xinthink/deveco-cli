@@ -132,4 +132,9 @@ export class HdcAdapter {
     ];
     return await this.runHdc(args);
   }
+
+  public async forceStopApp(target: string, bundleName: string): Promise<string> {
+    const args = ['-t', target, 'shell', 'aa', 'force-stop', bundleName];
+    return await this.runHdc(args, false);
+  }
 }

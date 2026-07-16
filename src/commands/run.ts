@@ -4,12 +4,15 @@
  */
 import { Command } from 'commander';
 import { green, red, yellow } from 'colorette';
+import * as path from 'path';
 import { Project } from '../utils/project.js';
 import { ToolProvider } from '../toolchain/index.js';
 import { HdcAdapter } from '../utils/hdc-adapter.js';
 import { HvigorAdapter } from '../utils/hvigor-adapter.js';
 import { OhpmAdapter } from '../utils/ohpm-adapter.js';
 import { DeviceManager } from '../service/device-manager.js';
+import { ApplyManager } from '../apply/apply-manager.js';
+import { BuildConfigManager } from '../apply/build-config.js';
 import { withBuildLock } from '../utils/build-lock.js';
 import { executeBuildSteps, processModuleTasks } from './build.js';
 
@@ -21,6 +24,7 @@ interface RunOptions {
   ability?: string;
   uninstall?: boolean;
   skipBuild?: boolean;
+  apply?: string;
 }
 
 function parseModuleArg(moduleArg: string): { moduleName: string; targetName: string } {
@@ -154,6 +158,7 @@ const runCommand = new Command('run')
   .option('--ability <ability>', 'Ability name to launch')
   .option('--uninstall', 'Uninstall existing app before installation')
   .option('--skip-build', 'Skip build step and deploy existing artifacts')
+  .option('--apply <fileName>', 'Quick-apply changed files via quickfix (incremental hqf) and restart. <fileName> under project .hvigor/')
   .action(async (options: RunOptions) => {
     try {
       await runActionImpl(options);
@@ -174,14 +179,20 @@ async function runBuildPhase(
   const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
 
   const moduleSet = new Set<string>();
+  const buildConfigModules = new Set<string>();
   for (const { moduleName, targetName } of parsedModules) {
     for (const m of project.collectNonHarDependentModuleList(moduleName)) {
       moduleSet.add(`${m}@${targetName}`);
+      buildConfigModules.add(m);
     }
   }
   const modulesToBuild = [...moduleSet];
   const moduleTasks = processModuleTasks(project, modulesToBuild);
   const buildTarget = { type: 'modules' as const, modulesToBuild, moduleTasks };
+
+  for (const moduleName of buildConfigModules) {
+    BuildConfigManager.generate(project.rootDir, moduleName, productName, toolProvider);
+  }
 
   await withBuildLock(
     project.rootDir,
@@ -200,6 +211,17 @@ async function runActionImpl(options: RunOptions): Promise<void> {
     toolProvider.assertJava();
   }
 
+  if (options.apply) {
+    await runApplyFlow(options, project, toolProvider);
+    return;
+  }
+
+  await runNormalFlow(options, project, toolProvider);
+}
+
+async function runNormalFlow(
+  options: RunOptions, project: Project, toolProvider: ToolProvider
+): Promise<void> {
   const moduleArgs = identifyModules(project, options.module);
   const parsedModules = moduleArgs.map(parseModuleArg);
 
@@ -248,6 +270,54 @@ async function runActionImpl(options: RunOptions): Promise<void> {
     mainAbility,
     !!options.uninstall
   );
+}
+
+async function runApplyFlow(
+  options: RunOptions, project: Project, toolProvider: ToolProvider
+): Promise<void> {
+  const applyFileName = options.apply;
+  if (!applyFileName) {
+    throw new Error('apply requires --apply <fileName> (under .hvigor/)');
+  }
+  // 文件名安全校验：必须是纯文件名（无路径分隔符/..），从 .hvigor 固定目录读，防穿越
+  if (path.basename(applyFileName) !== applyFileName) {
+    throw new Error(`apply file must be a plain file name (under .hvigor/), got: ${applyFileName}`);
+  }
+  const applyFile = path.join(project.rootDir, '.hvigor', applyFileName);
+
+  const deviceManager = DeviceManager.from(toolProvider);
+  const targetDeviceId = await selectDevice(deviceManager, options.device);
+
+  const productName = options.product || 'default';
+  project.validateProduct(productName);
+  const bundleName = project.getBundleName();
+  // ability: --ability 指定，否则从 entry 模块取（apply 构建模块从 txt 自动识别，不依赖 --module）
+  const entryModule = project.profile.modules.find(
+    (m) => project.getModuleType(m.name) === 'entry'
+  )?.name;
+  const abilityName = entryModule
+    ? project.getMainAbility(entryModule, options.ability)
+    : (options.ability || 'EntryAbility');
+
+  const mgr = new ApplyManager(toolProvider, project.rootDir);
+  try {
+    await mgr.execute({
+      applyFile,
+      productName,
+      targetDeviceId,
+      bundleName,
+      abilityName,
+    });
+    console.log(
+      yellow('[Apply] 完成。若改动未生效，请检查 <module>/build/config/buildConfig.json 是否有内容，或执行 devecocli run 全量构建。')
+    );
+    return;
+  } catch (e) {
+    console.warn(yellow(`[Apply] 失败：${(e as Error).message}`));
+    console.warn(yellow('[Apply] 自动回退到全量 devecocli run...'));
+  }
+
+  await runNormalFlow(options, project, toolProvider);
 }
 
 export default runCommand;
