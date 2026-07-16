@@ -21,15 +21,29 @@ import { red, cyan, yellow } from 'colorette';
 import { debugLog } from '../utils/logger.js';
 
 /**
- * `--format` 取值校验。
+ * `--format` 取值。`csv` 是正式名，`default` 是历史别名。
  */
-function parseFormat(value: string): 'default' | 'json' {
-  if (value !== 'default' && value !== 'json') {
-    throw new InvalidArgumentError(
-      `--format must be one of: default, json (got "${value}")`
-    );
+const FORMAT_ALIASES: Readonly<Record<string, 'csv' | 'json'>> = {
+  csv: 'csv',
+  default: 'csv',
+  json: 'json',
+};
+
+function parseFormatValue(value: string): 'csv' | 'json' {
+  const normalized = FORMAT_ALIASES[value];
+  if (normalized) {
+    return normalized;
   }
-  return value;
+  throw new InvalidArgumentError(
+    `--format must be one of: csv, json (got "${value}")`
+  );
+}
+
+/**
+ * commander 用的 `--format` 校验器。
+ */
+function parseFormat(value: string): 'csv' | 'json' {
+  return parseFormatValue(value);
 }
 
 /**
@@ -75,10 +89,26 @@ async function getPluginPath(): Promise<string> {
 }
 
 /**
- * 版本号升序排序。
+ * 升序排序 SDK 版本号。版本号形式 `HarmonyOS_X.Y.Z(N)_<suffix>`：
+ * 主键是 `(N)` 中的 apiVersion 数字，次键是最后一个 `_` 之后的后缀。
  */
 function sortVersions(versions: string[]): string[] {
-  return [...versions].sort();
+  return [...versions].sort((left, right) => {
+    const leftParsed = parseSdkVersion(left);
+    const rightParsed = parseSdkVersion(right);
+    return (
+      leftParsed.apiVersion - rightParsed.apiVersion ||
+      leftParsed.suffix.localeCompare(rightParsed.suffix)
+    );
+  });
+}
+
+function parseSdkVersion(version: string): { apiVersion: number; suffix: string } {
+  const parenMatch = version.match(/\((\d+)\)/);
+  const apiVersion = parenMatch ? Number(parenMatch[1]) : 0;
+  const lastUnderscore = version.lastIndexOf('_');
+  const suffix = lastUnderscore >= 0 ? version.slice(lastUnderscore + 1) : version;
+  return { apiVersion, suffix };
 }
 
 /**
@@ -101,29 +131,20 @@ function listApiChangeVersions(apiChangeDir: string): string[] {
 }
 
 /**
- * 从 process.argv 读 `--format` 值。
+ * 从 process.argv 读 `--format` 值（父子命令同名 option 时绕开 commander）。
  */
-function readFormatFromArgv(fallback: 'default' | 'json'): 'default' | 'json' {
+function readFormatFromArgv(fallback: 'csv' | 'json'): 'csv' | 'json' {
   const argv = process.argv;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
+    let value: string | undefined;
     if (arg === '--format' && i + 1 < argv.length) {
-      const v = argv[i + 1];
-      if (v === 'default' || v === 'json') {
-        return v;
-      }
-      throw new InvalidArgumentError(
-        `--format must be one of: default, json (got "${v}")`
-      );
+      value = argv[i + 1];
+    } else if (arg.startsWith('--format=')) {
+      value = arg.slice('--format='.length);
     }
-    if (arg.startsWith('--format=')) {
-      const v = arg.slice('--format='.length);
-      if (v === 'default' || v === 'json') {
-        return v;
-      }
-      throw new InvalidArgumentError(
-        `--format must be one of: default, json (got "${v}")`
-      );
+    if (value !== undefined) {
+      return parseFormatValue(value);
     }
   }
   return fallback;
@@ -133,7 +154,7 @@ function readFormatFromArgv(fallback: 'default' | 'json'): 'default' | 'json' {
  * `compat versions` 入口。
  */
 async function handleVersionsCommand(
-  format: 'default' | 'json'
+  format: 'csv' | 'json'
 ): Promise<void> {
   try {
     const pluginPath = await getPluginPath();
@@ -163,7 +184,7 @@ interface CheckOptions {
   sourceVersion?: string;
   targetVersion?: string;
   modules?: string[];
-  format: 'default' | 'json';
+  format: 'csv' | 'json';
   outputPath?: string;
   limit: number;
 }
@@ -209,8 +230,6 @@ function validateModulesExist(project: Project, modules: string[]): void {
  */
 function validateFiles(files: string[]): void {
   for (const raw of files) {
-    // Windows 用户经常在文件路径末尾加 `\` / `/`，先剥掉再判断扩展名 / 存在性，
-    // 避免 `file.ets/` 被当成一个不存在的路径。
     const f = path.resolve(raw);
     if (!existsSync(f)) {
       throw new Error(`File "${raw}" does not exist.`);
@@ -247,31 +266,7 @@ function splitFilesByKind(files: string[]): {
 }
 
 /**
-/**
- * 找最新生成的 CSV 报告文件。
- */
-function findLatestCsvReport(outputDir: string): string {
-  const entries = readdirSync(outputDir, { withFileTypes: true });
-  const csvs = entries
-    .filter(
-      e =>
-        e.isFile() &&
-        e.name.startsWith('apiChange-res') &&
-        e.name.toLowerCase().endsWith('.csv')
-    )
-    .map(e => e.name)
-    .sort();
-  if (csvs.length === 0) {
-    throw new Error(
-      `No apiChange-res*.csv report found in: ${outputDir}. ` +
-        'The scan tool did not produce a report (maybe the snapshot files are missing).'
-    );
-  }
-  return path.join(outputDir, csvs[csvs.length - 1]);
-}
-
-/**
- * 解析 CSV 文本为二维数组。
+ * 解析 RFC4180 风格 CSV：双引号包裹字段，内部 `""` 表示字面 `"`。
  */
 function parseCsvText(text: string): string[][] {
   const rows: string[][] = [];
@@ -282,10 +277,18 @@ function parseCsvText(text: string): string[][] {
   while (i < text.length) {
     const ch = text[i];
     if (inQuotes) {
-      const next = handleQuotedChar(text, i, ch);
-      field += next.added;
-      i = next.nextIndex;
-      inQuotes = next.inQuotes;
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i += 2;
+        } else {
+          inQuotes = false;
+          i += 1;
+        }
+      } else {
+        field += ch;
+        i += 1;
+      }
     } else if (ch === '"') {
       inQuotes = true;
       i += 1;
@@ -311,20 +314,6 @@ function parseCsvText(text: string): string[][] {
     rows.push(current);
   }
   return rows;
-}
-
-function handleQuotedChar(
-  text: string,
-  index: number,
-  ch: string
-): { added: string; nextIndex: number; inQuotes: boolean } {
-  if (ch !== '"') {
-    return { added: ch, nextIndex: index + 1, inQuotes: true };
-  }
-  if (text[index + 1] === '"') {
-    return { added: '"', nextIndex: index + 2, inQuotes: true };
-  }
-  return { added: '', nextIndex: index + 1, inQuotes: false };
 }
 
 /**
@@ -366,32 +355,45 @@ function parseApiChangeCsv(csvPath: string): ApiChangeRecord[] {
 }
 
 /**
- * 从工具输出中提取 CSV 文件路径。
+ * 从工具输出中按 `CSV saved to: <path>` 关键字解析结果文件路径。
+ * stdout 是单一事实源，调用方在解析失败时直接报错而不是兜底猜路径。
  */
 function extractCsvPathFromOutput(stdout: string, outputDir: string): string | null {
-  const m = stdout.match(/CSV saved to:\s*(.+\.csv)/);
-  if (m && m[1]) {
-    return path.isAbsolute(m[1]) ? m[1] : path.join(outputDir, m[1]);
+  const m = stdout.match(/CSV saved to:\s*([^\r\n]+\.csv)/);
+  if (!m) {
+    return null;
   }
-  return null;
+  const raw = m[1].trim();
+  return path.isAbsolute(raw) ? raw : path.join(outputDir, raw);
 }
 
 /**
- * 打印扫描汇总信息。
+ * 打印扫描汇总信息。按 `Change Type` 列的实际值分组统计，
+ * 输出顺序按数量降序；同名分组数量一致时按类型名升序兜底。
  */
 function printSummary(records: ApiChangeRecord[], csvPath: string | null): void {
+  const counts = new Map<string, number>();
+  for (const r of records) {
+    const t = r.changeType || '(unknown)';
+    counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  const groups = Array.from(counts.entries()).sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0])
+  );
+  const labelWidth = Math.max(5, ...groups.map(([t]) => t.length));
   console.log(cyan('API change scan summary:'));
-  console.log(`  Total:   ${records.length}`);
-  console.log(`  Added:   ${records.filter((r) => r.changeType === 'added').length}`);
-  console.log(`  Removed: ${records.filter((r) => r.changeType === 'removed').length}`);
-  console.log(`  Modified:${records.filter((r) => r.changeType === 'modified').length}`);
+  console.log(`  ${'Total'.padEnd(labelWidth)}  ${records.length}`);
+  for (const [type, count] of groups) {
+    console.log(`  ${type.padEnd(labelWidth)}  ${count}`);
+  }
   if (csvPath) {
-    console.log(`  Report:  ${csvPath}`);
+    console.log(`  ${'Report'.padEnd(labelWidth)}  ${csvPath}`);
   }
 }
 
 /**
- * 打印 text 格式的明细。
+ * 打印 text 格式的明细。每条记录多行展示，字段名对齐，
+ * 方便看清每列的含义。
  */
 function printDetailsText(records: ApiChangeRecord[], limit: number): void {
   console.log();
@@ -407,14 +409,25 @@ function printDetailsText(records: ApiChangeRecord[], limit: number): void {
       `Details (showing ${shown.length}${hidden > 0 ? ` of ${records.length}` : ''}):`
     )
   );
+
+  const fields: ReadonlyArray<readonly [string, keyof ApiChangeRecord]> = [
+    ['Title', 'title'],
+    ['Language', 'language'],
+    ['ChangeId', 'changeId'],
+    ['Changed in', 'changedInSdk'],
+    ['Affected Versions', 'affectedVersions'],
+    ['Code Location', 'codeLocation'],
+  ];
+  const labelWidth = Math.max(...fields.map(([label]) => label.length));
+  const display = (raw: string): string => raw || '<unknown>';
+
   for (const r of shown) {
-    const symbol = r.apiDefinition || '<unknown>';
-    const location = r.codeLocation ? ` @ ${r.codeLocation}` : '';
-    console.log(
-      `  [${r.changeType}] ${symbol}${location} — ${r.title} ` +
-        `(${r.affectedVersions})`
-    );
+    console.log(`  [${display(r.changeType)}] ${display(r.apiDefinition)}`);
+    for (const [label, key] of fields) {
+      console.log(`    ${label.padEnd(labelWidth)}  ${display(r[key])}`);
+    }
   }
+
   if (hidden > 0) {
     console.log(
       yellow(
@@ -425,11 +438,11 @@ function printDetailsText(records: ApiChangeRecord[], limit: number): void {
 }
 
 /**
- * 打印 json 格式的明细。
+ * 打印 json 格式的明细。和 `writeReportFile` 写文件的 shape 一致。
  */
 function printDetailsJson(records: ApiChangeRecord[]): void {
   console.log();
-  console.log(JSON.stringify(records, null, 2));
+  console.log(JSON.stringify({ count: records.length, records }, null, 2));
 }
 
 /**
@@ -615,7 +628,7 @@ function resolveScanScript(pluginPath: string): string {
 function outputRecords(
   records: ApiChangeRecord[],
   csvPath: string | null,
-  format: 'default' | 'json',
+  format: 'csv' | 'json',
   limit: number,
   outputTargetKind: 'file' | 'dir' | 'none'
 ): void {
@@ -632,7 +645,6 @@ function outputRecords(
   }
 }
 
-/**
 /**
  * 打印可手动复跑的命令行。
  */
@@ -685,22 +697,24 @@ type OutputTarget =
   | { kind: 'none' };
 
 /**
+ * `--output-path` 文件扩展名对应的 `--format`。
+ */
+const EXT_TO_FORMAT: Readonly<Record<FileOutputExt, 'csv' | 'json'>> = {
+  '.csv': 'csv',
+  '.json': 'json',
+};
+
+/**
  * 校验文件扩展名与格式是否匹配。
  */
 function validateExtMatchesFormat(
   ext: FileOutputExt,
-  format: 'default' | 'json'
+  format: 'csv' | 'json'
 ): void {
-  if (ext === '.json' && format !== 'json') {
+  if (EXT_TO_FORMAT[ext] !== format) {
     throw new Error(
       `The --output-path file extension '${ext}' does not match --format ${format}. ` +
-        `Add --format json, or rename the file to a .csv extension.`
-    );
-  }
-  if (ext === '.csv' && format !== 'default') {
-    throw new Error(
-      `The --output-path file extension '${ext}' does not match --format ${format}. ` +
-        `Switch to --format default, or rename the file to a .json extension.`
+        `Use --format ${EXT_TO_FORMAT[ext]}, or rename the file to a matching extension.`
     );
   }
 }
@@ -710,25 +724,21 @@ function validateExtMatchesFormat(
  */
 function resolveOutputTarget(
   outputPath: string | undefined,
-  format: 'default' | 'json'
+  format: 'csv' | 'json'
 ): OutputTarget {
   if (!outputPath) {
     return { kind: 'none' };
   }
-  // Windows 用户经常在路径末尾加 `\`，直接 `path.extname` 会把它算成扩展名的一部分
-  // （例如 `file.json\` → `.json\`），导致本应是文件的路径被误判成目录。
-  // 先剥掉末尾的 `/` 或 `\`，后续用 `path.resolve` 二次规范化。
-  const stripped = outputPath.replace(/[/\\]+$/, '');
-  const ext = path.extname(stripped).toLowerCase();
+  const ext = path.extname(outputPath).toLowerCase();
   if (isFileOutputExt(ext)) {
     validateExtMatchesFormat(ext, format);
     return {
       kind: 'file',
-      filePath: path.resolve(stripped),
+      filePath: path.resolve(outputPath),
       ext,
     };
   }
-  return { kind: 'dir', dirPath: path.resolve(stripped) };
+  return { kind: 'dir', dirPath: path.resolve(outputPath) };
 }
 
 /**
@@ -822,8 +832,6 @@ async function handleCheckCommand(
   try {
     validateCheckOptions(files, options);
 
-    // 模块 / 文件校验需要先发现工程；任何一种模式（工程/模块/文件）都做这一步，
-    // 便于尽早给出清晰的"模块名不存在"或"文件不存在/后缀不合法"错误。
     const project = Project.discover(process.cwd());
     if (options.modules && options.modules.length > 0) {
       validateModulesExist(project, options.modules);
@@ -854,9 +862,10 @@ async function handleCheckCommand(
     debugLogRunnableCommand(scriptPath, args);
 
     const stdout = await runScanTool(args);
-    const tmpCsvPath =
-      extractCsvPathFromOutput(stdout, os.tmpdir()) ??
-      findLatestCsvReport(os.tmpdir());
+    const tmpCsvPath = extractCsvPathFromOutput(stdout, os.tmpdir());
+    if (!tmpCsvPath) {
+      throw new Error('api-change-scan.js did not print "CSV saved to: <path>" — tool output format may have changed.');
+    }
     debugLog(cyan(`[compat:check] tmp csv: "${tmpCsvPath}"`));
 
     const records = parseApiChangeCsv(tmpCsvPath);
@@ -906,9 +915,9 @@ compatCommand
   )
   .option(
     '--format <format>',
-    'Output format (choices: default, json)',
+    'Output format (choices: csv, json; "default" is accepted as an alias for csv)',
     parseFormat,
-    'default'
+    'csv'
   )
   .option(
     '--output-path <path>',
@@ -930,7 +939,7 @@ compatCommand
     'List all available target SDK versions for compatibility checking'
   )
   .action(async () => {
-    const format = readFormatFromArgv('default');
+    const format = readFormatFromArgv('csv');
     await handleVersionsCommand(format);
   });
 
