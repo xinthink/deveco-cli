@@ -21,16 +21,14 @@ export class OhpmAdapter {
 
     debugLog(`Executing: ${cmd} ${args.join(' ')}`);
 
-    const isDebug = Boolean(process.env.DEVECO_CLI_DEBUG);
-
     await execa(cmd, args, {
       cwd: this.projectRoot,
       env: {
         ...process.env,
         DEVECO_SDK_HOME: this.toolProvider.sdkPath,
       },
-      stdout: isDebug ? 'inherit' : 'pipe',
-      stderr: isDebug ? 'inherit' : 'pipe',
+      stdout: 'inherit',
+      stderr: 'inherit',
     });
   }
 }
