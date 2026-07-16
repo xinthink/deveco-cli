@@ -21,7 +21,7 @@ import { red, cyan, yellow } from 'colorette';
 import { debugLog } from '../utils/logger.js';
 
 /**
- * `--format` 取值。`csv` 是正式名，`default` 是历史别名。
+ * `--format` 取值。`default` 默认为 `csv`
  */
 const FORMAT_ALIASES: Readonly<Record<string, 'csv' | 'json'>> = {
   csv: 'csv',
@@ -89,8 +89,7 @@ async function getPluginPath(): Promise<string> {
 }
 
 /**
- * 升序排序 SDK 版本号。版本号形式 `HarmonyOS_X.Y.Z(N)_<suffix>`：
- * 主键是 `(N)` 中的 apiVersion 数字，次键是最后一个 `_` 之后的后缀。
+ * 升序排序 SDK 版本号。版本号形式 `*_X.Y.Z(N)_<suffix>`
  */
 function sortVersions(versions: string[]): string[] {
   return [...versions].sort((left, right) => {
@@ -131,7 +130,7 @@ function listApiChangeVersions(apiChangeDir: string): string[] {
 }
 
 /**
- * 从 process.argv 读 `--format` 值（父子命令同名 option 时绕开 commander）。
+ * 从 process.argv 读 `--format` 值。
  */
 function readFormatFromArgv(fallback: 'csv' | 'json'): 'csv' | 'json' {
   const argv = process.argv;
@@ -277,18 +276,7 @@ function parseCsvText(text: string): string[][] {
   while (i < text.length) {
     const ch = text[i];
     if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i += 2;
-        } else {
-          inQuotes = false;
-          i += 1;
-        }
-      } else {
-        field += ch;
-        i += 1;
-      }
+      ({ field, inQuotes, i } = stepQuotedChar(text, i, ch, field, inQuotes));
     } else if (ch === '"') {
       inQuotes = true;
       i += 1;
@@ -314,6 +302,25 @@ function parseCsvText(text: string): string[][] {
     rows.push(current);
   }
   return rows;
+}
+
+/**
+ * 在引号段内推进一个字符。
+ */
+function stepQuotedChar(
+  text: string,
+  index: number,
+  ch: string,
+  field: string,
+  inQuotes: boolean
+): { field: string; inQuotes: boolean; i: number } {
+  if (ch !== '"') {
+    return { field: field + ch, inQuotes, i: index + 1 };
+  }
+  if (text[index + 1] === '"') {
+    return { field: field + '"', inQuotes, i: index + 2 };
+  }
+  return { field, inQuotes: false, i: index + 1 };
 }
 
 /**
@@ -355,8 +362,7 @@ function parseApiChangeCsv(csvPath: string): ApiChangeRecord[] {
 }
 
 /**
- * 从工具输出中按 `CSV saved to: <path>` 关键字解析结果文件路径。
- * stdout 是单一事实源，调用方在解析失败时直接报错而不是兜底猜路径。
+ * 从工具输出中按 `CSV saved to:` 关键字解析结果文件路径。
  */
 function extractCsvPathFromOutput(stdout: string, outputDir: string): string | null {
   const m = stdout.match(/CSV saved to:\s*([^\r\n]+\.csv)/);
@@ -368,8 +374,7 @@ function extractCsvPathFromOutput(stdout: string, outputDir: string): string | n
 }
 
 /**
- * 打印扫描汇总信息。按 `Change Type` 列的实际值分组统计，
- * 输出顺序按数量降序；同名分组数量一致时按类型名升序兜底。
+ * 打印扫描汇总信息（按 Change Type 分组统计）。
  */
 function printSummary(records: ApiChangeRecord[], csvPath: string | null): void {
   const counts = new Map<string, number>();
@@ -392,8 +397,7 @@ function printSummary(records: ApiChangeRecord[], csvPath: string | null): void 
 }
 
 /**
- * 打印 text 格式的明细。每条记录多行展示，字段名对齐，
- * 方便看清每列的含义。
+ * 打印 text 格式的明细。
  */
 function printDetailsText(records: ApiChangeRecord[], limit: number): void {
   console.log();
@@ -438,7 +442,7 @@ function printDetailsText(records: ApiChangeRecord[], limit: number): void {
 }
 
 /**
- * 打印 json 格式的明细。和 `writeReportFile` 写文件的 shape 一致。
+ * 打印 json 格式的明细。
  */
 function printDetailsJson(records: ApiChangeRecord[]): void {
   console.log();
