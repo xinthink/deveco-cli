@@ -4,15 +4,25 @@
  */
 
 import type { CatalogName } from './doc-portal-types.js';
-import { awaitDocReady } from './doc-initializer.js';
+import { awaitDocReady, DocInitializer } from './doc-initializer.js';
 import { readMarkdownFromDocsZip } from './doc-index/docs-zip-reader.js';
-import { searchSqliteIndex } from './doc-index/sqlite-index.js';
+import {
+  resetSearchDbCache,
+  searchSqliteIndex,
+} from './doc-index/sqlite-index.js';
 
 export interface LocalSearchResult {
   title: string;
   documentId: string;
   snippet: string;
   sectionTitle?: string;
+}
+
+function isCorruptSearchIndexError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /file is not a database|database disk image is malformed|SQLITE_CORRUPT/i.test(
+    message
+  );
 }
 
 export class LocalDocService {
@@ -22,7 +32,20 @@ export class LocalDocService {
     limit = 20
   ): Promise<LocalSearchResult[]> {
     await awaitDocReady();
-    return searchSqliteIndex(keywords, catalog, limit);
+    try {
+      return await searchSqliteIndex(keywords, catalog, limit);
+    } catch (error) {
+      if (!isCorruptSearchIndexError(error)) {
+        throw error;
+      }
+      resetSearchDbCache();
+      await DocInitializer.run({
+        builtBy: 'doc-init',
+        force: true,
+        quiet: true,
+      });
+      return searchSqliteIndex(keywords, catalog, limit);
+    }
   }
 
   async readDocument(relativePath: string): Promise<string> {

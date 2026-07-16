@@ -9,6 +9,10 @@ import { DocInitializer } from '../service/doc-initializer.js';
 
 const builtBy = process.env.DEVECO_CLI_POSTINSTALL ? 'postinstall' : 'doc-init';
 
-DocInitializer.run({ background: true, builtBy }).catch(() => {
-  process.exit(1);
-});
+DocInitializer.run({ background: true, builtBy })
+  .then(() => {
+    process.exit(0);
+  })
+  .catch(() => {
+    process.exit(1);
+  });

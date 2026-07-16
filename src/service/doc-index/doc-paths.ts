@@ -34,6 +34,14 @@ export function getSearchDbFile(): string {
   return path.join(getIndexDir(), 'search.db');
 }
 
+export function getSqliteBackendStateFile(): string {
+  return path.join(getIndexDir(), 'sqlite-backend.json');
+}
+
+export function getJiebaBackendStateFile(): string {
+  return path.join(getIndexDir(), 'jieba-backend.json');
+}
+
 export function getIndexTmpDir(): string {
   return path.join(getIndexDir(), '.tmp');
 }

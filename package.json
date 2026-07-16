@@ -11,7 +11,9 @@
     "dist",
     "scripts/postinstall.mjs",
     "scripts/install-better-sqlite3.mjs",
+    "scripts/install-jieba-wasm.mjs",
     "scripts/lib/better-sqlite3-vendor.mjs",
+    "scripts/lib/jieba-wasm-vendor.mjs",
     "scripts/lib/cli-data-dir.mjs",
     "scripts/lib/doc-init-log-path.mjs",
     "templates",
@@ -85,7 +87,8 @@
     "zod": "^4.4.3"
   },
   "optionalDependencies": {
-    "better-sqlite3": "^12.11.1"
+    "better-sqlite3": "^12.11.1",
+    "@node-rs/jieba-wasm32-wasi": "2.0.1"
   },
   "overrides": {
     "dotenv": "16.4.7"

@@ -20,6 +20,7 @@ export default defineConfig({
   external: [
     '@node-rs/jieba',
     '@node-rs/jieba/dict.js',
+    '@node-rs/jieba-wasm32-wasi',
     'better-sqlite3',
     '@sqlite.org/sqlite-wasm',
     'yauzl',

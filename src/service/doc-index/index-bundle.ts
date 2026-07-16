@@ -12,6 +12,7 @@ import {
   getIndexDir,
   getIndexTmpDir,
 } from './doc-paths.js';
+import { INDEX_VERSION } from './constants.js';
 import { INDEX_LEXICON_FILES } from './lexicon.js';
 import type { BuildMeta } from './segment-types.js';
 
@@ -65,7 +66,26 @@ export function hasBundledIndexZip(): boolean {
   return bundlePath !== null && fs.existsSync(bundlePath);
 }
 
-export async function installBundledIndex(docsZipSha256: string): Promise<BuildMeta> {
+export function isBundledIndexUsable(docsZipSha256: string): boolean {
+  const bundlePath = findBundledIndexZip();
+  if (!bundlePath) {
+    return false;
+  }
+  try {
+    const meta = readBundleMetaFromZip(bundlePath);
+    return (
+      meta.indexVersion === INDEX_VERSION &&
+      meta.docsZipSha256 === docsZipSha256 &&
+      meta.segmentCount > 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+export async function installBundledIndex(
+  docsZipSha256: string
+): Promise<BuildMeta> {
   const bundlePath = findBundledIndexZip();
   if (!bundlePath) {
     throw new Error('index.zip not found');
@@ -106,4 +126,12 @@ export async function installBundledIndex(docsZipSha256: string): Promise<BuildM
   await fs.promises.mkdir(getDocsDir(), { recursive: true });
   await cleanExtractedDocsTree(getDocsDir());
   return installedMeta;
+}
+
+export async function resetBundledInstallScratch(): Promise<void> {
+  await fs.promises.rm(getIndexTmpDir(), { recursive: true, force: true });
+  const indexDir = getIndexDir();
+  for (const file of BUNDLE_FILES) {
+    await fs.promises.rm(path.join(indexDir, file), { force: true });
+  }
 }

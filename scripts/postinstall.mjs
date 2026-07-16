@@ -8,6 +8,7 @@ import { existsSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { ensureBetterSqlite3ForDocs } from './install-better-sqlite3.mjs';
+import { ensureJiebaWasmForDocs } from './install-jieba-wasm.mjs';
 import { getDocInitLogPath } from './lib/doc-init-log-path.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -19,6 +20,14 @@ if (!nativeResult.ok && !nativeResult.skipped) {
   console.warn(
     `[deveco-cli] better-sqlite3 install via npm failed; docs search will use sqlite-wasm fallback.\n` +
       `${nativeResult.error ?? ''}\n`
+  );
+}
+
+const jiebaResult = await ensureJiebaWasmForDocs();
+if (!jiebaResult.ok && !jiebaResult.skipped) {
+  console.warn(
+    `[deveco-cli] jieba wasm install via npm failed; docs search may fail on this machine.\n` +
+      `${jiebaResult.error ?? ''}\n`
   );
 }
 const initScript = join(root, 'dist', 'internal', 'doc-init-background.js');

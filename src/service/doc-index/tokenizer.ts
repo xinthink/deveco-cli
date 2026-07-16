@@ -3,8 +3,11 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { Jieba } from '@node-rs/jieba';
-import { dict } from '@node-rs/jieba/dict.js';
+import type { Jieba } from '@node-rs/jieba';
+import * as fs from 'fs';
+import * as path from 'path';
+import { debugLog } from '../../utils/logger.js';
+import { getJiebaBackendStateFile } from './doc-paths.js';
 import { readIndexLexiconFile } from './lexicon.js';
 import {
   DOC_SEARCH_BUDGET_API_SYMBOLS,
@@ -23,6 +26,22 @@ import type { DocumentIndexSource } from './segment-types.js';
 let stopWords: Set<string> | null = null;
 let jiebaInstance: Jieba | null = null;
 let initPromise: Promise<Jieba> | null = null;
+
+function hasPersistedJiebaWasmPreference(): boolean {
+  return fs.existsSync(getJiebaBackendStateFile());
+}
+
+function writeJiebaBackendState(message: string): void {
+  const filePath = getJiebaBackendStateFile();
+  const state = {
+    backend: 'jieba-wasm',
+    reason: 'native-jieba-load-failed',
+    message,
+    createdAt: new Date().toISOString(),
+  };
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(state, null, 2));
+}
 
 function loadStopWords(): Set<string> {
   if (stopWords) {
@@ -76,11 +95,45 @@ function normalizeTokens(tokens: string[]): string[] {
   return out;
 }
 
-async function createJieba(): Promise<Jieba> {
-  const jieba = Jieba.withDict(dict);
+type JiebaCtor = typeof import('@node-rs/jieba').Jieba;
+
+async function buildJiebaInstance(JiebaClass: JiebaCtor): Promise<Jieba> {
+  const { dict } = await import('@node-rs/jieba/dict.js');
+  const jieba = JiebaClass.withDict(dict);
   const userDict = readIndexLexiconFile('harmonyos-terms.txt');
   jieba.loadDict(Buffer.from(userDict, 'utf-8'));
   return jieba;
+}
+
+async function createJiebaNative(): Promise<Jieba> {
+  const { Jieba } = await import('@node-rs/jieba');
+  return buildJiebaInstance(Jieba);
+}
+
+async function createJiebaWasm(): Promise<Jieba> {
+  const { Jieba } = await import('@node-rs/jieba-wasm32-wasi');
+  return buildJiebaInstance(Jieba);
+}
+
+async function createJieba(): Promise<Jieba> {
+  if (hasPersistedJiebaWasmPreference()) {
+    const instance = await createJiebaWasm();
+    return instance;
+  }
+
+  try {
+    const instance = await createJiebaNative();
+    debugLog('doc-index: using @node-rs/jieba backend');
+    return instance;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    writeJiebaBackendState(message);
+    debugLog(`doc-index: @node-rs/jieba unavailable (${message}); falling back to wasm32-wasi`);
+  }
+
+  const instance = await createJiebaWasm();
+  debugLog('doc-index: using @node-rs/jieba-wasm32-wasi backend');
+  return instance;
 }
 
 export async function getJieba(): Promise<Jieba> {
