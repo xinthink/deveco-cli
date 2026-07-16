@@ -19,6 +19,7 @@ import { ToolProvider } from '../toolchain/index.js';
 import { HvigorAdapter } from '../utils/hvigor-adapter.js';
 import { red, cyan, yellow } from 'colorette';
 import { debugLog } from '../utils/logger.js';
+import ora from 'ora';
 
 /**
  * `--format` 取值。`default` 默认为 `csv`
@@ -827,39 +828,50 @@ async function runHvigorCompileNative(options: CheckOptions): Promise<void> {
 }
 
 /**
+ * 校验参数并返回运行时上下文。
+ */
+async function prepareCheckContext(files: string[], options: CheckOptions) {
+  validateCheckOptions(files, options);
+
+  const project = Project.discover(process.cwd());
+  if (options.modules && options.modules.length > 0) {
+    validateModulesExist(project, options.modules);
+  }
+  if (files.length > 0) {
+    validateFiles(files);
+  }
+
+  const pluginPath = await getPluginPath();
+  const scriptPath = resolveScanScript(pluginPath);
+  debugLog(cyan(`[compat:check] script: "${scriptPath}"`));
+
+  const apiChangeDir = path.join(pluginPath, 'resources', 'apiChange');
+  const availableVersions = listApiChangeVersions(apiChangeDir);
+  validateVersionsInCatalog(options, availableVersions);
+
+  if (options.outputPath) {
+    debugLog(cyan(`[compat:check] outputPath: "${options.outputPath}"`));
+  }
+
+  const target = resolveOutputTarget(options.outputPath, options.format);
+  debugLog(cyan(`[compat:check] outputTarget: ${target.kind}`));
+  validateOutputTarget(target);
+
+  return { project, scriptPath, target };
+}
+
+/**
  * `compat` 命令入口。
  */
 async function handleCheckCommand(
   files: string[],
   options: CheckOptions
 ): Promise<void> {
+  const { project, scriptPath, target } = await prepareCheckContext(files, options);
+
+  const spinner = ora({ text: 'Running compatibility check...', color: 'cyan' }).start();
+
   try {
-    validateCheckOptions(files, options);
-
-    const project = Project.discover(process.cwd());
-    if (options.modules && options.modules.length > 0) {
-      validateModulesExist(project, options.modules);
-    }
-    if (files.length > 0) {
-      validateFiles(files);
-    }
-
-    const pluginPath = await getPluginPath();
-    const scriptPath = resolveScanScript(pluginPath);
-    debugLog(cyan(`[compat:check] script: "${scriptPath}"`));
-
-    const apiChangeDir = path.join(pluginPath, 'resources', 'apiChange');
-    const availableVersions = listApiChangeVersions(apiChangeDir);
-    validateVersionsInCatalog(options, availableVersions);
-
-    if (options.outputPath) {
-      debugLog(cyan(`[compat:check] outputPath: "${options.outputPath}"`));
-    }
-
-    const target = resolveOutputTarget(options.outputPath, options.format);
-    debugLog(cyan(`[compat:check] outputTarget: ${target.kind}`));
-    validateOutputTarget(target);
-
     await runHvigorCompileNative(options);
 
     const args = buildToolArgs(scriptPath, files, project, options);
@@ -883,8 +895,10 @@ async function handleCheckCommand(
     }
     cleanupTmpReport(tmpCsvPath);
 
+    spinner.stop();
     outputRecords(records, finalPath, options.format, options.limit, target.kind);
   } catch (error) {
+    spinner.fail('Compatibility check failed');
     console.error(red((error as Error).message));
     process.exit(1);
   }
