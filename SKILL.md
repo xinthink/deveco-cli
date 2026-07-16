@@ -90,7 +90,17 @@ Inspect UI on a connected device. All subcommands accept `--device <name|serial>
 | `layout` | Dump ArkUI accessibility layout tree — **visible area only** (on-screen nodes) | `--id <id>`, `--window <windowId>`, `--all-windows`, `--depth <n>` (0=unlimited, 1=root only, 2=root+children), `--format default\|json`, `--mode full\|simplified` |
 | `window list` | List active windows | `--format table\|json`, `--all` (include system windows) |
 | `screenshot` | Capture a screenshot of the device screen | `--display <displayId>`, `--path <path>` (existing directory or PNG file path whose parent exists; default: `./screenshot-<timestamp>.png`) |
+| `click [x] [y]` | Tap at the specified coordinates or node | `--id <id>` (auto-resolves to center), `--window <windowId>` (used with `--id`) |
+| `doubleclick [x] [y]` | Double-tap at the specified coordinates or node | `--id <id>`, `--window <windowId>` |
+| `longclick [x] [y]` | Long-press at the specified coordinates or node | `--id <id>`, `--window <windowId>` |
+| `swipe <x1> <y1> <x2> <y2>` | Swipe from one point to another | `--speed <n>` (200–40000, px/s) |
+| `fling <x1> <y1> <x2> <y2>` | Fling from one point to another | `--speed <n>` (200–40000, px/s) |
+| `drag <x1> <y1> <x2> <y2>` | Drag from one point to another | `--speed <n>` (200–40000, px/s) |
+| `dircfling <direction>` | Fling in a fixed direction | `direction`: `up`, `down`, `left`, `right` |
+| `text <text> [x] [y]` | Input text at a target location or the currently focused field | `--id <id>` (auto-resolves to center), `--window <windowId>` (used with `--id`) |
 
+- Coordinates and `--id` are mutually exclusive. Provide either `x y` or `--id <id>`; for `text`, if neither is given the text goes to the currently focused field.
+- `--window <windowId>` may only be used together with `--id`.
 - Default: focused window only. Use `--window <id>` or `--all-windows` to target specific/all windows (mutually exclusive).
 - `--format json` pairs well with `jq`.
 - `--mode raw`: full layout tree, no filtering.

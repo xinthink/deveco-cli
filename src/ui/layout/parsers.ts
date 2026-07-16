@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import type { RawDumpAttributes } from './types.js';
+import type { ArkUiNode, RawDumpAttributes } from './types.js';
 
 export function normalizeHitTestBehavior(raw?: string): string | undefined {
   if (!raw || raw === 'HitTestMode.Default') {
@@ -44,4 +44,22 @@ export function parseBounds(
 
 export function resolveText(a: RawDumpAttributes): string | undefined {
   return a.originalText || undefined;
+}
+
+export function findNodesInTree(
+  nodes: ArkUiNode[],
+  id: string
+): ArkUiNode[] {
+  const found: ArkUiNode[] = [];
+  const stack: ArkUiNode[] = [...nodes].reverse();
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (node.id === id) {
+      found.push(node);
+    }
+    for (let i = node.children.length - 1; i >= 0; i--) {
+      stack.push(node.children[i]);
+    }
+  }
+  return found;
 }

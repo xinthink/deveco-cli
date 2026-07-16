@@ -4,7 +4,7 @@
  */
 import { Command, InvalidArgumentError, Option } from 'commander';
 import { ToolProvider } from '../toolchain/index.js';
-import { ArkUiDumpAdapter } from '../ui/index.js';
+import { ArkUiDumpAdapter, findNodesInTree } from '../ui/index.js';
 import ora from 'ora';
 import type { ArkUiNode } from '../ui/index.js';
 import { resolveDeviceSerial } from '../utils/device-selector.js';
@@ -77,21 +77,6 @@ function validateOptions(options: LayoutOptions) {
   if (options.allWindows && options.window) {
     throw new Error('--all-windows and --window are mutually exclusive.');
   }
-}
-
-function findNodesInTree(nodes: ArkUiNode[], id: string): ArkUiNode[] {
-  const found: ArkUiNode[] = [];
-  const stack: ArkUiNode[] = [...nodes].reverse();
-  while (stack.length > 0) {
-    const node = stack.pop()!;
-    if (node.id === id) {
-      found.push(node);
-    }
-    for (let i = node.children.length - 1; i >= 0; i--) {
-      stack.push(node.children[i]);
-    }
-  }
-  return found;
 }
 
 function outputNodesById(tree: ArkUiNode[], id: string) {
