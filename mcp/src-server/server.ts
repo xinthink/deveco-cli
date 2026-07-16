@@ -1005,19 +1005,15 @@ export class DevecoCliMcpServer {
     const projectPath = this.config.projectPath!;
 
     const syncCheck = checkSyncRequired(projectPath);
-    if (!syncCheck.required) {
-      mcpLog.info(`Sync skipped: ${syncCheck.reason}`);
-      return true;
-    }
-
-    mcpLog.info(`Sync required: ${syncCheck.reason}`);
-    return this.runSync(projectPath);
+    const skipHvigor = !syncCheck.required;
+    mcpLog.info(`Sync check: skipHvigor=${skipHvigor}, reason=${syncCheck.reason}`);
+    return this.runSync(projectPath, { skipHvigorSync: skipHvigor });
   }
 
-  private async runSync(projectPath: string): Promise<boolean> {
+  private async runSync(projectPath: string, options?: { skipHvigorSync?: boolean }): Promise<boolean> {
     this.projectState = ProjectLifecycle.SYNCING;
     mcpLog.info('Starting project sync...');
-    const result = await ArktsLspManager.handleSyncProject(projectPath, this.sdkPath);
+    const result = await ArktsLspManager.handleSyncProject(projectPath, this.sdkPath, options);
     switch (result.status) {
       case 'success':
         this.syncSkippedDueToLock = false;
