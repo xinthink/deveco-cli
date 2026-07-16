@@ -9,6 +9,7 @@ import * as path from 'path';
 import { debugLog } from '../../utils/logger.js';
 import { getJiebaBackendStateFile } from './doc-paths.js';
 import { readIndexLexiconFile } from './lexicon.js';
+import { assertSafeRegularFile } from './path-safety.js';
 import {
   DOC_SEARCH_BUDGET_API_SYMBOLS,
   DOC_SEARCH_BUDGET_BODY,
@@ -40,6 +41,7 @@ function writeJiebaBackendState(message: string): void {
     createdAt: new Date().toISOString(),
   };
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  assertSafeRegularFile(filePath);
   fs.writeFileSync(filePath, JSON.stringify(state, null, 2));
 }
 
@@ -128,7 +130,9 @@ async function createJieba(): Promise<Jieba> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     writeJiebaBackendState(message);
-    debugLog(`doc-index: @node-rs/jieba unavailable (${message}); falling back to wasm32-wasi`);
+    debugLog(
+      `doc-index: @node-rs/jieba unavailable (${message}); falling back to wasm32-wasi`
+    );
   }
 
   const instance = await createJiebaWasm();
@@ -174,7 +178,10 @@ async function tokenizeAndCap(text: string, maxChars: number): Promise<string> {
   return joined.slice(0, maxChars);
 }
 
-async function capApiSymbolsForIndex(symbols: string[], maxChars: number): Promise<string> {
+async function capApiSymbolsForIndex(
+  symbols: string[],
+  maxChars: number
+): Promise<string> {
   const tokens: string[] = [];
   for (const symbol of symbols) {
     const trimmed = symbol.trim();
@@ -193,7 +200,9 @@ async function capApiSymbolsForIndex(symbols: string[], maxChars: number): Promi
   return joined.slice(0, maxChars);
 }
 
-export async function buildDocumentSearchText(source: DocumentIndexSource): Promise<string> {
+export async function buildDocumentSearchText(
+  source: DocumentIndexSource
+): Promise<string> {
   const isSectionRow = Boolean(source.sectionTitle.trim());
   const titleRaw = source.titleTokens.trim();
   const maxChars = isSectionRow
@@ -206,7 +215,10 @@ export async function buildDocumentSearchText(source: DocumentIndexSource): Prom
     ? await capApiSymbolsForIndex(source.apiSymbols, apiBudget)
     : await tokenizeAndCap(source.apiSymbols.join(' '), apiBudget);
   const parts = await Promise.all([
-    tokenizeAndCap(titleRaw, isSectionRow ? DOC_SECTION_BUDGET_TITLE : DOC_SEARCH_BUDGET_TITLE),
+    tokenizeAndCap(
+      titleRaw,
+      isSectionRow ? DOC_SECTION_BUDGET_TITLE : DOC_SEARCH_BUDGET_TITLE
+    ),
     Promise.resolve(apiText),
     tokenizeAndCap(
       source.headingsText,

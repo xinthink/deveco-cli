@@ -34,6 +34,10 @@ import {
 } from './doc-index/doc-paths.js';
 import { sha256File } from './doc-index/hash-utils.js';
 import {
+  assertDocStorageSafe,
+  isDocStorageError,
+} from './doc-index/path-safety.js';
+import {
   buildSearchIndex,
   createTempDocsExtractDir,
   normalizeExtractedLayout,
@@ -42,6 +46,7 @@ import { getSynonymsHash, getTermsHash } from './doc-index/query-rewriter.js';
 import { resetSearchDbCache } from './doc-index/sqlite-index.js';
 import type { BuildMeta } from './doc-index/segment-types.js';
 import { assertDocNativeDeps } from '../utils/native-deps.js';
+import { isPathInside } from '../utils/path-containment.js';
 
 export class DocNotReadyError extends Error {
   constructor(
@@ -59,6 +64,7 @@ export interface DocInitOptions {
   builtBy?: BuildMeta['builtBy'];
   /** Suppress internal ora spinner (awaitDocReady owns UX). */
   quiet?: boolean;
+  assumeStorageSafe?: boolean;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -80,12 +86,25 @@ async function extractDocsZipToDir(docsDir: string): Promise<void> {
   await fs.promises.rm(docsDir, { recursive: true, force: true });
   await fs.promises.mkdir(docsDir, { recursive: true });
 
+  const resolvedDocsDir = path.resolve(docsDir);
   const zip = new AdmZip(zipPath);
-  zip.extractAllTo(docsDir, true);
+  for (const entry of zip.getEntries()) {
+    const dest = path.resolve(resolvedDocsDir, entry.entryName);
+    if (!isPathInside(dest, resolvedDocsDir)) {
+      throw new Error(`Unsafe docs.zip entry path: ${entry.entryName}`);
+    }
+    if (entry.isDirectory) {
+      await fs.promises.mkdir(dest, { recursive: true });
+      continue;
+    }
+    await fs.promises.mkdir(path.dirname(dest), { recursive: true });
+    await fs.promises.writeFile(dest, entry.getData());
+  }
   await normalizeExtractedLayout(docsDir);
 }
 
 async function commitTmpIndex(): Promise<void> {
+  await assertDocStorageSafe({ mode: 'write' });
   const indexDir = getIndexDir();
   const tmpDir = getIndexTmpDir();
   const files = await fs.promises.readdir(tmpDir);
@@ -132,7 +151,10 @@ async function runBundledInstallPath(
     );
     await finalizeSuccess(spinner);
     return true;
-  } catch {
+  } catch (error) {
+    if (isDocStorageError(error)) {
+      throw error;
+    }
     // Tier 2: reset partial install state and re-extract index.zip.
   }
 
@@ -147,6 +169,9 @@ async function runBundledInstallPath(
     await finalizeSuccess(spinner);
     return true;
   } catch (error) {
+    if (isDocStorageError(error)) {
+      throw error;
+    }
     const message = error instanceof Error ? error.message : String(error);
     await appendLog(
       `Bundled index install failed; falling back to local rebuild: ${message}`
@@ -300,11 +325,17 @@ export class DocInitializer {
 
     let release: (() => Promise<void>) | undefined;
     try {
+      if (!options.assumeStorageSafe) {
+        await assertDocStorageSafe({ mode: 'write' });
+      }
       release = await acquireBuildLock();
       await writeBuildStatus(createInitialStatus('Starting documentation setup…'));
       await runInitPipeline(options, spinner);
     } catch (error) {
-      return handleInitError(error, spinner);
+      if (release) {
+        return handleInitError(error, spinner);
+      }
+      throw error;
     } finally {
       if (release) {
         await release();
@@ -371,6 +402,7 @@ async function ensureIndexReady(): Promise<void> {
 }
 
 export async function awaitDocReady(): Promise<void> {
+  await assertDocStorageSafe({ mode: 'read' });
   await ensureIndexReady();
   await assertDocNativeDeps();
 }

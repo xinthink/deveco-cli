@@ -14,6 +14,7 @@ import {
 } from './doc-paths.js';
 import { INDEX_VERSION } from './constants.js';
 import { INDEX_LEXICON_FILES } from './lexicon.js';
+import { assertDocStorageSafe } from './path-safety.js';
 import type { BuildMeta } from './segment-types.js';
 
 const BUNDLE_FILES = ['search.db', 'build-meta.json', ...INDEX_LEXICON_FILES] as const;
@@ -86,6 +87,7 @@ export function isBundledIndexUsable(docsZipSha256: string): boolean {
 export async function installBundledIndex(
   docsZipSha256: string
 ): Promise<BuildMeta> {
+  await assertDocStorageSafe({ mode: 'write' });
   const bundlePath = findBundledIndexZip();
   if (!bundlePath) {
     throw new Error('index.zip not found');

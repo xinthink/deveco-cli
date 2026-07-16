@@ -135,6 +135,9 @@ async function readEntryWithLock(
 
 function documentIdToZipEntries(documentId: string): string[] {
   const normalized = documentId.replace(/\\/g, '/').replace(/\.md$/, '');
+  if (normalized.split('/').includes('..')) {
+    throw new Error('Invalid document ID: path traversal is not allowed.');
+  }
   return [
     `docs/${normalized}.md`,
     `${normalized}.md`,
