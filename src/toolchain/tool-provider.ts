@@ -46,6 +46,7 @@ function sdkMetadataPaths(sdkPath: string): string[] {
 export class ToolProvider {
   private static readonly verifiedPaths = new Set<string>();
   private static powerShellPath: string | undefined;
+  private static powerShellModulesPath: string | undefined;
   private static installSourcePromise:
     | Promise<{ sourceType: InstallSourceType; toolchainRoot: string }>
     | undefined;
@@ -585,6 +586,9 @@ export class ToolProvider {
       'powershell.exe'
     );
     ToolProvider.powerShellPath = fs.existsSync(candidate) ? candidate : '';
+    if (ToolProvider.powerShellPath) {
+      ToolProvider.powerShellModulesPath = path.join(path.dirname(ToolProvider.powerShellPath), 'Modules');
+    }
     return ToolProvider.powerShellPath;
   }
 
@@ -601,7 +605,7 @@ export class ToolProvider {
     const scriptPath = path.join(tempDirectory, 'Verify-Signature.ps1');
     fs.writeFileSync(
       scriptPath,
-      "$env:PSModulePath = ($env:PSModulePath -split ';' | Where-Object { $_ -notmatch 'windowsapps' }) -join ';'; Get-AuthenticodeSignature -FilePath $args[0] | ConvertTo-Json -Depth 3 -Compress",
+      'Get-AuthenticodeSignature -FilePath $args[0] | ConvertTo-Json -Depth 3 -Compress',
       'utf8'
     );
     try {
@@ -616,7 +620,11 @@ export class ToolProvider {
           scriptPath,
           file,
         ],
-        { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }
+        { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'],
+          env: {
+            ...process.env,
+            PSModulePath: ToolProvider.powerShellModulesPath
+          } }
       );
       const result = JSON.parse(output) as { Status?: unknown };
       return { signed: Number(result.Status) === 0 };
