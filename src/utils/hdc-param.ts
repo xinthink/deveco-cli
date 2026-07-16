@@ -85,6 +85,8 @@ export async function runHdcWithRetry(
   return last;
 }
 
+const SAFE_PARAM_KEY_RE = /^[\w.-]+$/;
+
 /**
  * Read a single `param get` value from a device. Returns `undefined` on any
  * failure (including transient errors that exhausted the retry budget).
@@ -94,6 +96,10 @@ export async function tryGetHdcShellParam(
   deviceId: string,
   paramKey: string
 ): Promise<string | undefined> {
+  if (!SAFE_PARAM_KEY_RE.test(paramKey)) {
+    debugLog(`Skipping invalid param key: ${JSON.stringify(paramKey)}`);
+    return undefined;
+  }
   const args = ['-t', deviceId, 'shell', 'param', 'get', paramKey];
   debugLog(`Executing: ${hdcPath} ${args.join(' ')}`);
   const result = await runHdcWithRetry(hdcPath, args);
@@ -138,20 +144,28 @@ export async function tryGetHdcShellParams(
   deviceId: string,
   paramKeys: string[]
 ): Promise<Map<string, string>> {
-  if (paramKeys.length === 0) {
+  const sanitizedKeys = paramKeys.filter((k) => {
+    if (!SAFE_PARAM_KEY_RE.test(k)) {
+      debugLog(`Skipping invalid param key: ${JSON.stringify(k)}`);
+      return false;
+    }
+    return true;
+  });
+
+  if (sanitizedKeys.length === 0) {
     return new Map();
   }
-  if (paramKeys.length === 1) {
+  if (sanitizedKeys.length === 1) {
     const result = new Map<string, string>();
-    const v = await tryGetHdcShellParam(hdcPath, deviceId, paramKeys[0]);
+    const v = await tryGetHdcShellParam(hdcPath, deviceId, sanitizedKeys[0]);
     if (v) {
-      result.set(paramKeys[0], v);
+      result.set(sanitizedKeys[0], v);
     }
     return result;
   }
 
   const command =
-    paramKeys.map((k) => `param get ${k}`).join(`; echo ${BATCH_DELIM}; `) +
+    sanitizedKeys.map((k) => `param get ${k}`).join(`; echo ${BATCH_DELIM}; `) +
     `; echo ${BATCH_DELIM}`;
 
   // On Mac/Linux, hdc shell sometimes behaves better with explicit quotes
@@ -164,7 +178,7 @@ export async function tryGetHdcShellParams(
   ]);
 
   if (result.exitCode === 0) {
-    const map = parseBatchedParamSegments(result.stdout, paramKeys);
+    const map = parseBatchedParamSegments(result.stdout, sanitizedKeys);
     if (map.size > 0) {
       return map;
     }
@@ -176,7 +190,7 @@ export async function tryGetHdcShellParams(
     `Batched param fetch failed (exit=${result.exitCode}), falling back to individual calls for ${deviceId}`
   );
   const fallbackMap = new Map<string, string>();
-  for (const key of paramKeys) {
+  for (const key of sanitizedKeys) {
     const val = await tryGetHdcShellParam(hdcPath, deviceId, key);
     if (val) {
       fallbackMap.set(key, val);

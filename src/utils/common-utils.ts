@@ -256,7 +256,8 @@ export class CommonUtils {
 
   static assertCrashFilename(name: string): void {
     // 匹配faultLog名称，比如 jscrash-com.example.myapplication-20020059-20260512170652
-    const crashFilenameRegExp = /^\w+-.+\d+-\d+$/;
+    // 只允许 \w . - 字符，防止 shell 注入
+    const crashFilenameRegExp = /^\w+-[\w.]+-\d+-\d+$/;
     if (!crashFilenameRegExp.test(name)) {
       throw new Error(`Invalid crash log filename: ${JSON.stringify(name)}`);
     }
