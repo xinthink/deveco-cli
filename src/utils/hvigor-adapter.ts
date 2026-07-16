@@ -11,10 +11,12 @@ export class HvigorAdapter {
   private toolProvider: ToolProvider;
   private projectRoot: string;
   private env: Record<string, string>;
+  private silent: boolean;
 
-  constructor(toolProvider: ToolProvider, projectRoot: string) {
+  constructor(toolProvider: ToolProvider, projectRoot: string, silent = false) {
     this.toolProvider = toolProvider;
     this.projectRoot = projectRoot;
+    this.silent = silent;
 
     const javaBinDir = path.dirname(toolProvider.javaPath);
     const newPath = `${javaBinDir}${path.delimiter}${process.env.PATH || ''}`;
@@ -121,11 +123,13 @@ export class HvigorAdapter {
 
     debugLog(`Executing: ${cmd} ${cmdArgs.join(' ')}`);
 
+    const stdioOpt = this.silent && !process.env.DEVECO_CLI_DEBUG ? 'pipe' : 'inherit';
+
     await execa(cmd, cmdArgs, {
       cwd: this.projectRoot,
       env: this.env,
-      stdout: 'inherit',
-      stderr: 'inherit',
+      stdout: stdioOpt,
+      stderr: stdioOpt,
     });
   }
 }

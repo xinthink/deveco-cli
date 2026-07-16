@@ -810,7 +810,7 @@ function persistCsvToDir(tmpCsvPath: string, userOutputDir: string): string {
  */
 async function runHvigorCompileNative(options: CheckOptions): Promise<void> {
   const toolProvider = await ToolProvider.new();
-  const hvigor = new HvigorAdapter(toolProvider, process.cwd());
+  const hvigor = new HvigorAdapter(toolProvider, process.cwd(), true);
   const compileModule =
     options.modules && options.modules.length > 0
       ? options.modules[0]
