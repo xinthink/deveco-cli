@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { Command } from 'commander';
-import { ToolProvider } from '../utils/tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import { EmulatorManager } from '../service/emulator-manager.js';
 import { normalizeListNameKey } from '../service/emulator-types.js';
 import {

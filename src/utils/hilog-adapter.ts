@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { HilogOptions } from './config.js';
-import { ToolProvider } from './tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import { DeviceManager } from '../service/device-manager.js';
 import { cyan } from 'colorette';
 import { CommonUtils } from './common-utils.js';
@@ -148,7 +148,7 @@ export class HilogAdapter {
 
     throw new Error(
       'Multiple devices found. Specify a target device using `--device <name>` or `--device <serial>`.\nAvailable devices:\n' +
-        this.formatConnectedDeviceList(connectedDevices)
+      this.formatConnectedDeviceList(connectedDevices)
     );
   }
 
@@ -684,9 +684,7 @@ export class HilogAdapter {
       throw sentinel;
     }
     if (result.exitCode !== 0 && result.stderr) {
-      console.error(
-        `Warning: Failed to fetch crash logs: ${result.stderr}`
-      );
+      console.error(`Warning: Failed to fetch crash logs: ${result.stderr}`);
     }
 
     const combinedOutput = result.stdout + result.stderr;

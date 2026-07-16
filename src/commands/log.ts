@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { Command, InvalidArgumentError } from 'commander';
-import { ToolProvider } from '../utils/tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import { HilogAdapter } from '../utils/hilog-adapter.js';
 import { CommonUtils } from '../utils/common-utils.js';
 import { cyan, red } from 'colorette';

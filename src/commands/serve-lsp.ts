@@ -5,13 +5,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
-import { ToolProvider } from '../utils/tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import {
   findArktsLangServerPath,
-  findDevEcoPath,
   getMcpLogDirectory,
   normalizePath,
-  devecoStudioContentRoot,
 } from '../../mcp/src-server/utils/common.js';
 import { computeLspServerMaxSize, toUnixPath } from '../../mcp/src-server/lsp/utils.js';
 import { ModulesDependencyParse } from '../../mcp/src-server/lsp/parse/ModulesDependencyParse.js';
@@ -47,15 +45,13 @@ async function resolvePaths(options: ArktsLspOptions): Promise<{
   logPath: string;
   serverMaxSize: number;
 }> {
-  const devecoPath = await resolveDevecoPath();
-  if (!devecoPath) {
-    mcpLog.error('DevEco Studio not found. Ensure DevEco Studio is installed.');
-    process.exit(1);
-  }
-
+  const toolProvider = await ToolProvider.new();
+  toolProvider.require({ clt: false });
   const projectPath = normalizePath(options.projectPath ?? process.cwd());
-  const sdkPath = path.join(devecoStudioContentRoot(devecoPath), 'sdk');
-  const arktsLangServerPath = findArktsLangServerPath(devecoPath);
+  const sdkPath = toolProvider.sdkPath;
+  const arktsLangServerPath = findArktsLangServerPath(
+    toolProvider.devecoStudioPath
+  );
   if (!arktsLangServerPath) {
     mcpLog.error('ace-server not found in DevEco Studio installation.');
     process.exit(1);
@@ -67,12 +63,6 @@ async function resolvePaths(options: ArktsLspOptions): Promise<{
 
   mcpLog.info(`projectPath=${projectPath}, sdkPath=${sdkPath}, serverPath=${serverPath}, logPath=${logPath}, serverMaxSize=${serverMaxSize}MB`);
   return { projectPath, sdkPath, serverPath, logPath, serverMaxSize };
-}
-
-function resolveDevecoPath(): Promise<string | null> {
-  return ToolProvider.new()
-    .then((tp) => tp.devecoStudioPath)
-    .catch(() => findDevEcoPath());
 }
 
 /**

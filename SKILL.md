@@ -1,14 +1,14 @@
 ---
 name: deveco-cli
 description: >-
-  **MUST** use 'devecocli' for HarmonyOS apps (scaffold, build, run, debug, devices, emulators, logs, docs, 鸿蒙开发文档, skills). **REQUIRED** and **MANDATORY** if workspace has build-profile.json5 or oh-package.json5, or user mentions HarmonyOS, 鸿蒙, DevEco, ArkTS, ArkUI, docs, 鸿蒙文档, 知识, 搜索, or skills.
+  **MUST** use 'devecocli' for HarmonyOS apps (scaffold, build, run, debug, devices, emulators, logs, docs, UI inspection, 鸿蒙开发文档, skills). **REQUIRED** and **MANDATORY** if workspace has build-profile.json5 or oh-package.json5, or user mentions HarmonyOS, 鸿蒙, DevEco, ArkTS, ArkUI, docs, 鸿蒙文档, 知识, 搜索, skills, UI, UI测试, 组件调试.
 ---
 
 # DevEco CLI
 
-`devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc`, emulator toolchain, and HarmonyOS-skills installer. **Prefer `devecocli` over invoking underlying tools directly.**
+`devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc`, emulator toolchain, UI inspection, and HarmonyOS-skills installer. **Prefer `devecocli` over invoking underlying tools directly.**
 
-Available commands: `build`, `run`, `update`, `device`, `emulator`, `ui`, `skills`, `log`, `create`, `init`, `serve`, `docs`.
+Available commands: `build`, `run`, `update`, `device`, `emulator`, `skills`, `log`, `create`, `init`, `serve`, `docs`, `ui`.
 
 **Sandbox Rule**: Commands tagged `[Outside sandbox]` must be run outside the sandbox.
 
@@ -49,13 +49,6 @@ Manage local emulator instances and system images.
 - `image download` / `image remove` (Req: `--device-type`, `--os-version`): Download/remove image. (Takes 30+ min, set long timeout).
 *Device types*: `phone`, `foldable`, `widefold`, `triplefold`, `tablet`, `2in1`, `2in1 foldable`, `wearable`, `tv`.
 
-### `devecocli ui`
-Inspect UI on a connected physical device or running emulator.
-- `screenshot`: Capture a screenshot from a physical device or running emulator. `--device <name|serial>` is optional when exactly one device is connected, and required when multiple devices are connected.
-- Optional: `--display <displayId>`, `--path <path>` (existing directory or PNG file path whose parent exists; create the directory first; default: `./screenshot-<timestamp>.png`).
-- Implementation uses `hdc shell snapshot_display` and `hdc file recv`; set `DEVECO_CLI_DEBUG=1` to inspect the actual `hdc` commands.
-*Ex*: `mkdir -p screenshots && devecocli ui screenshot --device Phone --path ./screenshots/phone.png`
-
 ### `devecocli docs`
 Search/read local HarmonyOS docs.
 - `search <keywords...>`: Match any keyword. Opts: `--catalog <name>`, `--format <default|json>`, `--limit <n>`.
@@ -83,6 +76,21 @@ Fetch hilog or crash logs. Req `--device <name|serial>` on multi-device hosts.
 - `--from <start>` / `--to <end>`: Relative offsets (`30s`, `5m`).
 - `--tail <num>` / `--follow`: Keep last N lines / stream real-time (no `--to`).
 *Ex*: `devecocli log --crash --bundle-name com.example.app`, `devecocli log --level E --from 5m --tail 200`
+
+### `devecocli ui`
+Inspect UI on a connected device. All subcommands accept `--device <name|serial>` (Req on multi-device hosts).
+
+| Subcommand | Description | Key Options |
+|---|---|---|
+| `layout` | Dump ArkUI accessibility layout tree — **visible area only** (on-screen nodes) | `--id <id>`, `--window <windowId>`, `--all-windows`, `--depth <n>` (0=unlimited, 1=root only, 2=root+children), `--format default\|json`, `--mode full\|simplified` |
+| `window list` | List active windows | `--format table\|json`, `--all` (include system windows) |
+| `screenshot` | Capture a screenshot of the device screen | `--display <displayId>`, `--path <path>` (existing directory or PNG file path whose parent exists; default: `./screenshot-<timestamp>.png`) |
+
+- Default: focused window only. Use `--window <id>` or `--all-windows` to target specific/all windows (mutually exclusive).
+- `--format json` pairs well with `jq`.
+- `--mode raw`: full layout tree, no filtering.
+- `--mode simplified` (default): folds meaningless wrapper containers (non-root, no `id`, no text, not interactive) by lifting their surviving children up. `--depth` truncates after folding.
+
 
 ## 2. Setup
 
@@ -124,7 +132,8 @@ Manage HarmonyOS skills in AI agents/projects.
 - **"No active devices" / "Multiple devices connected"**: Connect/start emulator. Pass `-t <serial>` (device view) or `--device <name|serial>` (run/log).
 - **`error:install sign info inconsistent`**: Signing key changed. Run `devecocli run --uninstall`.
 - **`skills add` agent not found**: Valid: `codebuddy`, `cursor`, `opencode`, `qoder`, `trae-cn`.
-- **`emulator start` / `image download` blocked on agreement**: User MUST run `devecocli emulator license accept` in interactive TTY. Agents cannot do this. Do not retry until accepted.
+- **`emulator start` / `image download` blocked on agreement**: User MUST accept agreements. Interactive: `devecocli emulator license` (requires TTY). Non-interactive (CI/scripts): `devecocli emulator license accept`. Agents cannot run the interactive form; suggest the user run it, or use `license accept` if a non-TTY flow is acceptable. Do not retry until accepted.
 - **`image download` failure / timeout**: Do NOT auto-retry. Give the command to the user to run manually in their terminal.
 - **`emulator create` timeout**: Treat as user-action step. Ask user to open DevEco Studio -> Device Manager. Check `emulator list` after user confirms. Do NOT auto-retry or edit SDK files.
 - **`image list` duplicate OS rows**: `phone`/`foldable`/`widefold`/`triplefold` share the same image. Download/remove ONCE per OS version.
+- **`ui layout` missing expected node**: `layout` only returns on-screen nodes. The user must scroll the target into view on the device before retrying (no CLI input subcommands in this build).

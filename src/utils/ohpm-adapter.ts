@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { execa } from 'execa';
-import { ToolProvider } from './tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import { debugLog } from './logger.js';
 
 export class OhpmAdapter {
@@ -23,6 +23,10 @@ export class OhpmAdapter {
 
     await execa(cmd, args, {
       cwd: this.projectRoot,
+      env: {
+        ...process.env,
+        DEVECO_SDK_HOME: this.toolProvider.sdkPath,
+      },
       stdout: 'inherit',
       stderr: 'inherit',
     });

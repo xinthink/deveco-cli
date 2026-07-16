@@ -324,7 +324,7 @@ devecocli emulator list
 
 ### `emulator start`
 
-启动模拟器。首次使用时，需要签署 HarmonyOS 软件许可与服务协议，具体请参考 `emulator license accept`
+启动模拟器。首次使用时，需要签署 HarmonyOS 软件许可与服务协议，具体请参考 `emulator license`
 
 **命令格式：**
 
@@ -512,7 +512,7 @@ devecocli emulator image list --format json
 
 ### `emulator image download`
 
-下载模拟器镜像。首次使用时，需要签署 HarmonyOS `SDK` 许可协议，具体请参考 `emulator license accept`
+下载模拟器镜像。首次使用时，需要签署 HarmonyOS `SDK` 许可协议，具体请参考 `emulator license`
 
 **命令格式：**
 
@@ -571,9 +571,19 @@ devecocli emulator image remove --device-type phone --os-version "HarmonyOS 6.0.
 devecocli emulator license view
 ```
 
+### `emulator license`
+
+交互式查看并接受协议。打印完整协议文本后提示 y/N 确认。使用模拟器需要同意 HarmonyOS 软件许可与服务协议，下载镜像需要同意 HarmonyOS `SDK` 许可协议。若已同意则直接提示已接受。非交互终端下会报错，请改用 `emulator license accept`
+
+**命令格式：**
+
+```bash
+devecocli emulator license
+```
+
 ### `emulator license accept`
 
-查看并接受协议。使用模拟器需要同意 HarmonyOS 软件许可与服务协议，下载镜像需要同意 HarmonyOS `SDK` 许可协议
+非交互式同意模拟器所有协议，直接写入同意记录，跳过协议展示和确认提示。适用于自动化脚本、CI 或非交互终端环境。若已同意则直接提示已接受
 
 **命令格式：**
 

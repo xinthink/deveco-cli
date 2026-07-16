@@ -4,7 +4,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { execa } from 'execa';
-import { ToolProvider } from './tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import { debugLog } from './logger.js';
 import { DeviceManager } from '../service/device-manager.js';
 

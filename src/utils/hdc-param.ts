@@ -93,14 +93,9 @@ export async function tryGetHdcShellParam(
   deviceId: string,
   paramKey: string
 ): Promise<string | undefined> {
-  const result = await runHdcWithRetry(hdcPath, [
-    '-t',
-    deviceId,
-    'shell',
-    'param',
-    'get',
-    paramKey,
-  ]);
+  const args = ['-t', deviceId, 'shell', 'param', 'get', paramKey];
+  debugLog(`Executing: ${hdcPath} ${args.join(' ')}`);
+  const result = await runHdcWithRetry(hdcPath, args);
   if (result.exitCode !== 0) {
     return undefined;
   }

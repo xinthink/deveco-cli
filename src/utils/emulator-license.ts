@@ -13,7 +13,7 @@ import { EMULATOR_PRIVACY_BUNDLED } from '../data/emulator-privacy-bundled.js';
 const acceptedCache = new Set<string>();
 const emulatorVersionTextCache = new Map<string, string>();
 
-/** Key in `.emu_config` for the emulator software agreement (Studio / `license accept`). */
+/** Key in `.emu_config` for the emulator software agreement (Studio / `license`). */
 export const HARMONYOS_SOFTWARE_SERVICE_AGREEMENT_KEY =
   'HarmonyOS_Software_Service_Agreement';
 
@@ -24,7 +24,10 @@ export const HARMONYOS_SOFTWARE_SERVICE_AGREEMENT_KEY =
 const EMULATOR_LICENSE_BLOCKED_USER_MESSAGE = [
   'Emulator license agreements are not accepted yet.',
   '',
-  'Accept the agreements in an interactive terminal:',
+  'Accept the agreements interactively (shows full text + y/N prompt):',
+  '  devecocli emulator license',
+  '',
+  'Or accept non-interactively (no prompt, for CI/scripts):',
   '  devecocli emulator license accept',
   '',
   'To review the agreement text (read-only):',
@@ -545,17 +548,40 @@ export async function runEmulatorLicenseView(
 const LICENSE_ACCEPT_PROMPT =
   'Please read carefully and confirm whether agree to the above agreement? (y/N): ';
 
+/** Returns true when both the service and SDK agreement keys are already set to `agree`. */
+async function isEmulatorLicenseAlreadyAccepted(
+  emulatorPath: string,
+  sdkPath: string
+): Promise<boolean> {
+  try {
+    await ensureEmulatorServiceAgreementConfig(emulatorPath, sdkPath);
+    await ensureEmulatorSdkAgreementForImageDownload(emulatorPath, sdkPath);
+    return true;
+  } catch (e) {
+    if (e instanceof EmulatorLicenseBlockedError) {
+      return false;
+    }
+    throw e;
+  }
+}
+
 /** Shows the bundled privacy statement, prompts y/N, then writes both agreement keys to `.emu_config`. */
 export async function runEmulatorLicenseAccept(
   emulatorPath: string,
   sdkPath: string
 ): Promise<number> {
+  if (await isEmulatorLicenseAlreadyAccepted(emulatorPath, sdkPath)) {
+    console.log('Emulator license agreements are already accepted.');
+    return 0;
+  }
+
   const body = EMULATOR_PRIVACY_BUNDLED;
 
   console.log(body);
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     console.error(
-      '`devecocli emulator license accept` requires an interactive terminal.'
+      '`devecocli emulator license` requires an interactive terminal.\n' +
+        'For non-interactive environments, use: devecocli emulator license accept'
     );
     return 1;
   }
@@ -573,6 +599,9 @@ export async function runEmulatorLicenseAccept(
 
   const norm = answer.trim().toLowerCase();
   if (norm !== 'y' && norm !== 'yes') {
+    console.error(
+      'Agreements not accepted. Emulator features will remain blocked until accepted.'
+    );
     return 1;
   }
 
@@ -587,5 +616,34 @@ export async function runEmulatorLicenseAccept(
     console.error((e as Error).message);
     return 1;
   }
+  console.log('Emulator license agreements accepted.');
+  return 0;
+}
+
+/**
+ * Non-interactively accepts all emulator license agreements by writing
+ * `agree` to `.emu_config` for both keys, without printing the statement or
+ * prompting the user. Suitable for automation / non-TTY environments.
+ */
+export async function runEmulatorLicenseAcceptDirectly(
+  emulatorPath: string,
+  sdkPath: string
+): Promise<number> {
+  if (await isEmulatorLicenseAlreadyAccepted(emulatorPath, sdkPath)) {
+    console.log('Emulator license agreements are already accepted.');
+    return 0;
+  }
+  try {
+    const emuConfigPath = await resolveEmuConfigPathForWrites(
+      emulatorPath,
+      sdkPath
+    );
+    await writeBothAgreementsToEmuConfig(emuConfigPath);
+    invalidateEmulatorLicenseCache();
+  } catch (e) {
+    console.error((e as Error).message);
+    return 1;
+  }
+  console.log('Emulator license agreements accepted.');
   return 0;
 }

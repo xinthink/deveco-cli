@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { execa } from 'execa';
-import { ToolProvider } from '../utils/tool-provider.js';
+import { ToolProvider } from '../toolchain/index.js';
 import { tryGetHdcShellParams } from '../utils/hdc-param.js';
 import { debugLog } from '../utils/logger.js';
 
@@ -78,6 +78,7 @@ export class DeviceManager {
   private async executeHdc(
     args: string[]
   ): Promise<{ stdout: string; stderr: string }> {
+    debugLog(`Executing: ${this.hdcPath} ${args.join(' ')}`);
     return execa(this.hdcPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
