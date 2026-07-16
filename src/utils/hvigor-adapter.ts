@@ -121,11 +121,13 @@ export class HvigorAdapter {
 
     debugLog(`Executing: ${cmd} ${cmdArgs.join(' ')}`);
 
+    const isDebug = Boolean(process.env.DEVECO_CLI_DEBUG);
+
     await execa(cmd, cmdArgs, {
       cwd: this.projectRoot,
       env: this.env,
-      stdout: 'inherit',
-      stderr: 'inherit',
+      stdout: isDebug ? 'inherit' : 'pipe',
+      stderr: isDebug ? 'inherit' : 'pipe',
     });
   }
 }
