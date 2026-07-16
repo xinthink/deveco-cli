@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { getCliDataDir } from '../../utils/cli-data-dir.js';
+import { isPathInside } from '../../utils/path-containment.js';
 
 const DOCS_DIR_NAME = 'docs';
 
@@ -89,9 +90,27 @@ function resolvePackageRelativePath(...segments: string[]): string[] {
 }
 
 function findBundledAsset(...segments: string[]): string | null {
+  const packageRoot = getPackageRoot();
+  const realPackageRoot = fs.realpathSync(packageRoot);
   for (const candidate of resolvePackageRelativePath(...segments)) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
+    try {
+      const entry = fs.lstatSync(candidate);
+      if (entry.isSymbolicLink() || !entry.isFile()) {
+        throw new Error(
+          `Unsafe documentation package asset: ${segments.join('/')} must be a regular file.`
+        );
+      }
+      const realCandidate = fs.realpathSync(candidate);
+      if (!isPathInside(realCandidate, realPackageRoot)) {
+        throw new Error(
+          `Unsafe documentation package asset: ${segments.join('/')} is outside the package.`
+        );
+      }
+      return realCandidate;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
     }
   }
   return null;

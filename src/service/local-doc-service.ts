@@ -43,6 +43,7 @@ export class LocalDocService {
         builtBy: 'doc-init',
         force: true,
         quiet: true,
+        assumeStorageSafe: true,
       });
       return searchSqliteIndex(keywords, catalog, limit);
     }

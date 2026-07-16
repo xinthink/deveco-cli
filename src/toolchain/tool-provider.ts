@@ -6,10 +6,14 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { normalizeEnvPath } from './environment-path.js';
 import { discoverStudioInstallRoot } from './studio-discovery.js';
 import { compareStudioVersions, readStudioVersion } from './studio-version.js';
+import { resolveEnvRoot } from './environment-path.js';
 import { debugLog } from '../utils/logger.js';
+import {
+  resolveCanonicalPath,
+  resolvePathInsideRoot,
+} from '../utils/path-containment.js';
 
 const DOWNLOAD_URL = 'https://developer.huawei.com/consumer/cn/download/';
 const CLT_VERSION = /^#\s*Version:\s*(\S+)/;
@@ -156,6 +160,7 @@ export class ToolProvider {
 
   public static fromCLT(cltRoot: string): ToolProvider {
     const tools = ToolProvider.buildToolPaths(cltRoot, 'clt');
+    ToolProvider.assertBuiltPathsInsideRoot(cltRoot, tools, false);
     return new ToolProvider(
       'clt',
       cltRoot,
@@ -175,6 +180,7 @@ export class ToolProvider {
     sourceType: Exclude<InstallSourceType, 'clt'> = 'studio'
   ): ToolProvider {
     const tools = ToolProvider.buildToolPaths(studioRoot, 'studio');
+    ToolProvider.assertBuiltPathsInsideRoot(studioRoot, tools, true);
     return new ToolProvider(
       sourceType,
       studioRoot,
@@ -418,37 +424,55 @@ export class ToolProvider {
     expected: 'clt' | 'studio',
     env: string
   ): string {
-    const normalized = normalizeEnvPath(input);
-    const root =
-      expected === 'studio' && os.platform() === 'darwin'
-        ? ToolProvider.normalizeMacStudioRoot(normalized)
-        : normalized;
-    ToolProvider.assertNoSymbolicLinks(root, env);
+    let root: string;
+    try {
+      root = resolveEnvRoot(input);
+    } catch (error) {
+      throw new Error(
+        `Invalid ${env}: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
+    }
+    if (expected === 'studio' && os.platform() === 'darwin') {
+      root = ToolProvider.normalizeMacStudioRoot(root);
+    }
     if (ToolProvider.isValidRoot(root, expected)) {
       return root;
     }
     return ToolProvider.throwInvalidSource(root, expected, env, input);
   }
 
-  private static assertNoSymbolicLinks(value: string, env: string): void {
-    let current = path.resolve(value);
-    while (true) {
-      let symbolicLink = false;
-      try {
-        symbolicLink = fs.lstatSync(current).isSymbolicLink();
-      } catch {
-        // The root may not exist; validate its existing ancestors instead.
-      }
-      if (symbolicLink) {
-        throw new Error(
-          `Invalid ${env}: symbolic links are not allowed in toolchain paths (${current})`
-        );
-      }
-      const parent = path.dirname(current);
-      if (parent === current) {
-        return;
-      }
-      current = parent;
+  private static assertBuiltPathsInsideRoot(
+    root: string,
+    tools: ReturnType<typeof ToolProvider.buildToolPaths>,
+    includeBundledJava: boolean
+  ): void {
+    const realRoot = resolveCanonicalPath(root);
+    const entries: Array<[string, string]> = [
+      ['node', tools.nodePath],
+      ['ohpm', tools.ohpmJsPath],
+      ['hvigor', tools.hvigorJsPath],
+      ['sdk', tools.sdkPath],
+      ['hdc', tools.hdcPath],
+      ['emulator', tools.emulatorPath],
+    ];
+    if (includeBundledJava && tools.javaPath) {
+      entries.push(['java', tools.javaPath]);
+    }
+    for (const [label, child] of entries) {
+      ToolProvider.assertInsideRoot(child, realRoot, label);
+    }
+  }
+
+  private static assertInsideRoot(
+    child: string,
+    realRoot: string,
+    label: string
+  ): void {
+    if (resolvePathInsideRoot(child, realRoot) === null) {
+      throw new Error(
+        `Unsafe toolchain path: ${label} resolves outside the toolchain root`
+      );
     }
   }
 

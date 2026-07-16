@@ -8,6 +8,7 @@ import { red, dim } from 'colorette';
 import { localDocService, LocalSearchResult } from '../service/local-doc-service.js';
 import { awaitDocReady } from '../service/doc-initializer.js';
 import { QUERY_MAX_RAW_CHARS } from '../service/doc-index/constants.js';
+import { isDocStorageError } from '../service/doc-index/path-safety.js';
 import {
   CatalogName,
   CATALOG_NAMES,
@@ -44,6 +45,17 @@ function validatePositiveInt(value: string): number {
 const validateSearchFormat = validateOneOf<'json' | 'default'>('json', 'default');
 const validateCatalogFormat = validateOneOf<'json' | 'default'>('json', 'default');
 
+function formatDocCommandError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (isDocStorageError(error)) {
+    return message;
+  }
+  if (/\b(EACCES|EPERM|ENOSPC|ENOTDIR|ELOOP)\b/.test(message)) {
+    return 'Documentation data directory is unavailable. Check DEVECO_CLI_DATA_DIR and retry.';
+  }
+  return message;
+}
+
 const docCommand = new Command('docs').description(
   'Search and read HarmonyOS documentation from local docs directory'
 );
@@ -75,7 +87,7 @@ docCommand
         outputSearchResults(results);
       }
     } catch (error) {
-      console.error(red((error as Error).message));
+      console.error(red(formatDocCommandError(error)));
       process.exit(1);
     }
   });
@@ -94,7 +106,7 @@ docCommand
       const content = await localDocService.readDocument(normalizedId);
       console.log(content);
     } catch (error) {
-      console.error(red((error as Error).message));
+      console.error(red(formatDocCommandError(error)));
       process.exit(1);
     }
   });
@@ -118,7 +130,7 @@ docCommand
         }
       }
     } catch (error) {
-      console.error(red((error as Error).message));
+      console.error(red(formatDocCommandError(error)));
       process.exit(1);
     }
   });

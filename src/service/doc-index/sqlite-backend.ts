@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { debugLog } from '../../utils/logger.js';
 import { getSqliteBackendStateFile } from './doc-paths.js';
+import { assertSafeRegularFile } from './path-safety.js';
 import { createBetterSqliteBackend } from './sqlite-better-backend.js';
 import { createSqliteWasmBackend } from './sqlite-wasm-backend.js';
 import type { SqliteBackend } from './sqlite-types.js';
@@ -27,6 +28,7 @@ function writeBackendState(message: string): void {
     createdAt: new Date().toISOString(),
   };
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  assertSafeRegularFile(filePath);
   fs.writeFileSync(filePath, JSON.stringify(state, null, 2));
 }
 
@@ -42,7 +44,9 @@ async function resolveBackend(): Promise<SqliteBackend> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     writeBackendState(message);
-    debugLog(`doc-index: better-sqlite3 unavailable (${message}); falling back to sqlite-wasm`);
+    debugLog(
+      `doc-index: better-sqlite3 unavailable (${message}); falling back to sqlite-wasm`
+    );
   }
 
   return createSqliteWasmBackend();

@@ -3,7 +3,9 @@
  * SPDX-License-Identifier: MIT
  */
 
-export function normalizeEnvPath(value: string): string {
+import { resolveCanonicalPath } from '../utils/path-containment.js';
+
+export function stripEnvPathQuotes(value: string): string {
   let normalized = value.trim();
   if (
     (normalized.startsWith('"') && normalized.endsWith('"')) ||
@@ -11,9 +13,13 @@ export function normalizeEnvPath(value: string): string {
   ) {
     normalized = normalized.slice(1, -1).trim();
   }
-  if (normalized.split(/[/\\]+/).some((segment) => segment === '..')) {
-    throw new Error('Path must not contain traversal segments (..).');
+  return normalized;
+}
+
+export function resolveEnvRoot(value: string): string {
+  const normalized = stripEnvPathQuotes(value);
+  if (!normalized) {
+    throw new Error('Path must not be empty.');
   }
-  const trimmed = normalized.replace(/[/\\]+$/, '');
-  return trimmed.length > 0 ? trimmed : normalized;
+  return resolveCanonicalPath(normalized);
 }
