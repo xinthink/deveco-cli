@@ -10,8 +10,7 @@ import {
   assertCoord,
   assertSpeed,
   assertNonEmpty,
-  initTooling,
-  resolveSerial,
+  initDevice,
   resolveTarget,
   runHdcShell,
 } from '../ui/input/index.js';
@@ -39,8 +38,7 @@ async function handleClick(
 ): Promise<void> {
   await withSpinner('Executing click...', 'click failed', async (spinner) => {
     assertTargetParams(x, y, options.id, options.window);
-    const { hdcPath, deviceManager } = await initTooling();
-    const deviceId = await resolveSerial(deviceManager, options.device);
+    const { hdcPath, deviceId } = await initDevice(options.device);
     const { x: cx, y: cy } = await resolveTarget(
       hdcPath, deviceId,
       x !== undefined ? Number(x) : undefined,
@@ -59,8 +57,7 @@ async function handleDoubleClick(
 ): Promise<void> {
   await withSpinner('Executing doubleclick...', 'doubleclick failed', async (spinner) => {
     assertTargetParams(x, y, options.id, options.window);
-    const { hdcPath, deviceManager } = await initTooling();
-    const deviceId = await resolveSerial(deviceManager, options.device);
+    const { hdcPath, deviceId } = await initDevice(options.device);
     const { x: cx, y: cy } = await resolveTarget(
       hdcPath, deviceId,
       x !== undefined ? Number(x) : undefined,
@@ -79,8 +76,7 @@ async function handleLongClick(
 ): Promise<void> {
   await withSpinner('Executing longclick...', 'longclick failed', async (spinner) => {
     assertTargetParams(x, y, options.id, options.window);
-    const { hdcPath, deviceManager } = await initTooling();
-    const deviceId = await resolveSerial(deviceManager, options.device);
+    const { hdcPath, deviceId } = await initDevice(options.device);
     const { x: cx, y: cy } = await resolveTarget(
       hdcPath, deviceId,
       x !== undefined ? Number(x) : undefined,
@@ -102,8 +98,7 @@ async function handleSwipe(
     assertCoord(x2, 'x2');
     assertCoord(y2, 'y2');
     const speed = assertSpeed(options.speed);
-    const { hdcPath, deviceManager } = await initTooling();
-    const deviceId = await resolveSerial(deviceManager, options.device);
+    const { hdcPath, deviceId } = await initDevice(options.device);
     const args = ['uitest', 'uiInput', 'swipe', x1, y1, x2, y2];
     if (speed) {
       args.push(speed);
@@ -123,8 +118,7 @@ async function handleFling(
     assertCoord(x2, 'x2');
     assertCoord(y2, 'y2');
     const speed = assertSpeed(options.speed);
-    const { hdcPath, deviceManager } = await initTooling();
-    const deviceId = await resolveSerial(deviceManager, options.device);
+    const { hdcPath, deviceId } = await initDevice(options.device);
     const args = ['uitest', 'uiInput', 'fling', x1, y1, x2, y2];
     if (speed) {
       args.push(speed);
@@ -144,8 +138,7 @@ async function handleDrag(
     assertCoord(x2, 'x2');
     assertCoord(y2, 'y2');
     const speed = assertSpeed(options.speed);
-    const { hdcPath, deviceManager } = await initTooling();
-    const deviceId = await resolveSerial(deviceManager, options.device);
+    const { hdcPath, deviceId } = await initDevice(options.device);
     const args = ['uitest', 'uiInput', 'drag', x1, y1, x2, y2];
     if (speed) {
       args.push(speed);
@@ -164,8 +157,7 @@ async function handleDircFling(
     if (code === undefined) {
       throw new Error(`Invalid direction "${direction}". Valid values: ${Object.keys(DIRECTION_MAP).join(', ')}`);
     }
-    const { hdcPath, deviceManager } = await initTooling();
-    const deviceId = await resolveSerial(deviceManager, options.device);
+    const { hdcPath, deviceId } = await initDevice(options.device);
     await runHdcShell(hdcPath, deviceId, ['uitest', 'uiInput', 'dircFling', code]);
     spinner.succeed(`dircfling ${direction}`);
   });
@@ -180,8 +172,7 @@ async function handleText(
   await withSpinner('Executing text input...', 'input failed', async (spinner) => {
     assertTargetParams(x, y, options.id, options.window, false);
     assertNonEmpty(text, 'text');
-    const { hdcPath, deviceManager } = await initTooling();
-    const deviceId = await resolveSerial(deviceManager, options.device);
+    const { hdcPath, deviceId } = await initDevice(options.device);
     if (x !== undefined) {
       await runHdcShell(hdcPath, deviceId, ['uitest', 'uiInput', 'inputText', `${x}`, `${y}`, text]);
       spinner.succeed(`input ${text} at (${x}, ${y})`);

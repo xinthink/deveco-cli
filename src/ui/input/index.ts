@@ -16,8 +16,7 @@ export {
   assertTargetParams,
 } from './types.js';
 export {
-  initTooling,
-  resolveSerial,
+  initDevice,
   resolveTarget,
   runHdcShell,
 } from './adapter.js';
