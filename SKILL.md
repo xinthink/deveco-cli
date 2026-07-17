@@ -126,6 +126,21 @@ Manage HarmonyOS skills in AI agents/projects.
 - `add (--all | --skill <name>) [--agent <a,b…>] [--project <path>] [--path <path>] [-f]`: Install.
 - `remove --skill <name> [...]`: Uninstall.
 
+### `devecocli check compat` `[Outside sandbox]`
+Scan source code for breaking API changes between two SDK versions. Built on top of DevEco Studio's `arkanalyzer-apiscan` plugin.
+- `versions`: List available target SDK versions.
+- Default (no args): project-level scan.
+- `--modules <m1> [m2...]`: Module-level scan.
+- `<file1> [file2...]`: File-level scan (`.ets`/`.c`/`.cpp` only).
+- `--source-version <v>` (Req) / `--target-version <v>` (Req): SDK version pair. Run `devecocli check compat versions` first; on zsh, **quote the value** (e.g. `"<source_version>"`, `"<target_version>"`).
+- `--format <default|csv|json>` (default: `default`): Console output accepts `default` (text) or `json`; file output (via `--output-path`) accepts `default` (csv), `csv`, or `json`. `csv` requires `--output-path`.
+- `--output-path <path>`: Directory (writes `apiChange-*.csv`/`apiChange-*.json`) or explicit file (extension must match `--format`).
+- `--limit <n>` (default `100`): Max records shown on console when no `--output-path`.
+
+Validation order: `files` + `--modules` mutually exclusive → `--source-version`/`--target-version` required → `csv` requires `--output-path` → project dir valid → modules exist → files exist + extension valid → versions in catalog + `target > source` → format/extension match → output target writable.
+
+*Ex*: `devecocli check compat --source-version "<source_version>" --target-version "<target_version>" --output-path ./report`
+
 ## 3. Maintenance
 
 - **`devecocli update`** `[Outside sandbox]`: Update CLI to latest version.

@@ -18,6 +18,10 @@ import {
 const DOWNLOAD_URL = 'https://developer.huawei.com/consumer/cn/download/';
 const CLT_VERSION = /^#\s*Version:\s*(\S+)/;
 
+export function getDownloadUrl(): string {
+  return DOWNLOAD_URL;
+}
+
 type InstallSourceType = 'clt' | 'studio';
 
 type SignatureVerificationResult = {
