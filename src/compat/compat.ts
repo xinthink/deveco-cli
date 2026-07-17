@@ -14,37 +14,23 @@ import {
   copyFileSync,
   writeFileSync,
 } from 'fs';
-import { execFileSync } from 'child_process';
+import { execa } from 'execa';
 import { ToolProvider } from '../toolchain/index.js';
 import { HvigorAdapter } from '../utils/hvigor-adapter.js';
 import { red, cyan, yellow } from 'colorette';
 import { debugLog } from '../utils/logger.js';
 import ora from 'ora';
 
-/**
- * `--format` 取值。`default` 默认为 `csv`
- */
-const FORMAT_ALIASES: Readonly<Record<string, 'csv' | 'json'>> = {
-  csv: 'csv',
-  default: 'csv',
-  json: 'json',
-};
+const FORMAT_VALUES = ['default', 'csv', 'json'] as const;
+type FormatValue = typeof FORMAT_VALUES[number];
 
-function parseFormatValue(value: string): 'csv' | 'json' {
-  const normalized = FORMAT_ALIASES[value];
-  if (normalized) {
-    return normalized;
+function parseFormat(value: string): FormatValue {
+  if (FORMAT_VALUES.includes(value as FormatValue)) {
+    return value as FormatValue;
   }
   throw new InvalidArgumentError(
-    `--format must be one of: csv, json (got "${value}")`
+    `--format must be one of: ${FORMAT_VALUES.join(', ')} (got "${value}")`
   );
-}
-
-/**
- * commander 用的 `--format` 校验器。
- */
-function parseFormat(value: string): 'csv' | 'json' {
-  return parseFormatValue(value);
 }
 
 /**
@@ -144,7 +130,8 @@ function readFormatFromArgv(fallback: 'csv' | 'json'): 'csv' | 'json' {
       value = arg.slice('--format='.length);
     }
     if (value !== undefined) {
-      return parseFormatValue(value);
+      const parsed = parseFormat(value);
+      return parsed === 'default' ? 'csv' : parsed;
     }
   }
   return fallback;
@@ -184,7 +171,7 @@ interface CheckOptions {
   sourceVersion?: string;
   targetVersion?: string;
   modules?: string[];
-  format: 'csv' | 'json';
+  format: FormatValue;
   outputPath?: string;
   limit: number;
 }
@@ -517,11 +504,13 @@ async function runScanTool(args: string[]): Promise<string> {
   const toolProvider = await ToolProvider.new();
   const cwd = path.dirname(args[0]);
   try {
-    const stdout = execFileSync(toolProvider.nodePath, args, {
+    const result = await execa(toolProvider.nodePath, args, {
       cwd,
-      stdio: ['ignore', 'pipe', 'inherit'],
-      encoding: 'utf8',
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'inherit',
     });
+    const stdout = result.stdout;
     if (process.env.DEVECO_CLI_DEBUG) {
       console.log(cyan('[compat:check] === api-change-scan.js stdout ==='));
       process.stdout.write(stdout);
@@ -567,6 +556,12 @@ function validateCheckOptions(files: string[], options: CheckOptions): void {
   }
   if (!options.targetVersion) {
     throw new Error('--target-version is required.');
+  }
+  if (!options.outputPath && options.format === 'csv') {
+    throw new Error(
+      '--format csv requires --output-path. ' +
+        'For console output, use --format json or --format default (or omit the flag).'
+    );
   }
 }
 
@@ -633,7 +628,7 @@ function resolveScanScript(pluginPath: string): string {
 function outputRecords(
   records: ApiChangeRecord[],
   csvPath: string | null,
-  format: 'csv' | 'json',
+  format: FormatValue,
   limit: number,
   outputTargetKind: 'file' | 'dir' | 'none'
 ): void {
@@ -702,48 +697,29 @@ type OutputTarget =
   | { kind: 'none' };
 
 /**
- * `--output-path` 文件扩展名对应的 `--format`。
- */
-const EXT_TO_FORMAT: Readonly<Record<FileOutputExt, 'csv' | 'json'>> = {
-  '.csv': 'csv',
-  '.json': 'json',
-};
-
-/**
- * 校验文件扩展名与格式是否匹配。
- */
-function validateExtMatchesFormat(
-  ext: FileOutputExt,
-  format: 'csv' | 'json'
-): void {
-  if (EXT_TO_FORMAT[ext] !== format) {
-    throw new Error(
-      `The --output-path file extension '${ext}' does not match --format ${format}. ` +
-        `Use --format ${EXT_TO_FORMAT[ext]}, or rename the file to a matching extension.`
-    );
-  }
-}
-
-/**
- * 解析输出目标类型。
+ * 解析输出目标类型，同时校验 format 与 outputPath 的组合。
  */
 function resolveOutputTarget(
   outputPath: string | undefined,
-  format: 'csv' | 'json'
+  format: FormatValue
 ): OutputTarget {
   if (!outputPath) {
     return { kind: 'none' };
   }
+
   const ext = path.extname(outputPath).toLowerCase();
-  if (isFileOutputExt(ext)) {
-    validateExtMatchesFormat(ext, format);
-    return {
-      kind: 'file',
-      filePath: path.resolve(outputPath),
-      ext,
-    };
+  if (!isFileOutputExt(ext)) {
+    return { kind: 'dir', dirPath: path.resolve(outputPath) };
   }
-  return { kind: 'dir', dirPath: path.resolve(outputPath) };
+
+  const isCsvFormat = format === 'default' || format === 'csv';
+  if ((ext === '.csv' && !isCsvFormat) || (ext === '.json' && format !== 'json')) {
+    throw new Error(
+      `The --output-path file extension '${ext}' does not match --format ${format}. ` +
+        `Use --format ${ext === '.json' ? 'json' : 'default'}, or rename the file.`
+    );
+  }
+  return { kind: 'file', filePath: path.resolve(outputPath), ext };
 }
 
 /**
@@ -867,25 +843,29 @@ async function handleCheckCommand(
   files: string[],
   options: CheckOptions
 ): Promise<void> {
+  // [1] 参数校验、项目发现、版本校验、输出目标解析
   const { project, scriptPath, target } = await prepareCheckContext(files, options);
 
   const spinner = ora({ text: 'Running compatibility check...', color: 'cyan' }).start();
 
   try {
+    // [2] 执行 hvigor compileNative 生成 native 产物
     await runHvigorCompileNative(options);
 
+    // [3] 执行 API 变更扫描
     const args = buildToolArgs(scriptPath, files, project, options);
     debugLogRunnableCommand(scriptPath, args);
-
     const stdout = await runScanTool(args);
+
+    // [4] 解析扫描结果
     const tmpCsvPath = extractCsvPathFromOutput(stdout, os.tmpdir());
     if (!tmpCsvPath) {
       throw new Error('api-change-scan.js did not print "CSV saved to: <path>" — tool output format may have changed.');
     }
     debugLog(cyan(`[compat:check] tmp csv: "${tmpCsvPath}"`));
-
     const records = parseApiChangeCsv(tmpCsvPath);
 
+    // 输出结果文件
     let finalPath: string | null = null;
     if (target.kind === 'file') {
       writeReportFile(tmpCsvPath, records, target.filePath, target.ext);
@@ -895,6 +875,7 @@ async function handleCheckCommand(
     }
     cleanupTmpReport(tmpCsvPath);
 
+    // [5] 输出结果到控制台
     spinner.stop();
     outputRecords(records, finalPath, options.format, options.limit, target.kind);
   } catch (error) {
@@ -933,9 +914,9 @@ compatCommand
   )
   .option(
     '--format <format>',
-    'Output format (choices: csv, json; "default" is accepted as an alias for csv)',
+    'Output format: "json" or "default" (text) for console; "csv", "json", or "default" for file output (--output-path). "csv" requires --output-path.',
     parseFormat,
-    'csv'
+    'default'
   )
   .option(
     '--output-path <path>',
