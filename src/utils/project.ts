@@ -88,6 +88,13 @@ export class Project {
     }
   }
 
+  private getRunnableModuleNames(): string {
+    return this.profile.modules
+      .map((m) => m.name)
+      .filter((name) => this.getModuleType(name) !== 'har')
+      .join(', ');
+  }
+
   public getModuleType(moduleName: string): string {
     const moduleNode = this.profile.modules.find((m) => m.name === moduleName);
     if (!moduleNode) {
@@ -291,7 +298,8 @@ export class Project {
 
     const moduleNode = this.profile.modules.find((m) => m.name === moduleName);
     if (!moduleNode) {
-      throw new Error(`Module '${moduleName}' not found`);
+      const available = this.getRunnableModuleNames();
+      throw new Error(`Module '${moduleName}' not found. Available modules: ${available}`);
     }
 
     const moduleType = this.getModuleType(moduleName);
