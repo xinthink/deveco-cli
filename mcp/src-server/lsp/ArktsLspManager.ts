@@ -153,13 +153,21 @@ export class ArktsLspManager {
      * 锁策略：
      * - 原子性尝试获取锁（无重试），若其他进程已持有构建锁则返回 skipped
      * - 消除 isBuildLocked + withBuildLock 之间的 TOCTOU 竞态
+     *
+     * options.skipHvigorSync：仅跳过 hvigor --sync（build init），ohpm install 照常执行。
+     * 用于配置未变更的场景——依赖仍可能被外部清理，故 ohpm 不可省略。
      */
-    static async handleSyncProject(workspaceRoot: string, sdkPath?: string): Promise<SyncResult> {
+    static async handleSyncProject(
+        workspaceRoot: string,
+        sdkPath?: string,
+        options?: { skipHvigorSync?: boolean },
+    ): Promise<SyncResult> {
         logger.info('[ArktsLspManager] Received arkts/syncProject');
         if (!workspaceRoot || !sdkPath) {
             logger.error('[ArktsLspManager] handleSyncProject: workspaceRoot or sdkPath is empty');
             return { status: 'failed', reason: 'workspaceRoot or sdkPath is empty' };
         }
+        const skipHvigor = options?.skipHvigorSync === true;
         const result = await tryWithBuildLock(
             workspaceRoot,
             async () => {
@@ -167,6 +175,10 @@ export class ArktsLspManager {
                 if (!installSuccess) {
                     logger.error('[ArktsLspManager] ohpm install failed');
                     return { status: 'failed' as const, reason: 'ohpm install failed' };
+                }
+                if (skipHvigor) {
+                    logger.info('[ArktsLspManager] hvigor sync skipped (config up-to-date)');
+                    return { status: 'success' as const };
                 }
                 const success = await syncProject(workspaceRoot, sdkPath);
                 if (success) {
