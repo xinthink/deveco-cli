@@ -43,6 +43,9 @@ export const ApiEndpoints = {
   LOGIN_FAILED_PATH: 'console/DevEcoCLI/loginFailed',
 
   LOGOUT_PATH: 'authrouter/auth/api/logout',
+
+  AGC_TEAM_LIST_URL:
+    'https://connect-api.cloud.huawei.com/api/ups/user-permission-service/v1/user-team-list',
 } as const;
 
 export const CryptoConstants = {
@@ -70,6 +73,7 @@ export const DEFAULT_LOGIN_CONFIG = {
   successRedirectUrl: ApiEndpoints.LOGIN_SUCCESS_PATH,
   failedRedirectUrl: ApiEndpoints.LOGIN_FAILED_PATH,
   logoutUrl: ApiEndpoints.LOGOUT_PATH,
+  agcTeamListUrl: ApiEndpoints.AGC_TEAM_LIST_URL,
   appId: AppConfig.APP_ID,
   timeout: TimeConstants.LOGIN_TIMEOUT_MS,
   countryCode: 'CN',

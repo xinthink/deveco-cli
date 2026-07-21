@@ -14,8 +14,6 @@ export interface UserInfo {
   countryCode: string;
   language: string;
   isRealName: boolean;
-  teamList?: Map<string, string>;
-  currentTeamId?: string;
 }
 
 export interface LoginResult {
@@ -42,6 +40,7 @@ export interface LoginConfig {
   successRedirectUrl: string;
   failedRedirectUrl: string;
   logoutUrl: string;
+  agcTeamListUrl: string;
   appId: string;
   timeout: number;
   countryCode?: string;
@@ -61,4 +60,34 @@ export interface JwtPayload {
   userName: string;
   exp?: number;
   iat?: number;
+}
+
+// ============ Types for Team List ============
+
+export interface Team {
+  id: string;
+  upSiteId: number;
+  name: string;
+  countryCode: string;
+  siteId: number;
+  userType: number;
+  lastLoginTime: string;
+  isMirror: boolean;
+}
+
+export interface AgcRet {
+  code: number;
+  msg?: string;
+}
+
+export interface AgcTeamListResponse {
+  ret?: AgcRet;
+  teams?: Team[];
+}
+
+export const AGC_SUCCESS_CODE = 0;
+
+export interface TeamListResult {
+  userId: string;
+  teamList: Team[];
 }
