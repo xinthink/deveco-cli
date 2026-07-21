@@ -3,8 +3,14 @@
  * SPDX-License-Identifier: MIT
  */
 export const TimeConstants = {
+  /** 登录超时时间：10 分钟 */
+  LOGIN_TIMEOUT_MS: 600000,
+
   /** HTTP 请求默认超时：20 秒 */
   HTTP_TIMEOUT_MS: 20000,
+
+  /** Token 有效期：30 天 */
+  TOKEN_VALIDITY_DAYS: 30,
 } as const;
 
 /**

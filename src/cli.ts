@@ -15,6 +15,9 @@ import runCommand from './commands/run.js';
 import updateCommand from './commands/update.js';
 import deviceCommand from './commands/device.js';
 import emulatorCommand from './commands/emulator.js';
+import loginCommand from './commands/login.js';
+import logoutCommand from './commands/logout.js';
+import whoamiCommand from './commands/whoami.js';
 import skillsCommand from './commands/skills.js';
 
 import logCommand from './commands/log.js';
@@ -36,6 +39,9 @@ program.addCommand(runCommand);
 program.addCommand(updateCommand);
 program.addCommand(deviceCommand);
 program.addCommand(emulatorCommand);
+program.addCommand(loginCommand);
+program.addCommand(logoutCommand);
+program.addCommand(whoamiCommand);
 
 program.addCommand(skillsCommand);
 program.addCommand(logCommand);
@@ -53,7 +59,7 @@ const rawArgs = process.argv.slice(2);
 if (rawArgs.length >= 2 && rawArgs[rawArgs.length - 1] === 'help') {
   process.argv = [...process.argv.slice(0, -1), '--help'];
 }
-const TOOLCHAIN_FREE_COMMANDS = new Set(['update']);
+const TOOLCHAIN_FREE_COMMANDS = new Set(['update', 'logout', 'whoami']);
 
 // Use `preAction` (not `preSubcommand`) so `-h` / `--help` on any subcommand
 program.hook('preAction', async (_thisCommand, actionCommand) => {
