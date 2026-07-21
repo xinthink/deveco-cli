@@ -6,6 +6,10 @@ import { Command } from 'commander';
 import { green, red, cyan } from 'colorette';
 import { execa } from 'execa';
 
+function getPublishTag(): string {
+  return process.env.npm_config_tag || 'latest';
+}
+
 function getPackageName(): string {
   return process.env.npm_package_name || 'deveco-cli';
 }
@@ -19,22 +23,23 @@ const updateCommand = new Command('update')
   .action(async () => {
     const packageName = getPackageName();
     const currentVersion = getCurrentVersion();
+    const publishTag = getPublishTag();
 
     console.log(cyan(`Checking for updates...`));
 
     try {
-      // Get the latest version from npm registry
+      // Get the tagged version from npm registry
       const { stdout: latestVersion } = await execa('npm', [
         'view',
         packageName,
-        'version',
+        `dist-tags.${publishTag}`,
       ]);
       const latest = latestVersion.trim();
 
-      if (latest === currentVersion) {
+      if (!latest || latest === currentVersion) {
         console.log(
           green(
-            `\n${packageName} is already up to date (version ${currentVersion}.)`
+            `\n${packageName} is already up to date (v${currentVersion}, tag: ${publishTag})`
           )
         );
         return;
@@ -45,8 +50,8 @@ const updateCommand = new Command('update')
       );
       console.log(cyan(`Updating ${packageName}...`));
 
-      // Execute npm install -g <package-name>@latest
-      await execa('npm', ['install', '-g', `${packageName}@latest`], {
+      // Execute npm install -g <package-name>@<tag>
+      await execa('npm', ['install', '-g', `${packageName}@${publishTag}`], {
         stdio: 'inherit',
       });
 
