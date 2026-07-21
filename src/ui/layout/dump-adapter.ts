@@ -214,6 +214,19 @@ export class ArkUiDumpAdapter {
     return raws.map((raw) => toSummaryTree(raw, depth, 0));
   }
 
+  async dumpFullTreeByDisplays(
+    serial: string,
+    depth: number,
+    displayIds: number[]
+  ): Promise<{ displayId: number; tree: ArkUiNode }[]> {
+    const results: { displayId: number; tree: ArkUiNode }[] = [];
+    for (const displayId of displayIds) {
+      const raw = await this.fetchRawDump(serial, undefined, displayId);
+      results.push({ displayId, tree: toSummaryTree(raw, depth, 0) });
+    }
+    return results;
+  }
+
   async dumpCollapsedTree(
     serial: string,
     depth: number,

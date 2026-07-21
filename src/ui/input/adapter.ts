@@ -6,7 +6,10 @@
 import { ToolProvider } from '../../toolchain/tool-provider.js';
 import { resolveDeviceSerial } from '../../utils/device-selector.js';
 import { ArkUiDumpAdapter } from '../layout/dump-adapter.js';
+import { WindowAdapter } from '../window/fetcher.js';
+import type { WindowInfo } from '../window/types.js';
 import { findNodesInTree } from '../layout/parsers.js';
+import type { ArkUiNode } from '../layout/types.js';
 import { runHdcWithRetry } from '../../utils/hdc-param.js';
 
 export async function initDevice(deviceArg?: string) {
@@ -26,18 +29,89 @@ export async function resolveTarget(
   if (x !== undefined && y !== undefined) {
     return { x, y };
   }
-  const adapter = new ArkUiDumpAdapter(hdcPath);
-  const tree = await adapter.dumpFullTree(deviceId, 0, windowId, !windowId);
-  const matched = findNodesInTree(tree, nodeId!);
+  if (nodeId === undefined) {
+    throw new Error('Either provide x y coordinates or use --id');
+  }
+
+  const windowAdapter = new WindowAdapter(hdcPath, deviceId);
+  const windows = await windowAdapter.listWindows({ all: true });
+  const dumpAdapter = new ArkUiDumpAdapter(hdcPath);
+  return resolveByNodeId(dumpAdapter, deviceId, windows, nodeId, windowId);
+}
+
+async function resolveByNodeId(
+  dumpAdapter: ArkUiDumpAdapter,
+  deviceId: string,
+  windows: WindowInfo[],
+  nodeId: string,
+  windowId: string | undefined
+): Promise<{ x: number; y: number }> {
+  if (windowId !== undefined) {
+    const win = windows.find((w) => String(w.id) === windowId);
+    if (win && win.displayId !== 0) {
+      throw new Error(
+        `Window "${windowId}" is on display ${win.displayId}. ` +
+        'The current command only supports operations on the primary display.'
+      );
+    }
+    const tree = await dumpAdapter.dumpFullTree(deviceId, 0, windowId, false);
+    return findSingleMatch(tree, nodeId);
+  }
+  return resolveAcrossDisplays(dumpAdapter, deviceId, windows, nodeId);
+}
+
+async function resolveAcrossDisplays(
+  dumpAdapter: ArkUiDumpAdapter,
+  deviceId: string,
+  windows: WindowInfo[],
+  nodeId: string
+): Promise<{ x: number; y: number }> {
+  const displayIds = [...new Set(windows.map((w) => w.displayId))];
+  const displayTrees = await dumpAdapter.dumpFullTreeByDisplays(deviceId, 0, displayIds);
+
+  const allMatches: { node: ArkUiNode; displayId: number }[] = [];
+  for (const { displayId, tree } of displayTrees) {
+    for (const node of findNodesInTree([tree], nodeId)) {
+      allMatches.push({ node, displayId });
+    }
+  }
+
+  if (allMatches.length === 0) {
+    throw new Error(`Node "${nodeId}" not found.`);
+  }
+  if (allMatches.length > 1) {
+    throw new Error(`Multiple nodes found with id "${nodeId}".`);
+  }
+  if (allMatches[0].displayId !== 0) {
+      throw new Error(
+        `Node "${nodeId}" is on display ${allMatches[0].displayId}. ` +
+        'The current command only supports operations on the primary display.'
+      );
+  }
+  return extractNodeBounds(allMatches[0].node, nodeId);
+}
+
+function findSingleMatch(
+  tree: ArkUiNode[],
+  nodeId: string
+): { x: number; y: number } {
+  const matched = findNodesInTree(tree, nodeId);
   if (matched.length === 0) {
     throw new Error(`Node "${nodeId}" not found.`);
   }
   if (matched.length > 1) {
     throw new Error(`Multiple nodes found with id "${nodeId}".`);
   }
-  const nodeBounds = matched[0].bounds;
+  return extractNodeBounds(matched[0], nodeId);
+}
+
+function extractNodeBounds(
+  node: ArkUiNode,
+  nodeId: string
+): { x: number; y: number } {
+  const nodeBounds = node.bounds;
   if (!nodeBounds) {
-    throw new Error(`Node "${nodeId}" not found.`);
+    throw new Error(`Node "${nodeId}" has no bounds.`);
   }
   const [left, top, right, bottom] = nodeBounds;
   return {
@@ -57,8 +131,8 @@ export async function runHdcShell(
   if (result.exitCode !== 0) {
     throw new Error(
       result.stderr ||
-        result.stdout ||
-        `uitest exited with code ${result.exitCode}`
+      result.stdout ||
+      `uitest exited with code ${result.exitCode}`
     );
   }
 
