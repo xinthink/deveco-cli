@@ -252,16 +252,18 @@ export class EmulatorManager {
     action: EmulatorControlAction
   ): Promise<void> {
     await this.assertControlCommandSupported();
+    const emulators = await this.listEmulators();
+    const target = emulators.find((item) => item.name === instance);
+    if (!target) {
+      throw new Error(`Emulator "${instance}" not found.`);
+    }
+    if (!(await this.isAlreadyRunning(target.name, target))) {
+      throw new Error(`Emulator "${instance}" is not running.`);
+    }
     if (action.type === 'folded-state') {
-      const target = (await this.listEmulators()).find(
-        (item) => item.name === instance
-      );
-      if (!target) {
-        throw new Error(`Emulator "${instance}" not found.`);
-      }
       assertFoldedStateSupported(target, action.state);
     }
-    const args = this.buildControlArgs(instance, action);
+    const args = this.buildControlArgs(target.name, action);
     debugLog(
       `[EmulatorManager] control ${formatControlAction(action)} -> ${commandText(this.emulatorPath, args)}`
     );

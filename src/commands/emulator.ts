@@ -719,7 +719,7 @@ function batteryAction(options: BatteryOptions): EmulatorControlAction {
   if (options.level !== undefined) {
     actions.push({
       type: 'battery',
-      level: parseRangeInteger('--level', options.level, 0, 100),
+      level: parseRangeInteger('--level', options.level, 1, 100),
     });
   }
   if (options.status !== undefined) {
@@ -1119,7 +1119,7 @@ emulatorCommand
   .command('battery')
   .description('Set battery level or charging status')
   .requiredOption('--target <nameOrSerial>', 'Target emulator name or serial')
-  .option('--level <0-100>', 'Battery level, SOC (integer 0-100)')
+  .option('--level <1-100>', 'Battery level, SOC (integer 1-100)')
   .addOption(
     new Option('--status <status>', 'Charging status').choices([
       'charging',
