@@ -432,6 +432,35 @@ export class ArktsCheckTool {
   }
 
   /**
+    * workspaceSymbol 的结构化版本（供 server 层合并 ArkTS + C++ 结果用，M4-2 决议）。
+    * 返回 SymbolInformation[] | null（null 表示无结果或出错）。
+    * 不改变现有 {@link handleWorkspaceSymbol} 行为。
+    */
+  async handleWorkspaceSymbolRaw(
+    query: string
+  ): Promise<unknown[] | null> {
+    if (!this.initialized) {
+      return null;
+    }
+    try {
+      const result = await this.manager!.sendFeatureRequest(
+        LSP_METHOD.WORKSPACE_SYMBOL,
+        { query },
+      );
+      if (Array.isArray(result)) {
+        return result;
+      }
+      if (result == null) {
+        return null;
+      }
+      return [result];
+    } catch (err) {
+      mcpLog.error(`handleWorkspaceSymbolRaw failed: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
+  /**
    * documentSymbol：获取单个文件内的符号树（函数/类/变量列表 + range）。
    * 需要 didOpen/didClose 生命周期（与 hover/definition 一致），
    * 入参只需文件路径，不需要位置。

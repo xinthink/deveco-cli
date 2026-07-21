@@ -5,6 +5,6 @@
 
 export { DevecoCliMcpServer, createMcpServer } from './server.js';
 export type { McpServerConfig } from './server.js';
-export { ArktsCheckTool, CppCheckTool } from './tools/index.js';
+export { ArktsCheckTool, CppCheckTool, ClangdLspTool } from './tools/index.js';
 export { ToolRouter, createToolRouter } from './router.js';
 export type { ToolDefinition, ToolHandler, RegisteredTool } from './router.js';
