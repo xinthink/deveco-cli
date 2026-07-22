@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { TimeConstants } from './network';
+import { TimeConstants } from '../config/network';
 
 /**
  * 应用配置常量

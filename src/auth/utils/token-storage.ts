@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { homedir } from 'os';
 import { LocalCrypto } from '../utils/local-crypto.js';
-import { AppConfig } from '../config/constants';
+import { AppConfig } from '../auth-config';
 
 export class TokenStorage {
   private tokenFilePath: string;

@@ -2,9 +2,9 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { httpClient } from '../utils/http-client';
+import { httpClient } from '../../utils/http-client';
 import { tokenStorage } from './token-storage';
-import type { TokenCheckResponse } from '../types/auth';
+import type { TokenCheckResponse } from '../types/auth-types';
 
 /**
  * Token 检查服务

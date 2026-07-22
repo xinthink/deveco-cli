@@ -9,7 +9,7 @@ export {
   DEFAULT_LOGIN_CONFIG,
   ApiEndpoints,
   CryptoConstants,
-} from './auth';
+} from '../auth/auth-config';
 
 // 网络相关常量
 export { TimeConstants, NetworkConstants } from './network';

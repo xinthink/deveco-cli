@@ -7,7 +7,7 @@ import * as crypto from 'crypto';
 import { URL } from 'url';
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { AddressInfo } from 'net';
-import type { CallbackData } from '../types/auth';
+import type { CallbackData } from '../types';
 
 // ============ LocalAuthServer ============
 export class LocalAuthServer {

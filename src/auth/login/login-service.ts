@@ -4,14 +4,14 @@
  */
 import * as crypto from 'crypto';
 import { LocalAuthServer } from './local-auth-server';
-import { tokenStorage } from './token-storage';
-import type { UserInfo, LoginConfig } from '../types/auth';
+import { tokenStorage } from '../utils/token-storage';
+import type { UserInfo, LoginConfig } from '../types/auth-types';
 import { getRegionalizedBaseUrl } from '../utils/region';
-import { DEFAULT_LOGIN_CONFIG } from '../config/constants';
-import { openBrowser } from '../utils/browser';
-import { tokenChecker } from './token-checker';
+import { DEFAULT_LOGIN_CONFIG } from '../auth-config';
+import { openBrowser } from './browser';
+import { tokenChecker } from '../utils/token-checker';
 import { userInfoFetcher } from './user-info-fetcher';
-import { httpClient } from '../utils/http-client';
+import { httpClient } from '../../utils/http-client';
 
 /**
  * 登录服务类
@@ -70,6 +70,11 @@ export class LoginService {
       const callbackData = await this.server.waitForCallback(
         this.config.timeout
       );
+
+      // 海外账户不在支持范围内
+      if (callbackData.siteId !== '1') {
+        throw new Error('Non-China accounts are not supported.');
+      }
 
       const jwtToken = await userInfoFetcher.getJwtToken(
         callbackData.tempToken,

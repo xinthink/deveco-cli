@@ -3,20 +3,19 @@
  * SPDX-License-Identifier: MIT
  */
 import axios from 'axios';
-import { tokenStorage } from './token-storage.js';
+import { tokenStorage } from '../utils/token-storage.js';
 import { getRegionalizedBaseUrl } from '../utils/region.js';
-import { DEFAULT_LOGIN_CONFIG } from '../config/constants.js';
+import { DEFAULT_LOGIN_CONFIG } from '../auth-config.js';
 import {
   AGC_SUCCESS_CODE,
   type Team,
   type TeamListResult,
   type LoginConfig,
   type AgcTeamListResponse,
-} from '../types/auth.js';
-import { debugLog } from '../utils/logger.js';
+} from '../types/auth-types.js';
+import { debugLog } from '../../utils/logger.js';
 
-const MISSING_TOKEN_HINT =
-  'No JWT in local storage. Run `devecocli login` first.';
+const MISSING_TOKEN_HINT = 'No JWT in local storage. Run `devecocli auth login` first.';
 
 export function parseTeamListResponse(raw: unknown): Team[] {
   if (raw == null || typeof raw !== 'object') {
@@ -67,7 +66,7 @@ export class TeamListAdapter {
 
     const { accessToken, userId } = await this.fetchAccessToken(jwtToken);
     if (!accessToken) {
-      throw new Error('Session expired. Run `devecocli login` again.');
+      throw new Error('Session expired. Run `devecocli auth login` again.');
     }
 
     const body = await this.fetchTeamList(accessToken, userId ?? '');
@@ -109,9 +108,7 @@ export class TeamListAdapter {
     }
 
     if (response.status === 401) {
-      throw new Error(
-        'AGC rejected the AGC token. Run `devecocli login` again to refresh.'
-      );
+      throw new Error('AGC rejected the AGC token. Run `devecocli auth login` again.');
     }
     if (response.status !== 200) {
       throw new Error(`Failed to list teams: HTTP ${response.status}`);
@@ -149,7 +146,7 @@ export class TeamListAdapter {
 
     if (response.status !== 200) {
       throw new Error(
-        `Failed to refresh accessToken: HTTP ${response.status}. Run \`devecocli login\` again.`
+        `Failed to refresh accessToken: HTTP ${response.status}. Run \`devecocli auth login\` again.`
       );
     }
 
@@ -159,7 +156,7 @@ export class TeamListAdapter {
         : response.data;
     const parsed = body as AgcJwtCheckResponse;
     if (!parsed.status) {
-      throw new Error('JWT is invalid. Run `devecocli login` again.');
+      throw new Error('JWT is invalid. Run `devecocli auth login` again.');
     }
     return {
       accessToken: parsed.userInfo?.accessToken,

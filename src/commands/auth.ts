@@ -7,14 +7,14 @@ import { red, cyan } from 'colorette';
 import * as readline from 'readline';
 import { loginService, tokenStorage, getTeamList, type Team } from '../auth';
 import { httpClient } from '../utils/http-client';
-import { getRegionalizedBaseUrl } from '../utils/region';
+import { getRegionalizedBaseUrl } from '../auth/utils/region';
 import { ApiEndpoints } from '../config/constants';
 
 function renderTeamTable(teams: Team[]): string {
   if (teams.length === 0) {
     return cyan('No teams found for the current user.');
   }
-  const header = ['ID', 'NAME'];
+  const header = ['Id', 'Name'];
   const rows = teams.map((team) => [team.id, team.name]);
   const widths = header.map((cell, idx) =>
     Math.max(cell.length, ...rows.map((row) => row[idx].length))

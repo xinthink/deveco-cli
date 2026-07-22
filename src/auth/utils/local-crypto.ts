@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { homedir } from 'os';
-import { AppConfig, CryptoConstants } from '../config/constants.js';
+import { AppConfig, CryptoConstants } from '../auth-config.js';
 
 interface WrappedDekData {
   version: number;

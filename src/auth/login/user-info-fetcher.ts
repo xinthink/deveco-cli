@@ -2,14 +2,14 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { httpClient } from '../utils/http-client';
-import type { UserInfo, TokenCheckResponse, JwtPayload } from '../types/auth';
+import { httpClient } from '../../utils/http-client';
+import type { UserInfo, TokenCheckResponse, JwtPayload } from '../types/auth-types';
 import { parseJwtPayload, isValidJwtFormat } from '../utils/jwt';
 import {
   getLanguageByCountryCode,
   getCountryCodeBySiteId,
 } from '../utils/region';
-import { AppConfig } from '../config/constants';
+import { AppConfig } from '../auth-config';
 
 /**
  * 用户信息获取服务
@@ -36,6 +36,7 @@ export class UserInfoFetcher {
     const actualTempToken = tempToken.split('&')[0];
 
     const countryCode = getCountryCodeBySiteId(siteId);
+    const regionalizedBaseUrl = getRegionalizedBaseUrl();
 
     const params = {
       tempToken: actualTempToken,
@@ -44,12 +45,11 @@ export class UserInfoFetcher {
       appid: appId,
     };
 
-    const regionalizedBaseUrl = getRegionalizedBaseUrl();
     const url = `${regionalizedBaseUrl}/${tempTokenCheckUrl}`;
     const response = await httpClient.get(url, { params });
 
     if (response.statusCode !== 200) {
-      throw new Error(`Failed to get jwtToken: ${response.statusCode}`);
+      throw new Error(`Failed to get jwtToken: status=${response.statusCode}`);
     }
 
     const jwtToken = response.data.trim();

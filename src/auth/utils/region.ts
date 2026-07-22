@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { ApiEndpoints } from '../config/constants';
+import { ApiEndpoints } from '../auth-config';
 
 /**
  * 国家代码枚举
