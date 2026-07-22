@@ -24,6 +24,7 @@ import serveCommand from './commands/serve.js';
 import docCommand from './commands/doc.js';
 import uiCommand from './commands/ui.js';
 import checkCommand from './commands/check.js';
+import signatureCommand from './commands/signature.js';
 import { ToolProvider } from './toolchain/index.js';
 
 program
@@ -45,6 +46,7 @@ program.addCommand(serveCommand);
 program.addCommand(docCommand);
 program.addCommand(uiCommand);
 program.addCommand(checkCommand);
+program.addCommand(signatureCommand);
 
 // Allow `devecocli <command> help` as an alias for `devecocli <command> --help`.
 // Commander only supports this automatically for commands that have sub-commands,
