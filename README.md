@@ -843,6 +843,14 @@ devecocli skills remove --skill skillname --agent agentname  # skillname需替�
 }
 ```
 
+**参数：**
+
+| 参数名 | 说明 |
+| --- | --- |
+| `--arkts` | 必选，启动 ArkTS 语言服务（ace-server），不传会报错退出 |
+| `--project-path <path>` | 可选，工程根路径，默认为当前工作目录 |
+| `--auto-detect` | 可选，当前目录向下查找工程根（检查当前目录自身及其子目录，最多 3 层子目录）；指定了 `--project-path` 则忽略 |
+
 ## 常见问题
 
 [FAQ](https://gitcode.com/openharmony-sig/deveco-cli/wiki/FAQ.md)

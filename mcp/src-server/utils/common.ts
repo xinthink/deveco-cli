@@ -159,6 +159,31 @@ export function findHarmonyProject(startPath: string): string | null {
   return null;
 }
 
+/**
+ * 从 startPath **向下**查找 Harmony 工程根：自身命中即返回，否则 BFS 子目录（深度上限 MAX_SEARCH_DEPTH）。
+ * 不向上搜索祖先目录——避免扫描到指定范围之外的工程（安全考量）。
+ * 适用于「未显式指定工程路径、用户主动开启自动发现」的场景。
+ */
+export function findHarmonyProjectInDir(startPath: string): string | null {
+  if (!startPath || startPath.trim() === '') {
+    return null;
+  }
+  const resolvedPath = path.resolve(startPath);
+  let realResolvedPath: string;
+  try {
+    realResolvedPath = fs.realpathSync(resolvedPath);
+  } catch {
+    realResolvedPath = resolvedPath;
+  }
+  if (!fs.existsSync(realResolvedPath) || !fs.statSync(realResolvedPath).isDirectory()) {
+    return null;
+  }
+  if (isHarmonyosProject(realResolvedPath)) {
+    return realResolvedPath;
+  }
+  return searchHarmonyProject(realResolvedPath, 0, MAX_SEARCH_DEPTH);
+}
+
 export function findArktsLangServerPath(devecoPath?: string | null): string | null {
   if (process.platform === 'linux') {
     return null;

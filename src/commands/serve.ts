@@ -60,7 +60,8 @@ serveCommand
   .command('lsp')
   .description('Start a bundled LSP language server')
   .option('--arkts', 'Start the ArkTS language server (ace-server)')
-  .option('--project-path <path>', 'HarmonyOS project root path', process.cwd())
+  .option('--project-path <path>', 'project root path (used as-is, no search)')
+  .option('--auto-detect', 'When --project-path is not specified, search the current directory and its subdirectories for the project root (no upward search)')
   .action(async (options) => {
     if (!options.arkts) {
       console.error('Use --arkts to start the ArkTS language server.');
@@ -68,6 +69,7 @@ serveCommand
     }
     await startArktsLspServer({
       projectPath: options.projectPath,
+      autoDetect: options.autoDetect,
     });
   });
 
