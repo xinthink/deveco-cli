@@ -397,7 +397,7 @@ export async function generateP12AndCSR(
 
     const runtimePwd = generateRandomPwd();
 
-    // p12/csr 共用同一基名（对齐 JAR：getAutoSignFilePath() + 后缀）
+    // p12/csr 共用同一基名（getAutoSignFilePath() + 后缀）
     // 旧材料清理由 deleteLocalSignFiles 在生成前统一完成，此处只负责生成
     const p12FilePath = await getAutoSignFilePath(productName ?? '', projectRoot, 'p12');
     const csrFilePath = await getAutoSignFilePath(productName ?? '', projectRoot, 'csr');
