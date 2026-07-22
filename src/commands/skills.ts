@@ -177,18 +177,9 @@ async function installSkills(
   const limit = pLimit(5);
 
   // 并发启动下载任务
-  const downloadPromises = skillNames.map(async (name) => {
-    return limit(async () => {
-      try {
-        const buffer = await downloadSkill(name);
-        return { name, buffer, success: true as const };
-      } catch (error: unknown) {
-        const errorMsg =
-          error instanceof Error ? error.message : 'unknown error';
-        return { name, error: errorMsg, success: false as const };
-      }
-    });
-  });
+  const downloadPromises = skillNames.map((name) =>
+    limit(() => downloadSkillSafe(name))
+  );
 
   for (let i = 0; i < skillNames.length; i++) {
     const skillName = skillNames[i];
@@ -216,6 +207,19 @@ async function installSkills(
   }
 
   return results;
+}
+
+async function downloadSkillSafe(
+  name: string
+): Promise<{ name: string; buffer: Buffer; success: true } | { name: string; error: string; success: false }> {
+  try {
+    const buffer = await downloadSkill(name);
+    return { name, buffer, success: true as const };
+  } catch (error: unknown) {
+    const errorMsg =
+      error instanceof Error ? error.message : 'unknown error';
+    return { name, error: errorMsg, success: false as const };
+  }
 }
 
 /**

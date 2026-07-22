@@ -20,12 +20,12 @@ import { checkSyncRequired } from './lsp/sync/syncGuard.js';
  * 项目生命周期状态枚举
  */
 enum ProjectLifecycle {
-  IDLE,         // 无项目（空文件夹 / 启动时未检测到）
-  DISCOVERING,  // 正在扫描/检测项目
-  SYNCING,      // 项目已发现，正在执行 ohpm install + hvigor sync
+  IDLE, // 无项目（空文件夹 / 启动时未检测到）
+  DISCOVERING, // 正在扫描/检测项目
+  SYNCING, // 项目已发现，正在执行 ohpm install + hvigor sync
   INITIALIZING, // sync 完成，LSP 正在初始化
-  READY,        // 完全就绪，check 工具可用
-  ERROR,        // sync 或 init 失败，可重试
+  READY, // 完全就绪，check 工具可用
+  ERROR, // sync 或 init 失败，可重试
 }
 
 const MAX_INIT_RETRY = 3;
@@ -57,15 +57,15 @@ export class DevecoCliMcpServer {
 
   // 项目生命周期状态
   private projectState: ProjectLifecycle = ProjectLifecycle.IDLE;
-  private workspaceRoot: string = '';       // MCP 客户端提供的 workspace root，供重新扫描
-  private sdkPath: string = '';             // 缓存 sdkPath，避免重复计算
-  private initPromise: Promise<void> | null = null;  // 互斥锁：保证同一时刻只有一个初始化流程在执行
-  private needsReinit: boolean = false;     // 路径变更标记：初始化运行期间 setProjectPath() 被调用时设置
-  private initRetryCount: number = 0;       // 连续初始化失败计数，超过 MAX_INIT_RETRY 后不再自动重试
+  private workspaceRoot: string = ''; // MCP 客户端提供的 workspace root，供重新扫描
+  private sdkPath: string = ''; // 缓存 sdkPath，避免重复计算
+  private initPromise: Promise<void> | null = null; // 互斥锁：保证同一时刻只有一个初始化流程在执行
+  private needsReinit: boolean = false; // 路径变更标记：初始化运行期间 setProjectPath() 被调用时设置
+  private initRetryCount: number = 0; // 连续初始化失败计数，超过 MAX_INIT_RETRY 后不再自动重试
   private originalProjectPath: string = ''; // 用户原始配置的路径（findHarmonyProject 解析前），用于区分"未设置"与"设置了但未找到鸿蒙工程"
-  private configChangedTriggeredResync: boolean = false;  // 配置文件变化触发的重新同步标记，用于区分提示消息
-  private syncSkippedDueToLock: boolean = false;  // sync 因锁被占用而跳过，用于返回更精确的提示消息
-  private syncSkipStartedAt: number = 0;          // 首次因锁竞争跳过 sync 的时间戳，超过 SYNC_SKIP_TIMEOUT_MS 后进入 ERROR 状态
+  private configChangedTriggeredResync: boolean = false; // 配置文件变化触发的重新同步标记，用于区分提示消息
+  private syncSkippedDueToLock: boolean = false; // sync 因锁被占用而跳过，用于返回更精确的提示消息
+  private syncSkipStartedAt: number = 0; // 首次因锁竞争跳过 sync 的时间戳，超过 SYNC_SKIP_TIMEOUT_MS 后进入 ERROR 状态
   /** 是否支持标准 LSP 协议（standardIndex/index.js 存在）。false=legacy ace-server，不注册位置类语言特性工具。 */
   private standardProtocolAvailable: boolean = false;
 
@@ -379,6 +379,9 @@ export class DevecoCliMcpServer {
         return this.handleErrorCheck();
       case ProjectLifecycle.READY:
         return this.arktsCheckTool!.handleCall({ files });
+      default:
+        mcpLog.error(`ArkTS check: unknown project state ${this.projectState}, files: ${files.join(', ')}`);
+        return { content: [{ type: 'text', text: `Unknown project state: ${this.projectState}` }], isError: true };
     }
   }
 
@@ -750,7 +753,7 @@ export class DevecoCliMcpServer {
     // Phase 1: 协议就绪（毫秒级）
     this.toolRouter.registerToServer(this.server);
     const transport = new StdioServerTransport();
-    await this.server.connect(transport);          // ← 立刻完成，MCP 连接就绪
+    await this.server.connect(transport); // ← 立刻完成，MCP 连接就绪
 
     mcpLog.info('devecocli-mcp-server started');
     // 非 debug 模式下，打印日志文件路径
@@ -939,8 +942,8 @@ export class DevecoCliMcpServer {
   }
 
   private discoverProject(): boolean {
-    const needsDiscovery = (this.projectState === ProjectLifecycle.IDLE || this.projectState === ProjectLifecycle.ERROR)
-      && !this.config.projectPath;
+    const needsDiscovery = (this.projectState === ProjectLifecycle.IDLE || this.projectState === ProjectLifecycle.ERROR) && 
+      !this.config.projectPath;
     if (!needsDiscovery) {
       return true;
     }
@@ -1039,6 +1042,13 @@ export class DevecoCliMcpServer {
       }
       case 'failed':
         mcpLog.error(`Project sync failed: ${result.reason}`);
+        this.syncSkippedDueToLock = false;
+        this.syncSkipStartedAt = 0;
+        this.initRetryCount++;
+        this.projectState = ProjectLifecycle.ERROR;
+        return false;
+      default:
+        mcpLog.error(`Project sync: unknown status ${(result as { status: string }).status}`);
         this.syncSkippedDueToLock = false;
         this.syncSkipStartedAt = 0;
         this.initRetryCount++;
