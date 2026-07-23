@@ -3,12 +3,9 @@
  * SPDX-License-Identifier: MIT
  */
 import { Command } from 'commander';
-import { red, cyan } from 'colorette';
+import { cyan } from 'colorette';
 import * as readline from 'readline';
-import { loginService, tokenStorage, getTeamList, type Team } from '../auth';
-import { httpClient } from '../utils/http-client';
-import { getRegionalizedBaseUrl } from '../auth/utils/region';
-import { ApiEndpoints } from '../config/constants';
+import { loginService, getTeamList, type Team } from '../auth';
 
 function renderTeamTable(teams: Team[]): string {
   if (teams.length === 0) {
@@ -60,12 +57,7 @@ authCommand
         cyan(`Login successful. Logged in as ${userInfo.userName}.`)
       );
     } catch (error) {
-      const e = error as Error;
-      console.error(red('Login failed'));
-      if (e.message) {
-        console.error(red(`  Error: ${e.message}`));
-      }
-      process.exit(1);
+      throw new Error('Login failed', { cause: error });
     }
   });
 
@@ -73,29 +65,16 @@ authCommand
   .command('logout')
   .description('Log out of your Huawei Developer account')
   .action(async () => {
-    const jwtToken = await tokenStorage.loadJwtToken();
-    if (jwtToken == null) {
-      console.log(cyan('Already logged out.'));
-      return;
-    }
-    let serverError: Error | null = null;
     try {
-      const url =
-        `${getRegionalizedBaseUrl('CN', ApiEndpoints.LOGIN_URL)}` +
-        `/${ApiEndpoints.LOGOUT_PATH}?jwtToken=${jwtToken}`;
-      await httpClient.post(url, { timeout: 5000 });
-    } catch (e) {
-      serverError = e as Error;
+      const loggedOut = await loginService.logout();
+      if (loggedOut) {
+        console.log(cyan('Logout successful'));
+      } else {
+        console.log(cyan('Already logged out.'));
+      }
+    } catch (error) {
+      throw new Error('Logout failed', { cause: error });
     }
-    await tokenStorage.clearToken();
-    if (serverError) {
-      console.error(red(`Logout partially failed: ${serverError.message}`));
-      console.error(
-        red('Local token cleared. Run `devecocli auth logout` again to retry server-side.')
-      );
-      process.exit(2);
-    }
-    console.log(cyan('Logout successful'));
   });
 
 authCommand
@@ -141,8 +120,7 @@ teamCommand
       }
       console.log(renderTeamTable(result.teamList));
     } catch (error) {
-      console.error(red((error as Error).message));
-      process.exit(1);
+      throw new Error('Failed to list teams', { cause: error });
     }
   });
 

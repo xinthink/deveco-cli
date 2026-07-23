@@ -14,6 +14,7 @@ export class TokenStorage {
   constructor(configDir?: string) {
     const configPath =
       configDir ||
+      process.env.DEVECO_CLI_DATA_DIR ||
       path.join(homedir(), AppConfig.CONFIG_DIR_NAME, AppConfig.APP_NAME);
     this.tokenFilePath = path.join(configPath, AppConfig.TOKEN_FILE_NAME);
   }

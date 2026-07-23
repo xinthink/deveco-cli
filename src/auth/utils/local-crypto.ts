@@ -35,7 +35,9 @@ const dekLength = CryptoConstants.KEY_LENGTH;
 const rootKeyIds = CryptoConstants.KEK_VERSIONS;
 
 // 隔离存储
-const configPath = path.join(homedir(), '.config', AppConfig.APP_NAME);
+const configPath =
+  process.env.DEVECO_CLI_DATA_DIR ||
+  path.join(homedir(), AppConfig.CONFIG_DIR_NAME, AppConfig.APP_NAME);
 const keyDirPath = path.join(
   homedir(),
   '.local',
