@@ -28,9 +28,11 @@ export const AppConfig = {
 } as const;
 
 export const ApiEndpoints = {
-  LOGIN_URL: 'https://devecostudio.huawei.com',
+  LOGIN_URL:
+    process.env.DEVECOCLI_LOGIN_URL || 'https://devecostudio.huawei.com',
 
-  CN_LOGIN_URL: 'https://cn.devecostudio.huawei.com',
+  CN_LOGIN_URL:
+    process.env.DEVECOCLI_CN_LOGIN_URL || 'https://cn.devecostudio.huawei.com',
 
   AUTH_APPLY_PATH: 'console/DevEcoIDE/apply',
 
@@ -45,11 +47,9 @@ export const ApiEndpoints = {
   LOGOUT_PATH: 'authrouter/auth/api/logout',
 
   AGC_TEAM_LIST_URL:
+    process.env.DEVECOCLI_AGC_TEAM_LIST_URL ||
     'https://connect-api.cloud.huawei.com/api/ups/user-permission-service/v1/user-team-list',
-
-  AGC_DEVICE_LIST_URL:
-    'https://connect-api.cloud.huawei.com/api/publish/v2/device/list',
-} as const;
+};
 
 export const CryptoConstants = {
   /** 加密算法 */

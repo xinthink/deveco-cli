@@ -36,7 +36,10 @@ export class EnvChecker {
    */
   public async preflight(ctx: CheckContext): Promise<boolean> {
     const failFast = (r: CheckResult): boolean => {
-      if (!r.passed) { this.fail(r); return false; }
+      if (!r.passed) {
+        this.fail(r);
+        return false;
+      }
       return true;
     };
     const bf = (m: string) => this.blockingFail(m);
@@ -86,7 +89,9 @@ export class EnvChecker {
     for (const c of syncChecks) { if (!failFast(c())) { return false; } }
 
     // 场景 11、12：辅助检查
-    if (!failFast(await this.authChecker.checkTeamId(ctx.teamId))) { return false; }
+    if (!failFast(await this.authChecker.checkTeamId(ctx.teamId))) {
+      return false;
+    }
     await this.authChecker.checkRegion(bf);
 
     return true;
