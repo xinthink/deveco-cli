@@ -10,12 +10,12 @@ import { discoverStudioInstallRoot } from './studio-discovery.js';
 import { compareStudioVersions, readStudioVersion } from './studio-version.js';
 import { resolveEnvRoot } from './environment-path.js';
 import { debugLog } from '../utils/logger.js';
+import { IDE_DOWNLOAD_URL } from '../config/constants.js';
 import {
   resolveCanonicalPath,
   resolvePathInsideRoot,
 } from '../utils/path-containment.js';
 
-const DOWNLOAD_URL = 'https://developer.huawei.com/consumer/cn/download/';
 const CLT_VERSION = /^#\s*Version:\s*(\S+)/;
 
 /**
@@ -94,6 +94,13 @@ export class ToolProvider {
   }
   public get hvigorJsPath(): string {
     return this._hvigorJsPath;
+  }
+  /** 获取当前工具链中的 Code Linter JS 入口。 */
+  public get codelinterPath(): string {
+    return ToolProvider.resolveCodelinterPath(
+      this._toolchainRoot,
+      this._sourceType
+    );
   }
   public get javaPath(): string {
     return this._javaPath ? this.verify(this._javaPath) : '';
@@ -286,9 +293,62 @@ export class ToolProvider {
     }
     if (compareStudioVersions(version, minimum) < 0) {
       throw new Error(
-        `The detected ${label} version is ${version}, which is below the minimum required version ${minimum}. Upgrade before using deveco-cli:\n${DOWNLOAD_URL}`
+        `The detected ${label} version is ${version}, which is below the minimum required version ${minimum}. Upgrade before using deveco-cli:\n${IDE_DOWNLOAD_URL}`
       );
     }
+  }
+
+  /** 在 IDE 或 CLT 安装目录中解析 Code Linter 入口。 */
+  private static resolveCodelinterPath(
+    root: string,
+    source: InstallSourceType
+  ): string {
+    const candidates = ToolProvider.getCodelinterCandidates(root, source);
+    const entry = candidates.find(ToolProvider.isFile);
+    if (!entry) {
+      const label =
+        source === 'studio'
+          ? 'Code Linter not found in DevEco Studio.'
+          : 'Code Linter not found in DevEco Command Line Tools.';
+      throw new Error(
+        `${label}\nSearched paths:\n  ${candidates.join('\n  ')}`
+      );
+    }
+
+    const realRoot = resolveCanonicalPath(root);
+    const realEntry = resolveCanonicalPath(entry);
+    ToolProvider.assertInsideRoot(realEntry, realRoot, 'codelinter');
+    return realEntry;
+  }
+
+  /** 根据工具链来源生成 Code Linter 入口候选路径。 */
+  private static getCodelinterCandidates(
+    root: string,
+    source: InstallSourceType
+  ): string[] {
+    if (source === 'studio') {
+      const prefix = os.platform() === 'darwin' ? ['Contents'] : [];
+      return [
+        path.join(root, ...prefix, 'plugins', 'codelinter', 'run', 'index.js'),
+        path.join(root, ...prefix, 'plugins', 'codelinter', 'index.js'),
+        path.join(
+          root,
+          ...prefix,
+          'tools',
+          'codelinter',
+          'bin',
+          'codelinter.js'
+        ),
+        path.join(root, ...prefix, 'tools', 'codelinter', 'codelinter.js'),
+      ];
+    }
+
+    return [
+      path.join(root, 'codelinter', 'index.js'),
+      path.join(root, 'codelinter', 'run', 'index.js'),
+      path.join(root, 'tool', 'codelinter', 'bin', 'codelinter.js'),
+      path.join(root, 'tool', 'codelinter', 'codelinter.js'),
+    ];
   }
 
   private static isValidRoot(root: string, source: 'clt' | 'studio'): boolean {
@@ -378,6 +438,15 @@ export class ToolProvider {
         windows ? 'Emulator.exe' : 'Emulator'
       ),
     };
+  }
+
+  /** 判断路径是否为文件。 */
+  private static isFile(value: string): boolean {
+    try {
+      return fs.statSync(value).isFile();
+    } catch {
+      return false;
+    }
   }
 
   private static isDirectory(value: string): boolean {

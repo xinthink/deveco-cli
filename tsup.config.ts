@@ -28,5 +28,6 @@ export default defineConfig({
   env: {
     npm_package_version: pkg.version,
     npm_package_name: pkg.name,
+    npm_config_tag: process.env.npm_config_tag || 'latest',
   },
 });

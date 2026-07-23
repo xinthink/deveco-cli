@@ -288,12 +288,16 @@ export class Project {
     return dependentModules;
   }
 
-  public findArtifactPath(
+  private resolveModuleMetadata(
     moduleName: string,
     target: string,
-    isEmulator: boolean,
-    product = 'default'
-  ): string {
+    product: string
+  ): {
+    moduleNode: { srcPath: string };
+    isShared: boolean;
+    metadataPath: string;
+    metadata: ReturnType<Project['parseOutputMetadata']>;
+  } {
     this.validateProduct(product);
 
     const moduleNode = this.profile.modules.find((m) => m.name === moduleName);
@@ -302,8 +306,7 @@ export class Project {
       throw new Error(`Module '${moduleName}' not found. Available modules: ${available}`);
     }
 
-    const moduleType = this.getModuleType(moduleName);
-    const isShared = moduleType === 'shared';
+    const isShared = this.getModuleType(moduleName) === 'shared';
     const metadataKey = isShared ? 'hspName' : 'hapName';
 
     const metadataPath = this.buildOutputPath(moduleNode.srcPath, product, [
@@ -319,7 +322,23 @@ export class Project {
       );
     }
 
-    const { packageName, isSigned } = this.parseOutputMetadata(metadataPath, metadataKey);
+    const metadata = this.parseOutputMetadata(metadataPath, metadataKey);
+
+    return { moduleNode, isShared, metadataPath, metadata };
+  }
+
+  public findArtifactPath(
+    moduleName: string,
+    target: string,
+    isEmulator: boolean,
+    product = 'default'
+  ): string {
+    const { moduleNode, isShared, metadata } = this.resolveModuleMetadata(
+      moduleName,
+      target,
+      product
+    );
+    const { packageName, isSigned } = metadata;
     let finalPackageName = packageName;
 
     // 优先获取签名包
@@ -348,6 +367,38 @@ export class Project {
     }
 
     return packagePath;
+  }
+
+  public findRemoteHspPaths(
+    moduleName: string,
+    target: string,
+    product = 'default'
+  ): string[] {
+    const { moduleNode, metadata } = this.resolveModuleMetadata(
+      moduleName,
+      target,
+      product
+    );
+
+    const result: string[] = [];
+    const seen = new Set<string>();
+    for (const { hspPath } of metadata.dependRemoteHsps) {
+      if (seen.has(hspPath)) {continue}
+      seen.add(hspPath);
+
+      const resolvedPath = path.isAbsolute(hspPath)
+        ? hspPath
+        : this.buildOutputPath(moduleNode.srcPath, product, ['outputs', target, hspPath]);
+
+      if (!fs.existsSync(resolvedPath)) {
+        throw new Error(
+          `Remote HSP dependency not found: ${resolvedPath}`
+        );
+      }
+      result.push(resolvedPath);
+    }
+
+    return result;
   }
 
   private getSignedHapName(
@@ -389,27 +440,40 @@ export class Project {
     return CommonUtils.ensurePathWithinRoot(this.rootDir, finalPath);
   }
 
+  private collectRemoteHsps(items: Record<string, unknown>[]): { hspName: string; hspPath: string }[] {
+    return items.flatMap((item) => {
+      const deps = item.dependRemoteHsps as { hspName?: string; hspPath?: string }[] | undefined;
+      if (!Array.isArray(deps)) {
+        return [];
+      }
+      return deps
+        .filter((dep): dep is { hspName: string; hspPath: string } => Boolean(dep.hspName && dep.hspPath))
+        .map((dep) => ({ hspName: dep.hspName, hspPath: dep.hspPath }));
+    });
+  }
+
   private parseOutputMetadata(
     metadataPath: string,
     metadataKey: string
-  ): { packageName: string; isSigned: boolean } {
+  ): {
+    packageName: string;
+    isSigned: boolean;
+    dependRemoteHsps: { hspName: string; hspPath: string }[];
+  } {
     const content = fs.readFileSync(metadataPath, 'utf-8');
-    const parsed = json5.parse(content) as
-      | Record<string, string | boolean>[]
-      | Record<string, string | boolean>;
+    const parsed = json5.parse(content) as Record<string, unknown>[] | Record<string, unknown>;
 
     let packageName: string | undefined;
     let isSigned = false;
 
-    if (Array.isArray(parsed)) {
-      const first = parsed[0];
-      if (first) {
-        packageName = first[metadataKey] as string | undefined;
-        isSigned = first.isSigned === true;
+    const items = Array.isArray(parsed) ? parsed : [parsed];
+    for (const item of items) {
+      if (!packageName) {
+        packageName = item[metadataKey] as string | undefined;
       }
-    } else if (parsed && typeof parsed === 'object') {
-      packageName = parsed[metadataKey] as string | undefined;
-      isSigned = parsed.isSigned === true;
+      if (!isSigned) {
+        isSigned = item.isSigned === true;
+      }
     }
 
     if (!packageName) {
@@ -420,7 +484,9 @@ export class Project {
 
     this.validatePackageName(packageName);
 
-    return { packageName, isSigned };
+    const dependRemoteHsps = this.collectRemoteHsps(items);
+
+    return { packageName, isSigned, dependRemoteHsps };
   }
 
 private validatePackageName(packageName: string): void {

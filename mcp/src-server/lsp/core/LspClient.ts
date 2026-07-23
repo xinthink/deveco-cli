@@ -73,13 +73,48 @@ export class LspClient extends EventEmitter {
             stdio: ['pipe', 'pipe', 'pipe'],
             windowsHide: true,
         });
+        this.bindProcessEvents();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        logger.info('[LspClient] start lsp process success');
+    }
+
+    /**
+     * 接管一个已 spawn 的 LSP 子进程的 stdio，复用本实例的 Content-Length 帧解析 + 事件分发。
+     * 与 {@link start} 的差异：不 spawn、不调 {@link ensureDirectories}、不做 500ms warmup。
+     * 用于原生二进制 LSP server（如 clangd）—— 调用方自行 spawn 后调用本方法接管。
+     *
+     * @param process 已 spawn 的子进程
+     * @param options.stderrAsError 是否把 stderr 输出当作致命错误（emit 'error' 事件）。
+     *   - true（默认，ace-server 适用）：stderr 只应有真正的错误，触发 error 事件
+     *   - false（clangd 适用）：stderr 是常规日志通道（--log=info），仅记录不触发 error
+     */
+    public attachProcess(process: ChildProcess, options?: { stderrAsError?: boolean }): void {
+        if (this.process) {
+            throw new Error('[LspClient] process already attached');
+        }
+        this.process = process;
+        this.bindProcessEvents(options?.stderrAsError ?? true);
+        logger.info('[LspClient] attached to external process');
+    }
+
+    /**
+     * 绑定 stdout/stderr/exit 事件到本实例的 handleData / error 通路。
+     * 由 {@link start}（ace-server spawn）与 {@link attachProcess}（外部 spawn）共用。
+     *
+     * @param stderrAsError 是否把 stderr 输出当作致命错误。默认 true（ace-server 适用）。
+     *   clangd 等使用 stderr 作为常规日志通道的 LSP server 应传 false。
+     */
+    private bindProcessEvents(stderrAsError: boolean = true): void {
+        if (!this.process) {
+            return;
+        }
         this.process.stdout?.on('data', (chunk: Buffer) => {
             this.handleData(chunk);
         });
         this.process.stderr?.on('data', (chunk: Buffer) => {
             const errorMessage = chunk.toString('utf8').trim();
             logger.error(`[LspClient] stderr: ${errorMessage}`);
-            if (!this.isClosing) {
+            if (!this.isClosing && stderrAsError) {
                 this.emit('error', new Error(`[LspClient] stderr: ${errorMessage}`));
             }
         });
@@ -89,8 +124,6 @@ export class LspClient extends EventEmitter {
                 this.emit('error', new Error(`LSP process exited with code ${code}`));
             }
         });
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        logger.info('[LspClient] start lsp process success');
     }
 
     public sendRaw(jsonBody: string, name: string): void {

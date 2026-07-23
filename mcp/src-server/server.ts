@@ -9,23 +9,37 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { z } from 'zod';
 import { ToolRouter, createToolRouter } from './router.js';
-import { ArktsCheckTool, CppCheckTool } from './tools/index.js';
+import { ArktsCheckTool, CppCheckTool, ClangdLspTool } from './tools/index.js';
 import { findArktsLangServerPath, findDevEcoPath, findHarmonyProject, isSupportedCppFile, smartFindToolPath, devecoStudioContentRoot } from './utils/common.js';
 import { CommonUtils } from '../../src/utils/common-utils.js';
 import { initMcpLogger, disposeMcpLogger, flushMcpLogger, getMcpLogFilePath, mcpLog } from './utils/mcp-logger.js';
 import { ArktsLspManager } from './lsp/ArktsLspManager.js';
+import { ClangdLspManager } from './lsp/ClangdLspManager.js';
+import { findCppModules } from './lsp/sync/cpp-compile.js';
 import { checkSyncRequired } from './lsp/sync/syncGuard.js';
 
 /**
  * 项目生命周期状态枚举
  */
 enum ProjectLifecycle {
-  IDLE,         // 无项目（空文件夹 / 启动时未检测到）
-  DISCOVERING,  // 正在扫描/检测项目
-  SYNCING,      // 项目已发现，正在执行 ohpm install + hvigor sync
+  IDLE, // 无项目（空文件夹 / 启动时未检测到）
+  DISCOVERING, // 正在扫描/检测项目
+  SYNCING, // 项目已发现，正在执行 ohpm install + hvigor sync
   INITIALIZING, // sync 完成，LSP 正在初始化
-  READY,        // 完全就绪，check 工具可用
-  ERROR,        // sync 或 init 失败，可重试
+  READY, // 完全就绪，check 工具可用
+  ERROR, // sync 或 init 失败，可重试
+}
+
+/**
+ * C++ 项目生命周期状态枚举（与 ArkTS 状态机并行，独立运转）
+ */
+enum CppLifecycle {
+  IDLE_CPP,          // 无项目 / 未启动 C++ 初始化
+  DISCOVERING_CPP,   // 检测 C++ 模块
+  SYNCING_CPP,       // 执行 compileNative + 合并 compile_commands.json
+  INITIALIZING_CPP,  // clangd spawn + initialize
+  READY_CPP,         // C++ 工具可用（含"无 C++ 代码"提前就绪）
+  ERROR_CPP,         // sync 或 init 失败，可重试
 }
 
 const MAX_INIT_RETRY = 3;
@@ -54,20 +68,31 @@ export class DevecoCliMcpServer {
   // Tool instances
   private arktsCheckTool: ArktsCheckTool | null = null;
   private cppCheckTool: CppCheckTool | null = null;
+  private cppLspTool: ClangdLspTool | null = null;
+  private cppLspManager: ClangdLspManager | null = null;
 
   // 项目生命周期状态
   private projectState: ProjectLifecycle = ProjectLifecycle.IDLE;
-  private workspaceRoot: string = '';       // MCP 客户端提供的 workspace root，供重新扫描
-  private sdkPath: string = '';             // 缓存 sdkPath，避免重复计算
-  private initPromise: Promise<void> | null = null;  // 互斥锁：保证同一时刻只有一个初始化流程在执行
-  private needsReinit: boolean = false;     // 路径变更标记：初始化运行期间 setProjectPath() 被调用时设置
-  private initRetryCount: number = 0;       // 连续初始化失败计数，超过 MAX_INIT_RETRY 后不再自动重试
+  private workspaceRoot: string = ''; // MCP 客户端提供的 workspace root，供重新扫描
+  private sdkPath: string = ''; // 缓存 sdkPath，避免重复计算
+  private initPromise: Promise<void> | null = null; // 互斥锁：保证同一时刻只有一个初始化流程在执行
+  private needsReinit: boolean = false; // 路径变更标记：初始化运行期间 setProjectPath() 被调用时设置
+  private initRetryCount: number = 0; // 连续初始化失败计数，超过 MAX_INIT_RETRY 后不再自动重试
   private originalProjectPath: string = ''; // 用户原始配置的路径（findHarmonyProject 解析前），用于区分"未设置"与"设置了但未找到鸿蒙工程"
-  private configChangedTriggeredResync: boolean = false;  // 配置文件变化触发的重新同步标记，用于区分提示消息
-  private syncSkippedDueToLock: boolean = false;  // sync 因锁被占用而跳过，用于返回更精确的提示消息
-  private syncSkipStartedAt: number = 0;          // 首次因锁竞争跳过 sync 的时间戳，超过 SYNC_SKIP_TIMEOUT_MS 后进入 ERROR 状态
+  private configChangedTriggeredResync: boolean = false; // 配置文件变化触发的重新同步标记，用于区分提示消息
+  private syncSkippedDueToLock: boolean = false; // sync 因锁被占用而跳过，用于返回更精确的提示消息
+  private syncSkipStartedAt: number = 0; // 首次因锁竞争跳过 sync 的时间戳，超过 SYNC_SKIP_TIMEOUT_MS 后进入 ERROR 状态
   /** 是否支持标准 LSP 协议（standardIndex/index.js 存在）。false=legacy ace-server，不注册位置类语言特性工具。 */
   private standardProtocolAvailable: boolean = false;
+
+  // C++ 项目生命周期状态（与 ArkTS 状态机并行，独立运转）
+  private cppProjectState: CppLifecycle = CppLifecycle.IDLE_CPP;
+  private cppInitPromise: Promise<void> | null = null;  // 互斥锁：保证同一时刻只有一个 C++ 初始化流程在执行
+  private cppNeedsReinit: boolean = false;              // 路径变更标记
+  private cppInitRetryCount: number = 0;                // 连续初始化失败计数
+  private cppSyncSkippedDueToLock: boolean = false;     // C++ sync 因锁被占用而跳过
+  private cppSyncSkipStartedAt: number = 0;             // 首次因锁竞争跳过 C++ sync 的时间戳
+  private cppHasNoCppCode: boolean = false;              // 工程无 C++ 代码，C++ 工具应返回 "no C++ code"
 
   constructor(config: McpServerConfig = {}) {
     this.config = config;
@@ -148,7 +173,13 @@ export class DevecoCliMcpServer {
     );
   }
 
-  /** 注册位置相关 ArkTS 语言特性工具（hover/definition/declaration/references/implementation）。 */
+  /**
+   * 注册位置相关语言特性工具（hover/definition/declaration/references/implementation）。
+   *
+   * 这些工具按文件扩展名分流到 ArkTS 或 C++ 后端：
+   * - ArkTS (.ets) → ace-server；若 DevEco 不支持标准 LSP 协议，运行时返回明确错误
+   * - C/C++ → clangd（标准 LSP，不依赖 standardIndex/index.js）
+   */
   private registerLspFeatureTools(): void {
     if (!this.standardProtocolAvailable) {
       mcpLog.info(
@@ -160,7 +191,7 @@ export class DevecoCliMcpServer {
     }
 
     const lspPositionSchema = z.object({
-      file: z.string().describe('ArkTS (.ets) file path, relative to the project root'),
+      file: z.string().describe('Source file path, relative to the project root. Supports .ets (ArkTS) and C/C++ extensions.'),
       line: z.number().describe('Line number (0-based)'),
       character: z.number().describe('Character offset in the line (0-based)'),
     });
@@ -179,7 +210,7 @@ export class DevecoCliMcpServer {
   /** 返回位置相关工具的定义列表。 */
   private getPositionFeatures(): Array<{ name: string; description: string; feature: 'hover' | 'definition' | 'declaration' | 'references' | 'implementation' | 'completion' | 'signatureHelp' | 'documentHighlight' }> {
     return [
-      { name: 'hover', description: 'Get hover information (type info, documentation) at a specific position in an ArkTS (.ets) file.', feature: 'hover' },
+      { name: 'hover', description: 'Get hover information (type info, documentation) at a specific position in an ArkTS (.ets) or C/C++ file.', feature: 'hover' },
       { name: 'definition', description: 'Find where the symbol at the given position is defined. Returns file path, line, and character.', feature: 'definition' },
       { name: 'declaration', description: 'Find the declaration of the symbol at the given position. In ArkTS, this may differ from definition.', feature: 'declaration' },
       { name: 'references', description: 'Find all references to the symbol at the given position across the HarmonyOS project.', feature: 'references' },
@@ -204,10 +235,10 @@ export class DevecoCliMcpServer {
       {
         name: 'documentSymbol',
         description:
-          'Get the symbol tree (functions, classes, variables with ranges) of an ArkTS (.ets) file. ' +
+          'Get the symbol tree (functions, classes, variables with ranges) of an ArkTS (.ets) or C/C++ file. ' +
           'Useful for file overview, structured code breakdown, and large file slicing.',
         inputSchema: z.object({
-          file: z.string().describe('ArkTS (.ets) file path, relative to the project root'),
+          file: z.string().describe('Source file path, relative to the project root. Supports .ets and C/C++ extensions.'),
         }),
       },
       async (args: Record<string, unknown>) => this.handleDocumentSymbolCall(args)
@@ -221,9 +252,10 @@ export class DevecoCliMcpServer {
         name: 'callHierarchy',
         description:
           'Query call hierarchy for a function at the given position. ' +
-          'Use direction "incoming" to find callers, "outgoing" to find callees.',
+          'Use direction "incoming" to find callers, "outgoing" to find callees. ' +
+          'ArkTS supports both directions; C/C++ (clangd) supports incoming only.',
         inputSchema: z.object({
-          file: z.string().describe('ArkTS (.ets) file path, relative to the project root'),
+          file: z.string().describe('Source file path, relative to the project root. Supports .ets and C/C++ extensions.'),
           line: z.number().describe('Line number (0-based)'),
           character: z.number().describe('Character offset in the line (0-based)'),
           direction: z.enum(['incoming', 'outgoing']).describe('"incoming" = who calls this function, "outgoing" = what this function calls'),
@@ -379,6 +411,9 @@ export class DevecoCliMcpServer {
         return this.handleErrorCheck();
       case ProjectLifecycle.READY:
         return this.arktsCheckTool!.handleCall({ files });
+      default:
+        mcpLog.error(`ArkTS check: unknown project state ${this.projectState}, files: ${files.join(', ')}`);
+        return { content: [{ type: 'text', text: `Unknown project state: ${this.projectState}` }], isError: true };
     }
   }
 
@@ -406,13 +441,24 @@ export class DevecoCliMcpServer {
       return containmentResult;
     }
 
-    return this.callArktsFeature(feature, { file, line, character });
+    return this.routeLspRequest(file, feature, async () => {
+      if (file.endsWith('.ets')) {
+        return this.arktsCheckTool!.handleLspFeature(feature, { file, line, character });
+      }
+      // C++ file — clangd 支持的 5 个位置特性
+      const cppFeature = feature as 'hover' | 'definition' | 'declaration' | 'references' | 'implementation';
+      return this.cppLspTool!.handleLspFeature(cppFeature, { file, line, character });
+    });
   }
 
   /**
-   * `workspaceSymbol` 工具入口：校验 query 参数 → 状态机分流。
-   * 不需要 containment 校验（不涉及具体文件路径）。
-   */
+    * `workspaceSymbol` 工具入口：校验 query 参数 → 双边状态机分流。
+    * 不需要 containment 校验（不涉及具体文件路径）。
+    * 行为（M4-2 决议）：
+    *  - 两边都未 READY → 返回双边状态摘要
+    *  - 至少一边 READY → 合并结果（按 location 去重，ArkTS 在前 C++ 在后，不排序）
+    *  - 两边都 ERROR → 返回双边错误摘要
+    */
   private async handleWorkspaceSymbolCall(
     args: Record<string, unknown>
   ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
@@ -424,7 +470,109 @@ export class DevecoCliMcpServer {
       };
     }
 
-    return this.callArktsWorkspaceSymbol(query);
+    return this.routeWorkspaceSymbolRequest(query);
+  }
+
+  /**
+    * workspaceSymbol 双边合并路由（M4-2 决议）。
+    * 去重键：location.uri + location.range.start.line + location.range.start.character。
+    * 排序：不排序，ArkTS 在前 C++ 在后。
+    */
+  private async routeWorkspaceSymbolRequest(
+    query: string
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    const arktsReady = this.projectState === ProjectLifecycle.READY && this.arktsCheckTool !== null;
+    const cppReady = this.cppProjectState === CppLifecycle.READY_CPP && !this.cppHasNoCppCode && this.cppLspTool !== null;
+
+    if (!arktsReady && !cppReady) {
+      // 两边都未 READY — 返回双边状态摘要
+      const arktsDesc = this.describeArktsState();
+      const cppDesc = this.describeCppState();
+      mcpLog.info(`workspaceSymbol rejected: ArkTS ${arktsDesc}; C++ ${cppDesc}`);
+      return {
+        content: [{ type: 'text', text: `workspaceSymbol: ArkTS ${arktsDesc}; C++ ${cppDesc}` }],
+        isError: true,
+      };
+    }
+
+    // 至少一边 READY — 合并结果（按 location 去重，ArkTS 在前 C++ 在后）
+    const merged: unknown[] = [];
+    const seen = new Set<string>();
+
+    if (arktsReady) {
+      try {
+        this.mergeSymbolItems(await this.arktsCheckTool!.handleWorkspaceSymbolRaw(query), seen, merged);
+      } catch (err) {
+        mcpLog.warn(`workspaceSymbol ArkTS query failed: ${(err as Error).message}`);
+      }
+    }
+
+    if (cppReady) {
+      try {
+        this.mergeSymbolItems(await this.cppLspTool!.handleWorkspaceSymbolRaw(query), seen, merged);
+      } catch (err) {
+        mcpLog.warn(`workspaceSymbol C++ query failed: ${(err as Error).message}`);
+      }
+    }
+
+    const text = merged.length === 0
+      ? 'workspaceSymbol: no result'
+      : `workspaceSymbol: ${JSON.stringify(merged, null, 2)}`;
+    return { content: [{ type: 'text', text }] };
+  }
+
+  /** SymbolInformation 去重键：location.uri + range.start.line + range.start.character。 */
+  private symbolDedupKey(item: unknown): string {
+    const sym = item as {
+      location?: {
+        uri?: string;
+        range?: { start?: { line?: number; character?: number } };
+      };
+    };
+    const uri = sym?.location?.uri ?? '';
+    const line = sym?.location?.range?.start?.line ?? 0;
+    const char = sym?.location?.range?.start?.character ?? 0;
+    return `${uri}:${line}:${char}`;
+  }
+
+  /** 把单边 workspaceSymbol 结果按 location 去重后合并进 merged。 */
+  private mergeSymbolItems(items: unknown[] | null, seen: Set<string>, merged: unknown[]): void {
+    if (!items) {
+      return;
+    }
+    for (const item of items) {
+      const key = this.symbolDedupKey(item);
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(item);
+      }
+    }
+  }
+
+  /** 返回 ArkTS 状态的简短描述（供 workspaceSymbol 摘要用）。 */
+  private describeArktsState(): string {
+    switch (this.projectState) {
+      case ProjectLifecycle.IDLE: return 'idle';
+      case ProjectLifecycle.DISCOVERING: return 'discovering';
+      case ProjectLifecycle.SYNCING: return 'syncing (retry 10s)';
+      case ProjectLifecycle.INITIALIZING: return 'initializing (retry 10s)';
+      case ProjectLifecycle.ERROR: return `error (${this.initRetryCount}/${MAX_INIT_RETRY})`;
+      case ProjectLifecycle.READY: return 'ready';
+      default: return 'unknown';
+    }
+  }
+
+  /** 返回 C++ 状态的简短描述（供 workspaceSymbol 摘要用）。 */
+  private describeCppState(): string {
+    switch (this.cppProjectState) {
+      case CppLifecycle.IDLE_CPP: return 'idle';
+      case CppLifecycle.DISCOVERING_CPP: return 'discovering';
+      case CppLifecycle.SYNCING_CPP: return 'syncing (retry 25s)';
+      case CppLifecycle.INITIALIZING_CPP: return 'initializing (retry 10s)';
+      case CppLifecycle.ERROR_CPP: return `error (${this.cppInitRetryCount}/${MAX_INIT_RETRY})`;
+      case CppLifecycle.READY_CPP: return this.cppHasNoCppCode ? 'ready (no C++ code)' : 'ready';
+      default: return 'unknown';
+    }
   }
 
   /**
@@ -446,7 +594,12 @@ export class DevecoCliMcpServer {
       return containmentResult;
     }
 
-    return this.routeArktsRequest('documentSymbol', () => this.arktsCheckTool!.handleDocumentSymbol(file));
+    return this.routeLspRequest(file, 'documentSymbol', async () => {
+      if (file.endsWith('.ets')) {
+        return this.arktsCheckTool!.handleDocumentSymbol(file);
+      }
+      return this.cppLspTool!.handleDocumentSymbol(file);
+    });
   }
 
   /**
@@ -478,10 +631,12 @@ export class DevecoCliMcpServer {
       return containmentResult;
     }
 
-    return this.routeArktsRequest(
-      `callHierarchy(${direction})`,
-      () => this.arktsCheckTool!.handleCallHierarchy({ file, line, character, direction }),
-    );
+    return this.routeLspRequest(file, `callHierarchy(${direction})`, async () => {
+      if (file.endsWith('.ets')) {
+        return this.arktsCheckTool!.handleCallHierarchy({ file, line, character, direction });
+      }
+      return this.cppLspTool!.handleCallHierarchy({ file, line, character, direction });
+    });
   }
 
   /** `codeAction` 工具入口。 */
@@ -548,27 +703,6 @@ export class DevecoCliMcpServer {
       return { file: null, line: 0, character: 0 };
     }
     return { file, line, character };
-  }
-
-  /** ArkTS 语言特性请求；按项目生命周期状态分流（与 callArktsCheck 一致）。 */
-  private async callArktsFeature(
-    feature: 'hover' | 'definition' | 'declaration' | 'references' | 'implementation' | 'completion' | 'signatureHelp' | 'documentHighlight',
-    args: { file: string; line: number; character: number }
-  ): Promise<{
-    content: { type: string; text: string }[];
-    isError?: boolean;
-  }> {
-    return this.routeArktsRequest(feature, () => this.arktsCheckTool!.handleLspFeature(feature, args));
-  }
-
-  /** workspaceSymbol 请求；同一状态机分流。 */
-  private async callArktsWorkspaceSymbol(
-    query: string
-  ): Promise<{
-    content: { type: string; text: string }[];
-    isError?: boolean;
-  }> {
-    return this.routeArktsRequest('workspaceSymbol', () => this.arktsCheckTool!.handleWorkspaceSymbol(query));
   }
 
   /**
@@ -662,19 +796,110 @@ export class DevecoCliMcpServer {
     };
   }
 
-  /** 调 C/C++ 工具；未就绪时返回统一错误。 */
+  /* ============================================================
+   * C++ 路由（与 ArkTS routeArktsRequest 同构）
+   * ============================================================ */
+
+  /**
+   * C++ 请求的统一状态机路由：IDLE_CPP/DISCOVERING_CPP/SYNCING_CPP/INITIALIZING_CPP/ERROR_CPP/READY_CPP。
+   * 只有 READY_CPP 状态才执行 readyAction，其余返回 "please retry"。
+   */
+  private async routeCppRequest(
+    logLabel: string,
+    readyAction: () => Promise<{ content: { type: string; text: string }[]; isError?: boolean }>
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    switch (this.cppProjectState) {
+      case CppLifecycle.IDLE_CPP:
+        return this.handleCppIdleCheck();
+      case CppLifecycle.DISCOVERING_CPP:
+      case CppLifecycle.SYNCING_CPP:
+        mcpLog.warn(`C++ ${logLabel} rejected: C++ project is ${CppLifecycle[this.cppProjectState]}`);
+        return { content: [{ type: 'text', text: 'C++ project is syncing (compileNative), please retry in 25 seconds' }], isError: true };
+      case CppLifecycle.INITIALIZING_CPP:
+        mcpLog.warn(`C++ ${logLabel} rejected: clangd is initializing`);
+        return { content: [{ type: 'text', text: 'C++ LSP (clangd) is initializing, please retry in 10 seconds' }], isError: true };
+      case CppLifecycle.ERROR_CPP:
+        return this.handleCppErrorCheck();
+      case CppLifecycle.READY_CPP:
+        if (this.cppHasNoCppCode) {
+          return { content: [{ type: 'text', text: 'No C++ code in this project' }], isError: true };
+        }
+        if (!this.cppLspManager?.ready) {
+          return { content: [{ type: 'text', text: 'C++ LSP is not ready, please retry later' }], isError: true };
+        }
+        return readyAction();
+    }
+  }
+
+  /**
+   * 按文件扩展名分流到 ArkTS 或 C++ 状态机。
+   * - `.ets` → routeArktsRequest
+   * - C/C++ 扩展名 → routeCppRequest
+   * - 其他 → 返回 unsupported 错误
+   */
+  private async routeLspRequest(
+    file: string,
+    logLabel: string,
+    readyAction: () => Promise<{ content: { type: string; text: string }[]; isError?: boolean }>
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    if (file.endsWith('.ets')) {
+      return this.routeArktsRequest(logLabel, readyAction);
+    }
+    if (isSupportedCppFile(file)) {
+      return this.routeCppRequest(logLabel, readyAction);
+    }
+    return { content: [{ type: 'text', text: `Unsupported file type: ${file} (only .ets and C/C++ source/header files are supported)` }], isError: true };
+  }
+
+  /** C++ IDLE_CPP 状态下检查：触发 ensureCppProjectReady，根据已有信息返回提示。 */
+  private async handleCppIdleCheck(): Promise<{
+    content: { type: string; text: string }[];
+    isError?: boolean;
+  }> {
+    this.ensureCppProjectReady();
+    if (this.config.projectPath) {
+      let msg: string;
+      if (this.cppSyncSkippedDueToLock) {
+        const elapsedSec = this.cppSyncSkipStartedAt > 0 ? Math.round((Date.now() - this.cppSyncSkipStartedAt) / 1000) : 0;
+        msg = `Another build process is running, C++ sync deferred (waiting ${elapsedSec}s), please retry in 25 seconds`;
+        this.cppSyncSkippedDueToLock = false;
+      } else {
+        msg = 'C++ project detected, syncing (compileNative), please retry in 25 seconds';
+      }
+      mcpLog.info(`C++ idle check: project '${this.config.projectPath}', triggering C++ init`);
+      return { content: [{ type: 'text', text: msg }], isError: true };
+    }
+    return { content: [{ type: 'text', text: 'No HarmonyOS project detected for C++ tools.' }], isError: true };
+  }
+
+  /** C++ ERROR_CPP 状态下检查：自动重试（含冷却机制）。 */
+  private async handleCppErrorCheck(): Promise<{
+    content: { type: string; text: string }[];
+    isError?: boolean;
+  }> {
+    if (this.cppInitRetryCount >= MAX_INIT_RETRY) {
+      mcpLog.error(`C++ init retry limit reached (${this.cppInitRetryCount}/${MAX_INIT_RETRY}), will not auto-retry`);
+      return {
+        content: [{ type: 'text', text: 'C++ project initialization failed multiple times. Please check project configuration and restart the MCP Server.' }],
+        isError: true
+      };
+    }
+    mcpLog.info(`C++ error check: auto-retrying (${this.cppInitRetryCount}/${MAX_INIT_RETRY})`);
+    this.ensureCppProjectReady();
+    return {
+      content: [{ type: 'text', text: 'C++ project initialization failed, auto-retrying, please retry in 25 seconds' }],
+      isError: true
+    };
+  }
+
+  /** 调 C/C++ 工具；通过 C++ 状态机分流。 */
   private async callCppCheck(files: string[]): Promise<{
     content: { type: string; text: string }[];
     isError?: boolean;
   }> {
-    if (!this.cppCheckTool) {
-      const msg = this.config.projectPath
-        ? 'C++ LSP is not ready, please retry later'
-        : 'Project path is not configured. Set the PROJECT_PATH parameter or open a project in DevEco Studio.';
-      mcpLog.warn(`C++ check rejected: ${msg}, files: ${files.join(', ')}`);
-      return { content: [{ type: 'text', text: msg }], isError: true };
-    }
-    return this.cppCheckTool.handleCall({ files });
+    return this.routeCppRequest('check', async () => {
+      return this.cppCheckTool!.handleCall({ files });
+    });
   }
 
   /** 把单个子 handler 的返回合并到 errors / infos 池。 */
@@ -710,30 +935,38 @@ export class DevecoCliMcpServer {
       });
       this.arktsCheckTool = null;
     }
-    if (this.cppCheckTool) {
-      this.cppCheckTool.shutdown().catch(err => {
-        mcpLog.warn('Failed to shutdown CppCheckTool during setProjectPath:', err);
+    this.cppCheckTool = null;
+    this.cppLspTool = null;
+    if (this.cppLspManager) {
+      this.cppLspManager.dispose().catch(err => {
+        mcpLog.warn('Failed to dispose ClangdLspManager during setProjectPath:', err);
       });
-      this.cppCheckTool = null;
+      this.cppLspManager = null;
     }
 
-    // 关键：处理两种情况
+    // 关键：处理两种情况（ArkTS）
     if (this.initPromise) {
-      // 初始化正在运行中（SYNCING/INITIALIZING）：
-      // 不能直接重置状态（会导致运行中的 doEnsureProjectReady() 完成后覆盖状态），
-      // 也不能调 ensureProjectReady()（initPromise 互斥会直接返回）。
-      // 设置 needsReinit 标记，让 ensureProjectReady() 完成后自动重新初始化。
-      //
-      // 时序说明：shutdown 是立即执行的，即使 doEnsureProjectReady() 正在运行中。
-      // doEnsureProjectReady() Phase 3 创建的新 arktsCheckTool 也会被此处 shutdown。
-      // 最终 arktsCheckTool = null，needsReinit 触发的重新初始化会从 IDLE 状态重建所有 Tool。
       this.needsReinit = true;
-      mcpLog.info('Project path changed while init is running, will reinit after current init completes');
+      mcpLog.info('Project path changed while ArkTS init is running, will reinit after current init completes');
     } else {
-      // 没有初始化在运行：直接重置状态并触发
       this.projectState = ProjectLifecycle.IDLE;
       this.ensureProjectReady().catch(err => {
         mcpLog.warn('Failed to re-init project after setProjectPath:', err);
+      });
+    }
+
+    // C++ 路径：同样处理两种情况
+    if (this.cppInitPromise) {
+      this.cppNeedsReinit = true;
+      mcpLog.info('Project path changed while C++ init is running, will reinit after current init completes');
+    } else {
+      this.cppProjectState = CppLifecycle.IDLE_CPP;
+      this.cppHasNoCppCode = false;
+      this.cppInitRetryCount = 0;
+      this.cppSyncSkippedDueToLock = false;
+      this.cppSyncSkipStartedAt = 0;
+      this.ensureCppProjectReady().catch(err => {
+        mcpLog.warn('Failed to re-init C++ project after setProjectPath:', err);
       });
     }
   }
@@ -750,7 +983,7 @@ export class DevecoCliMcpServer {
     // Phase 1: 协议就绪（毫秒级）
     this.toolRouter.registerToServer(this.server);
     const transport = new StdioServerTransport();
-    await this.server.connect(transport);          // ← 立刻完成，MCP 连接就绪
+    await this.server.connect(transport); // ← 立刻完成，MCP 连接就绪
 
     mcpLog.info('devecocli-mcp-server started');
     // 非 debug 模式下，打印日志文件路径
@@ -786,12 +1019,11 @@ export class DevecoCliMcpServer {
     }
 
     // Phase 3: 后台触发项目初始化（fire-and-forget，不阻塞）
+    // ArkTS sync 先行（持 build lock），完成后在 doEnsureProjectReady 内触发 C++ 同步
+    // （lock 已释放），避免 ArkTS/C++ 并行抢锁导致 C++ sync 被跳过、clangd 不被拉起
     this.ensureProjectReady().catch(err => {
       mcpLog.warn('Background project init failed:', err);
     });
-
-    // CppCheckTool 仍为懒初始化，不受影响
-    this.initializeCppCheck();
   }
 
   /**
@@ -892,24 +1124,6 @@ export class DevecoCliMcpServer {
   }
 
   /**
-   * 构造 CppCheckTool（懒初始化模式）：
-   * - 仅在 projectPath 配置时构造；
-   * - 真正的 clangd 进程在第一次工具调用（`handleCall`）时由 `ensureInitialized()` spawn。
-   */
-  private initializeCppCheck(): void {
-    const projectPath = this.config.projectPath;
-    if (!projectPath) {
-      mcpLog.warn('C++ LSP initialization skipped: project path is not configured');
-      return;
-    }
-    this.cppCheckTool = new CppCheckTool(
-      projectPath,
-      this.config.devecoPath ?? null
-    );
-    mcpLog.info('CppCheckTool created (lazy initialization)');
-  }
-
-  /**
    * 统一入口：互斥 + 内部按状态分流。
    * - initPromise 为 null → 无初始化正在进行，可以进入
    * - initPromise 非 null → 已有初始化正在进行，直接返回（幂等）
@@ -939,8 +1153,8 @@ export class DevecoCliMcpServer {
   }
 
   private discoverProject(): boolean {
-    const needsDiscovery = (this.projectState === ProjectLifecycle.IDLE || this.projectState === ProjectLifecycle.ERROR)
-      && !this.config.projectPath;
+    const needsDiscovery = (this.projectState === ProjectLifecycle.IDLE || this.projectState === ProjectLifecycle.ERROR) && 
+      !this.config.projectPath;
     if (!needsDiscovery) {
       return true;
     }
@@ -975,6 +1189,12 @@ export class DevecoCliMcpServer {
       return;
     }
 
+    // ArkTS sync 完成 → build lock 已释放，触发 C++ 同步（与下方 ArkTS LSP 初始化并行，
+    // 确保 MCP server 启动时 clangd 也被拉起，而非等到首次调用 C++ 工具时才惰性触发）
+    this.ensureCppProjectReady().catch(err => {
+      mcpLog.warn('Background C++ project init failed:', err);
+    });
+
     this.projectState = ProjectLifecycle.INITIALIZING;
     this.arktsCheckTool = new ArktsCheckTool(
       this.config.projectPath!,
@@ -1005,19 +1225,15 @@ export class DevecoCliMcpServer {
     const projectPath = this.config.projectPath!;
 
     const syncCheck = checkSyncRequired(projectPath);
-    if (!syncCheck.required) {
-      mcpLog.info(`Sync skipped: ${syncCheck.reason}`);
-      return true;
-    }
-
-    mcpLog.info(`Sync required: ${syncCheck.reason}`);
-    return this.runSync(projectPath);
+    const skipHvigor = !syncCheck.required;
+    mcpLog.info(`Sync check: skipHvigor=${skipHvigor}, reason=${syncCheck.reason}`);
+    return this.runSync(projectPath, { skipHvigorSync: skipHvigor });
   }
 
-  private async runSync(projectPath: string): Promise<boolean> {
+  private async runSync(projectPath: string, options?: { skipHvigorSync?: boolean }): Promise<boolean> {
     this.projectState = ProjectLifecycle.SYNCING;
     mcpLog.info('Starting project sync...');
-    const result = await ArktsLspManager.handleSyncProject(projectPath, this.sdkPath);
+    const result = await ArktsLspManager.handleSyncProject(projectPath, this.sdkPath, options);
     switch (result.status) {
       case 'success':
         this.syncSkippedDueToLock = false;
@@ -1048,7 +1264,143 @@ export class DevecoCliMcpServer {
         this.initRetryCount++;
         this.projectState = ProjectLifecycle.ERROR;
         return false;
+      default:
+        mcpLog.error(`Project sync: unknown status ${(result as { status: string }).status}`);
+        this.syncSkippedDueToLock = false;
+        this.syncSkipStartedAt = 0;
+        this.initRetryCount++;
+        this.projectState = ProjectLifecycle.ERROR;
+        return false;
     }
+  }
+
+  /* ============================================================
+   * C++ 项目生命周期（与 ArkTS 状态机并行，独立运转）
+   * ============================================================ */
+
+  /**
+   * C++ 初始化互斥入口：与 {@link ensureProjectReady} 同构。
+   */
+  private async ensureCppProjectReady(): Promise<void> {
+    if (this.cppInitPromise) {
+      return;
+    }
+    this.cppInitPromise = this.doEnsureCppProjectReady();
+    try {
+      await this.cppInitPromise;
+    } finally {
+      this.cppInitPromise = null;
+    }
+    if (this.cppNeedsReinit) {
+      this.cppNeedsReinit = false;
+      this.cppProjectState = CppLifecycle.IDLE_CPP;
+      this.ensureCppProjectReady().catch((err) => {
+        mcpLog.warn('Failed to re-init C++ project after cppNeedsReinit:', err);
+      });
+    }
+  }
+
+  /**
+   * C++ 初始化主流程：DISCOVERING_CPP → SYNCING_CPP → INITIALIZING_CPP → READY_CPP/ERROR_CPP
+   */
+  private async doEnsureCppProjectReady(): Promise<void> {
+    const projectPath = this.config.projectPath;
+    if (!projectPath) {
+      mcpLog.info('[Cpp] No project path, skipping C++ init');
+      return;
+    }
+
+    // Phase 1: DISCOVERING_CPP — 检测 C++ 模块
+    this.cppProjectState = CppLifecycle.DISCOVERING_CPP;
+    const cppModules = findCppModules(projectPath);
+    if (cppModules.length === 0) {
+      mcpLog.info('[Cpp] No C++ modules found, C++ tools will return "no C++ code"');
+      this.cppHasNoCppCode = true;
+      this.cppProjectState = CppLifecycle.READY_CPP;
+      this.cppInitRetryCount = 0;
+      return;
+    }
+    this.cppHasNoCppCode = false;
+    mcpLog.info(`[Cpp] Found ${cppModules.length} C++ module(s): ${cppModules.map((m) => m.name).join(', ')}`);
+
+    // Phase 2: SYNCING_CPP — compileNative + 合并 compile_commands.json
+    if (!(await this.runSyncCpp(projectPath))) {
+      return;
+    }
+
+    // Phase 3: INITIALIZING_CPP — clangd spawn + initialize（manager 自管 await 就绪）
+    this.cppProjectState = CppLifecycle.INITIALIZING_CPP;
+    this.cppLspManager = new ClangdLspManager({
+      workspaceRoot: projectPath,
+      devecoPath: this.config.devecoPath ?? null,
+    });
+    try {
+      await this.cppLspManager.start();
+      this.cppCheckTool = new CppCheckTool(this.cppLspManager);
+      this.cppLspTool = new ClangdLspTool(this.cppLspManager);
+      this.cppProjectState = CppLifecycle.READY_CPP;
+      this.cppInitRetryCount = 0;
+      mcpLog.info('[Cpp] C++ project fully initialized, C++ tools are available');
+    } catch (err) {
+      mcpLog.error('[Cpp] C++ LSP initialization failed:', err);
+      if (this.cppLspManager) {
+        this.cppLspManager.dispose().catch(() => {});
+      }
+      this.cppLspManager = null;
+      this.cppCheckTool = null;
+      this.cppLspTool = null;
+      this.cppInitRetryCount++;
+      this.cppProjectState = CppLifecycle.ERROR_CPP;
+    }
+  }
+
+  /**
+   * C++ sync 阶段：执行 compileNative + 合并 compile_commands.json。
+   * 与 {@link runSync} 同构：处理 success/skipped/failed 三种结果。
+   */
+  private async runSyncCpp(projectPath: string): Promise<boolean> {
+    this.cppProjectState = CppLifecycle.SYNCING_CPP;
+    mcpLog.info('[Cpp] Starting C++ project sync (compileNative)...');
+    const devecoPath = this.config.devecoPath ?? findDevEcoPath();
+    if (!devecoPath) {
+      mcpLog.error('[Cpp] DevEco Studio installation path not found, cannot sync C++ project');
+      this.cppInitRetryCount++;
+      this.cppProjectState = CppLifecycle.ERROR_CPP;
+      return false;
+    }
+    const result = await ClangdLspManager.handleSyncCppProject(projectPath, devecoPath);
+    switch (result.status) {
+      case 'success':
+        this.cppSyncSkippedDueToLock = false;
+        this.cppSyncSkipStartedAt = 0;
+        return true;
+      case 'skipped': {
+        this.cppSyncSkippedDueToLock = true;
+        if (this.cppSyncSkipStartedAt === 0) {
+          this.cppSyncSkipStartedAt = Date.now();
+        }
+        const elapsedMs = Date.now() - this.cppSyncSkipStartedAt;
+        const elapsedSec = Math.round(elapsedMs / 1000);
+        if (elapsedMs >= SYNC_SKIP_TIMEOUT_MS) {
+          mcpLog.error(`[Cpp] C++ sync skipped for ${elapsedSec}s due to lock contention, giving up`);
+          this.cppInitRetryCount++;
+          this.cppSyncSkipStartedAt = 0;
+          this.cppProjectState = CppLifecycle.ERROR_CPP;
+          return false;
+        }
+        mcpLog.warn(`[Cpp] C++ sync skipped: ${result.reason}, resetting to IDLE_CPP for retry (elapsed ${elapsedSec}s)`);
+        this.cppProjectState = CppLifecycle.IDLE_CPP;
+        return false;
+      }
+      case 'failed':
+        mcpLog.error(`[Cpp] C++ project sync failed: ${result.reason}`);
+        this.cppSyncSkippedDueToLock = false;
+        this.cppSyncSkipStartedAt = 0;
+        this.cppInitRetryCount++;
+        this.cppProjectState = CppLifecycle.ERROR_CPP;
+        return false;
+    }
+    return false;
   }
 
   /** 纯计算函数：从 devecoPath 计算 sdkPath，不修改 config */
@@ -1067,9 +1419,11 @@ export class DevecoCliMcpServer {
     if (this.arktsCheckTool) {
       await this.arktsCheckTool.shutdown();
     }
-    if (this.cppCheckTool) {
-      await this.cppCheckTool.shutdown();
+    if (this.cppLspManager) {
+      await this.cppLspManager.dispose();
     }
+    this.cppCheckTool = null;
+    this.cppLspTool = null;
 
     try {
       await this.server.close();
