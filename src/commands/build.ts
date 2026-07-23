@@ -10,6 +10,7 @@ import { HvigorAdapter } from '../utils/hvigor-adapter.js';
 import { OhpmAdapter } from '../utils/ohpm-adapter.js';
 import { withBuildLock } from '../utils/build-lock.js';
 import { checkSyncRequired } from '../utils/project-check.js';
+import { findCppModules, findAndMergeCompileCommands } from '../../mcp/src-server/lsp/sync/cpp-compile.js';
 
 interface BuildOptions {
   product?: string;
@@ -171,6 +172,28 @@ export async function executeBuildSteps(
     }
   } catch (error) {
     logAdapterFailureAndThrow('hvigor build', error);
+  }
+
+  // 构建成功后合并中央 compile_commands.json（供 clangd 使用）。
+  mergeCppCompileCommands(projectRoot);
+}
+
+/**
+ * 构建成功后，若工程含 C++ 模块，合并各模块 .cxx 下的 compile_commands.json 到中央文件
+ * （.idea/.deveco/cxx/compile_commands.json），供 devecocli serve lsp --cpp / MCP 的 clangd 使用。
+ * assembleHap 已为被构建的 C++ 模块生成每模块 compile_commands.json，此处只需合并，不重复跑
+ * compileNative。非 C++ 工程或合并失败时静默跳过，不影响构建产物。
+ */
+function mergeCppCompileCommands(projectRoot: string): void {
+  try {
+    const cppModules = findCppModules(projectRoot);
+    if (cppModules.length === 0) {
+      return;
+    }
+    findAndMergeCompileCommands(projectRoot);
+    console.log(green('\nMerged central compile_commands.json for C++ language server.'));
+  } catch (e) {
+    console.warn(yellow(`\nFailed to merge compile_commands.json: ${(e as Error).message}`));
   }
 }
 

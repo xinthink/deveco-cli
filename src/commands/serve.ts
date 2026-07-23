@@ -6,6 +6,7 @@ import { Command } from 'commander';
 import { createMcpServer } from '../../mcp/src-server/index.js';
 import { ToolProvider } from '../toolchain/index.js';
 import { startArktsLspServer } from './serve-lsp.js';
+import { startClangdLspServer } from './serve-lsp-cpp.js';
 
 /**
  * 启动 stdio 模式的 MCP server，并接管当前进程的 stdin/stdout 作为通信通道。
@@ -60,17 +61,28 @@ serveCommand
   .command('lsp')
   .description('Start a bundled LSP language server')
   .option('--arkts', 'Start the ArkTS language server (ace-server)')
+  .option('--cpp', 'Start the C/C++ language server (clangd)')
   .option('--project-path <path>', 'project root path (used as-is, no search)')
   .option('--auto-detect', 'When --project-path is not specified, search the current directory and its subdirectories for the project root (no upward search)')
   .action(async (options) => {
-    if (!options.arkts) {
-      console.error('Use --arkts to start the ArkTS language server.');
+    if (options.arkts && options.cpp) {
+      console.error('--arkts and --cpp are mutually exclusive. Specify only one.');
       process.exit(1);
     }
-    await startArktsLspServer({
-      projectPath: options.projectPath,
-      autoDetect: options.autoDetect,
-    });
+    if (options.arkts) {
+      await startArktsLspServer({
+        projectPath: options.projectPath,
+        autoDetect: options.autoDetect,
+      });
+    } else if (options.cpp) {
+      await startClangdLspServer({
+        projectPath: options.projectPath,
+        autoDetect: options.autoDetect,
+      });
+    } else {
+      console.error('Use --arkts or --cpp to specify which language server to start.');
+      process.exit(1);
+    }
   });
 
 export default serveCommand;

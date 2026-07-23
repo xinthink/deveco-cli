@@ -87,6 +87,7 @@ devecocli init --path D:\work\ARKTS\NewData
 | ------------------------- | ----------------------------------------- |
 | `devecocli create`        | 创建新的 HarmonyOS 项目                         |
 | `devecocli build`         | 构建项目并产出 `.hap` / `.hsp` / `.har` / `.app` |
+| `devecocli check lint`    | 检查代码规范并输出实践建议与报告                      |
 | `devecocli run`           | 安装并运行应用                                   |
 | `devecocli device list`   | 查看当前连接设备                                  |
 | `devecocli emulator list` | 查看本地模拟器实例                                 |
@@ -312,6 +313,29 @@ devecocli build --product oversea --modules entry --build-mode release
 devecocli build clean
 ```
 
+### `check lint`
+
+检查代码规范并输出实践建议与报告。
+
+**命令格式：**
+
+```bash
+devecocli check lint [path]
+```
+
+**参数：**
+
+| 参数名                        | 说明                                                                  |
+| ---------------------------- | --------------------------------------------------------------------- |
+| `[path]`                     | 可选，待检查的文件或目录；默认使用 `build-profile.json5` 所在的项目根目录，否则使用当前目录 |
+| `--config-path <path>`       | Code Linter 配置文件路径，仅支持 `.json` 或 `.json5`；默认使用待检查项目根目录下的 `code-linter.json5`，显式指定时必须与待检查路径属于同一项目 |
+| `--fix`                      | 自动修复可修复的问题                                                  |
+| `--incremental`              | 仅检查 Git 未提交文件                                                 |
+| `--product <name>`           | `build-profile.json5` 中定义的 product，默认为 `default`              |
+| `--format <default\|json>`   | 完整报告格式；`default` 输出 Markdown，`json` 输出 JSON                |
+| `--output-path <path>`       | 完整报告文件或目录；目录形式会自动生成带时间戳的报告文件               |
+| `--limit <number>`           | 未指定 `--output-path` 时，限制终端显示的问题数量                      |
+
 ### `emulator list`
 
 查看模拟器实例
@@ -399,7 +423,15 @@ devecocli emulator sensor --target Phone --heartrate 80
 - `geolocation` 支持 `--longitude`、`--latitude`、`--altitude`、`--direction`。
 - `scene` 取值为 `outdoorRunning`、`outdoorCycling`、`drivingNavigation`。
 - `sensor` 支持 `--light-intensity`、`--humidity`、`--temperature`、`--steps`、`--heartrate`。
-- 折叠状态覆盖 3 类设备形态，去重后支持 13 个可输入 `state`，底层均映射为 `Emulator -instance <name> -foldedState <state>`。
+- `fold <state>` 会根据目标模拟器的设备类型校验状态，设备与参数必须匹配：
+
+  | 设备类型 | 支持的 `state` |
+  | --- | --- |
+  | `foldable` | `open`、`half-open`、`close` |
+  | `2in1_foldable` | `open`、`vertical-open`、`half-open`、`close` |
+  | `triplefold` | `single`、`double`、`triple`、`left-folded-right-half-folded`、`left-half-folded-right-expanded`、`left-expanded-right-folded`、`left-half-folded-right-folded`、`left-expanded-right-half-folded`、`left-half-folded-right-half-folded` |
+
+  校验以目标模拟器实际返回的 `deviceType` 为准。非上述三种设备类型以及不属于目标设备类型的状态会在命令下发前被拒绝。校验通过后，底层映射为 `Emulator -instance <name> -foldedState <state>`。
 - 设置 `DEVECO_CLI_DEBUG=1` 可查看底层命令映射，例如 `Emulator -instance <name> -shake`。
 
 ### `ui screenshot`
@@ -823,7 +855,7 @@ devecocli skills remove --skill skillname --agent agentname  # skillname需替�
 
 ### `serve lsp`
 
-启动本地 `LSP` 语言服务。智能体配置 `LSP` 服务后，可通过 `LSP` 协议获取 `ArkTS` 代码补全、跳转定义、悬浮提示、引用查找、诊断等语言特性。当前支持 `ArkTS`（`ace-server`）。
+启动本地 `LSP` 语言服务。智能体配置 `LSP` 服务后，可通过 `LSP` 协议获取代码补全、跳转定义、悬浮提示、引用查找、诊断等语言特性。当前支持 `ArkTS`和 `clangd`。
 
 ```bash
 {
@@ -838,6 +870,24 @@ devecocli skills remove --skill skillname --agent agentname  # skillname需替�
       "extensions": [
         ".ets"
       ]
+    },
+    "clangd": {
+      "command": [
+        "devecocli",
+        "serve",
+        "lsp",
+        "--cpp"
+      ],
+      "extensions": [
+        ".c",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".h",
+        ".hpp",
+        ".hxx",
+        ".hh"
+      ]
     }
   }
 }
@@ -847,9 +897,10 @@ devecocli skills remove --skill skillname --agent agentname  # skillname需替�
 
 | 参数名 | 说明 |
 | --- | --- |
-| `--arkts` | 必选，启动 ArkTS 语言服务（ace-server），不传会报错退出 |
+| `--arkts` | 与 `--cpp` 二选一，启动 ArkTS 语言服务（ace-server） |
+| `--cpp` | 与 `--arkts` 二选一，启动 C/C++ 语言服务（clangd） |
 | `--project-path <path>` | 可选，工程根路径，默认为当前工作目录 |
-| `--auto-detect` | 可选，当前目录向下查找工程根（检查当前目录自身及其子目录，最多 3 层子目录）；指定了 `--project-path` 则忽略 |
+| `--auto-detect` | 可选，当前目录向下查找工程根（检查当前目录自身及其子目录，最多 3 层子目录）；适用于 `--arkts` 和 `--cpp`；指定了 `--project-path` 则忽略 |
 
 ## 常见问题
 

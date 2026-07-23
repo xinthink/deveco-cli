@@ -6,9 +6,9 @@ description: >-
 
 # DevEco CLI
 
-`devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc`, emulator toolchain, UI inspection, and HarmonyOS-skills installer. **Prefer `devecocli` over invoking underlying tools directly.**
+`devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc`, emulator toolchain, and bundled skills installer. **Prefer `devecocli` over invoking underlying tools directly.**
 
-Available commands: `build`, `run`, `update`, `device`, `emulator`, `skills`, `log`, `create`, `init`, `serve`, `docs`, `ui`.
+Available commands: `build`, `check`, `run`, `update`, `device`, `emulator`, `ui`, `skills`, `log`, `create`, `init`, `serve`, `docs`.
 
 **Sandbox Rule**: Commands tagged `[Outside sandbox]` must be run outside the sandbox.
 
@@ -31,6 +31,12 @@ Compile and package project/modules. (Defaults: `--product default`, `--build-mo
 | Whole product bundle (.app) | `devecocli build --product <name>` |
 | Clean build outputs | `devecocli build clean` |
 
+### `devecocli check lint`
+Run DevEco Code Linter checks for TS/ArkTS code.
+- `[path]`: File or directory to lint. Defaults to the project root from `build-profile.json5`, otherwise the current directory.
+- Options: `--config-path <file>`, `--fix`, `--incremental`, `--product <name>`, `--format <default|json>`, `--output-path <path>`, `--limit <number>`.
+- Set `DEVECO_CLI_CLT_PATH` to the Command Line Tools root when DevEco Studio is not installed; CLT is not discovered automatically from PATH or default installation directories.
+
 ### `devecocli emulator`
 Manage local emulator instances and system images.
 - `list`: Show instances (status, serial, device type).
@@ -38,7 +44,7 @@ Manage local emulator instances and system images.
 - `stop <names...>`: Stop by name or serial (`127.0.0.1:<port>`).
 - Scene control commands require Emulator 7.0 or later. Use `DEVECO_CLI_DEBUG=1` to inspect the underlying `Emulator` command mapping.
 - `shake` / `power` / `rotate <left|right>` / `volume <up|down>` (Req: `--target <nameOrSerial>`): Basic emulator controls.
-- `fold <state>` (Req: `--target <nameOrSerial>`): Set foldable display state.
+- `fold <state>` (Req: `--target <nameOrSerial>`): Set foldable display state, matched against the target emulator's reported `deviceType`. `foldable` uses `open|half-open|close`; `2in1_foldable` uses `open|vertical-open|half-open|close`; `triplefold` uses `single|double|triple` or one of its six left/right folded-state combinations. Other device types and cross-device states are rejected before execution.
 - `battery` (Req: `--target`; one of `--level <0-100>` or `--status <charging|discharging>`): Set battery state.
 - `geolocation` (Req: `--target`; one of `--longitude`, `--latitude`, `--altitude`, `--direction`): Inject GPS data.
 - `scene <outdoorRunning|outdoorCycling|drivingNavigation>` (Req: `--target`): Start motion simulation.
@@ -48,6 +54,13 @@ Manage local emulator instances and system images.
 - `image list`: List downloaded images. Opts: `--device-type <type>`, `--all`, `--format <table|json>`.
 - `image download` / `image remove` (Req: `--device-type`, `--os-version`): Download/remove image. (Takes 30+ min, set long timeout).
 *Device types*: `phone`, `foldable`, `widefold`, `triplefold`, `tablet`, `2in1`, `2in1 foldable`, `wearable`, `tv`.
+
+### `devecocli ui`
+Inspect UI on a connected physical device or running emulator.
+- `screenshot`: Capture a screenshot from a physical device or running emulator. `--device <name|serial>` is optional when exactly one device is connected, and required when multiple devices are connected.
+- Optional: `--display <displayId>`, `--path <path>` (existing directory or PNG file path whose parent exists; create the directory first; default: `./screenshot-<timestamp>.png`).
+- Implementation uses `hdc shell snapshot_display` and `hdc file recv`; set `DEVECO_CLI_DEBUG=1` to inspect the actual `hdc` commands.
+*Ex*: `mkdir -p screenshots && devecocli ui screenshot --device Phone --path ./screenshots/phone.png`
 
 ### `devecocli docs`
 Search/read local HarmonyOS docs.
@@ -72,6 +85,7 @@ Build, install, and launch.
   - **Prereq**: DevEco Studio ≥6.1.1 (hvigor `assembleDevHqf` support; below is rejected with an upgrade hint); run `devecocli run` once first (full build + deploy + generates the `buildConfig.json` cache that `--apply` reuses).
   - **If changes don't take effect**: check `<module>/build/config/buildConfig.json` has content — empty/missing means `devecocli run` wasn't run; on any apply failure, fall back to a full `devecocli run`.
 *Ex*: `devecocli run` → edit code → write `.hvigor/changes.txt` → `devecocli run --apply changes.txt`
+
 
 ### `devecocli log`
 Fetch hilog or crash logs. Req `--device <name|serial>` on multi-device hosts.
@@ -151,4 +165,4 @@ Manage HarmonyOS skills in AI agents/projects.
 - **`image download` failure / timeout**: Do NOT auto-retry. Give the command to the user to run manually in their terminal.
 - **`emulator create` timeout**: Treat as user-action step. Ask user to open DevEco Studio -> Device Manager. Check `emulator list` after user confirms. Do NOT auto-retry or edit SDK files.
 - **`image list` duplicate OS rows**: `phone`/`foldable`/`widefold`/`triplefold` share the same image. Download/remove ONCE per OS version.
-- **`ui layout` missing expected node**: `layout` only returns on-screen nodes. The user must scroll the target into view on the device before retrying (no CLI input subcommands in this build).
+**`ui layout` missing expected node**: `layout` only returns on-screen nodes. The user must scroll the target into view on the device before retrying (no CLI input subcommands in this build).

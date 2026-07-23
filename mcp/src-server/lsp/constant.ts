@@ -70,6 +70,19 @@ export const LSP_METHOD = {
     ARKTS_SYNC_COMPLETED: 'arkts/syncCompleted',
     ARKTS_REINITIALIZING: 'arkts/reinitializing',
     ARKTS_ERROR: 'arkts/error',
+
+    // ============================================================
+    // C++ 路径内部状态信号（与 ARKTS_* 平行，独立命名空间避免歧义）
+    // 仅用于 ClangdLspManager → CppCheckTool 之间的进程内通信，
+    // 不参与 wire protocol。
+    // ============================================================
+    CPP_INITIALIZED: 'cpp/initialized',
+    CPP_INITIALIZATION_FAILED: 'cpp/initializationFailed',
+    CPP_INDEXING_PROGRESS: 'cpp/indexingProgress',
+    CPP_SYNC_PROJECT: 'cpp/syncProject',
+    CPP_SYNC_COMPLETED: 'cpp/syncCompleted',
+    CPP_REINITIALIZING: 'cpp/reinitializing',
+    CPP_ERROR: 'cpp/error',
     /** 广播给上层时的回调 key */
     BROADCAST: 'lsp/broadcast',
 } as const;

@@ -17,6 +17,7 @@
     "scripts/lib/cli-data-dir.mjs",
     "scripts/lib/doc-init-log-path.mjs",
     "templates",
+    "src/resources",
     "THIRD-PARTY-LICENSES",
     "SKILL.md",
     "docs.zip",
