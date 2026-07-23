@@ -157,7 +157,7 @@ function mapCloudDeviceError(
   return new Error(SignatureErrorMessages.ERROR_WHILE_ADD_DEVICE);
 }
 
-async function getDeviceList(auth: AuthInfo): Promise<DeviceInfo[]> {
+export async function getDeviceList(auth: AuthInfo): Promise<DeviceInfo[]> {
   const pageSize = 100;
   const firstPage = await getDevices(auth, 1, pageSize);
 

@@ -4,13 +4,29 @@
  */
 import { Command } from 'commander';
 import { green, red } from 'colorette';
+import { EnvChecker } from '../signature/env-checker';
 
 interface SignatureGenerateOptions {
   force?: boolean;
   teamId?: string;
+  product?: string;
 }
 
-async function handleSignatureCommand(options: SignatureGenerateOptions): Promise<void> {
+async function handleSignatureCommand(
+  options: SignatureGenerateOptions
+): Promise<void> {
+  const productName = options.product || 'default';
+
+  // 环境预检
+  const checker = new EnvChecker();
+  const passed = await checker.preflight({
+    productName,
+    teamId: options.teamId,
+  });
+  if (!passed) {
+    process.exit(1);
+  }
+
   console.log('Executing signature generate command');
   console.log(`Force: ${options.force ?? false}`);
   console.log(`Team ID: ${options.teamId ?? 'default'}`);
