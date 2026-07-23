@@ -92,6 +92,7 @@ export class HttpClient {
           ? response.data
           : JSON.stringify(response.data),
       statusCode: response.status,
+      statusText: response.statusText ?? '',
       headers: response.headers as Record<
         string,
         string | string[] | undefined
@@ -132,6 +133,63 @@ export class HttpClient {
     }
 
     return Buffer.from(response.data);
+  }
+
+  /**
+   * 发送 POST 请求，4xx/5xx 不抛错，返回带状态码的响应
+   * 用于需按 HTTP 状态码 + 响应体判定错误的云侧接口
+   */
+  public async postAllowFailure(
+    url: string,
+    config?: HttpRequestConfig
+  ): Promise<HttpResponse> {
+    const response = await this.client.request({
+      method: 'POST',
+      url,
+      data: config?.params,
+      headers: config?.headers,
+      timeout: config?.timeout,
+      validateStatus: () => true,
+    });
+    return this.convertResponse(response);
+  }
+
+  /**
+   * 发送 DELETE 请求，4xx/5xx 不抛错，返回带状态码的响应
+   */
+  public async deleteAllowFailure(
+    url: string,
+    config?: HttpRequestConfig
+  ): Promise<HttpResponse> {
+    const response = await this.client.request({
+      method: 'DELETE',
+      url,
+      data: config?.params,
+      headers: config?.headers,
+      timeout: config?.timeout,
+      validateStatus: () => true,
+    });
+    return this.convertResponse(response);
+  }
+
+  /**
+   * GET 二进制下载，4xx/5xx 不抛错，返回状态码 + 文本主体（用于错误判定）
+   */
+  public async getBinaryAllowFailure(
+    url: string,
+    config?: HttpRequestConfig
+  ): Promise<{ statusCode: number; statusText: string; buffer: Buffer; body: string }> {
+    const response = await this.client.request({
+      method: 'GET',
+      url,
+      responseType: 'arraybuffer',
+      headers: config?.headers,
+      timeout: config?.timeout,
+      validateStatus: () => true,
+    });
+    const buffer = Buffer.from(response.data);
+    const body = buffer.toString('utf8');
+    return { statusCode: response.status, statusText: response.statusText ?? '', buffer, body };
   }
 }
 
