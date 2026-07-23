@@ -5,3 +5,4 @@
 
 export { ArktsCheckTool } from './arkts-check.js';
 export { CppCheckTool } from './cpp-check.js';
+export { ClangdLspTool } from './clangd-lsp-tool.js';

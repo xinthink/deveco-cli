@@ -46,10 +46,11 @@ src/
 ├── commands/                 # One file per subcommand. Keep it thin: CLI shape + spinner + render.
 ├── skills/                   # HarmonyOS skills marketplace client (api + installer + agents + mcp-installer)
 ├── service/                  # Domain helpers (device, emulator, doc)
-├── utils/                    # Adapters (hdc, hilog, ohpm, hvigor) + tool-provider + shared validators
+├── utils/                    # Adapters (hdc, hilog, ohpm, hvigor) + shared validators
 ├── config/                   # constants, network, skills, mcp
 ├── data/                     # Bundled data files (e.g. emulator-privacy-bundled.ts)
 ├── types/                    # Shared type defs
+├── toolchain/                # DevEco Studio toolchain resolution (ToolProvider: node/ohpm/hvigor/java/hdc/emulator/sdk)
 └── internal/                 # Internal entry points (e.g. doc-init-background.ts, also a tsup entry)
 
 mcp/src-server/               # Bundled stdio MCP server (ArkTS/C++ syntax checking via LSP)
@@ -59,7 +60,7 @@ index/                        # Source for `npm run build:index` (regenerates in
 ```
 
 **Real entrypoints**: `src/cli.ts` is the user-facing bin. `src/internal/doc-init-background.ts` is a second tsup entry spawned after install to populate the docs search index. `mcp/src-server/index.ts → createMcpServer` is the MCP orchestrator started by `devecocli serve mcp`.
-**Toolchain resolution**: `utils/tool-provider.ts` finds DevEco Studio (Win: registry → `C:\Program Files\Huawei\DevEco Studio`; macOS: `~/Applications` + `/Applications` for `*DevEco*.app`; **Linux unsupported**). It resolves `nodePath` / `ohpmJsPath` / `hvigorJsPath` / `javaPath` / `hdcPath` / `emulatorPath` / `sdkPath`. hilog is not a separate binary — it runs through `hdc shell hilog`.
+**Toolchain resolution**: `toolchain/tool-provider.ts` finds DevEco Studio (Win: registry → `C:\Program Files\Huawei\DevEco Studio`; macOS: `~/Applications` + `/Applications` for `*DevEco*.app`; **Linux unsupported**). It resolves `nodePath` / `ohpmJsPath` / `hvigorJsPath` / `javaPath` / `hdcPath` / `emulatorPath` / `sdkPath`. hilog is not a separate binary — it runs through `hdc shell hilog`.
 **Build pipeline**: `commands/build.ts` runs `ohpm install --all → hvigor --sync → hvigor assemble*`. The artifact path resolver lives in `utils/project.ts → findArtifactPath`.
 **Apply**: `commands/run.ts --apply <fileName>` fast-incremental-deploys changed files — writes the list to `.hvigor/<fileName>`, drives hvigor `assembleDevHqf` to produce signed hqf, installs via `bm quickfix -a -f -o`, then restarts. Modules auto-detected from file paths. Requires DevEco Studio ≥6.1.1 (hvigor `assembleDevHqf`); below is rejected with an upgrade hint. Prereq: `devecocli run` once first (generates `buildConfig.json` cache); on failure falls back to a full `devecocli run`.
 **Device selection**: `service/device-manager.ts` is the single source for "what's connected". Commands that accept a device use a shared resolver that maps a user-supplied name or serial to a concrete serial.
