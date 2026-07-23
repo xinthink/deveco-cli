@@ -15,38 +15,37 @@ import { loginService, getTeamList } from '../../auth/index.js';
 import type { CheckResult } from './types.js';
 import type { AuthInfo } from '../types.js';
 
-/** 获取默认 teamId，取团队列表第一个；列表为空或 API 不可用时回退到空字符串。 */
-async function resolveDefaultTeamId(): Promise<string> {
+async function resolveDefaultTeamId(userId?: string): Promise<string> {
   try {
     const { teamList } = await getTeamList();
     if (teamList.length > 0) {
       return teamList[0].id;
     }
-  } catch {
-    // 降级
+  } catch (e) {
+    debugLog(`[EnvCheck] resolveDefaultTeamId failed: ${(e as Error).message}`);
   }
-  return '';
+  return userId ?? '';
 }
 
 /**
  * 查询 CPS 云端设备列表，复用 getDeviceList 实现。
  * 未登录或 API 不可用时抛出异常，由调用方处理。
  */
-async function fetchCloudDevices(): Promise<Array<{ deviceId: string; deviceName: string }>> {
+async function fetchCloudDevices(teamId?: string): Promise<Array<{ deviceId: string; deviceName: string }>> {
   const userInfo = await loginService.getUserInfo();
   const token = await loginService.refreshToken();
   if (!userInfo || !token?.accessToken) {
     throw new Error('Not logged in');
   }
 
-  const teamId = await resolveDefaultTeamId();
-  if (!teamId) {
+  const resolvedTeamId = teamId || await resolveDefaultTeamId(userInfo.userId);
+  if (!resolvedTeamId) {
     throw new Error('No team found');
   }
 
   const auth: AuthInfo = {
     uid: userInfo.userId ?? '',
-    teamId,
+    teamId: resolvedTeamId,
     accessToken: token.accessToken,
   };
 
@@ -65,11 +64,12 @@ export class DeviceChecker {
    * 云端有设备时跳过本地设备检查；无云端设备时回退到本地 hdc 检查。
    */
   async checkDevice(
-    fail: (msg: string) => CheckResult
+    fail: (msg: string) => CheckResult,
+    teamId?: string
   ): Promise<CheckResult> {
     try {
       // 1) 先查 AGC 云端设备列表
-      const cloudDevices = await fetchCloudDevices();
+      const cloudDevices = await fetchCloudDevices(teamId);
       if (cloudDevices.length > 0) {
         debugLog(
           `[EnvCheck] Scenario 4 Device check: ${cloudDevices.length} device(s) found in AGC cloud, skipping local device check`

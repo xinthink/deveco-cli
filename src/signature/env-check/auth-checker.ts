@@ -109,14 +109,14 @@ export class AuthChecker {
       const teamExists = teamListResult.teamList.some(t => t.id === resolvedTeamId);
 
       if (!teamExists) {
-        const msg = EnvCheckMessages.TEAM_ID_NOT_FOUND(resolvedTeamId);
+        const msg = `team-id for ${resolvedTeamId} not found.Run devecocli auth team list to view the team to which the logged-in user belongs.`;
         debugLog(`[EnvCheck] ${msg}`);
         return { passed: false, message: msg };
       }
       return { passed: true, message: '' };
     } catch (e) {
       debugLog(`[EnvCheck] Team ID check failed: ${(e as Error).message}`);
-      return { passed: false, message: EnvCheckMessages.TEAM_ID_NOT_FOUND(resolvedTeamId) };
+      return { passed: false, message: `team-id for ${resolvedTeamId} not found.Run devecocli auth team list to view the team to which the logged-in user belongs.` };
     }
   }
 

@@ -41,7 +41,7 @@ export class ProjectChecker {
       return { passed: true, message: '' };
     } catch (e) {
       debugLog(`[EnvCheck] Product validation failed: ${(e as Error).message}`);
-      return fail(EnvCheckMessages.PRODUCT_NOT_FOUND(productName));
+      return fail(`Product "${productName}" not found.Check the product property in the build-profile.json5 file.`);
     }
   }
 
@@ -54,7 +54,7 @@ export class ProjectChecker {
       return { passed: true, message: '' };
     } catch (e) {
       debugLog(`[EnvCheck] BundleName check failed: ${(e as Error).message}`);
-      return fail(EnvCheckMessages.BUNDLE_NAME_MISSING(productName));
+      return fail(`bundleName was not found under product "${productName}".Check the bundleName configuration.`);
     }
   }
 

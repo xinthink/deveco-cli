@@ -40,7 +40,7 @@ export class EnvChecker {
 
     if (!await this.runAuthChain(ctx, bf)) { return false; }
     if (!await this.initToolchain()) { return false; }
-    if (!await this.runDeviceCheck(bf)) { return false; }
+    if (!await this.runDeviceCheck(ctx, bf)) { return false; }
     if (!await this.runProjectChecks(ctx, bf)) { return false; }
     if (!await this.runAuxChecks(ctx)) { return false; }
 
@@ -80,12 +80,12 @@ export class EnvChecker {
   }
 
   /** 设备检查 */
-  private async runDeviceCheck(bf: (m: string) => CheckResult): Promise<boolean> {
+  private async runDeviceCheck(ctx: CheckContext, bf: (m: string) => CheckResult): Promise<boolean> {
     const failFast = (r: CheckResult): boolean => {
       if (!r.passed) { this.fail(r); return false; }
       return true;
     };
-    return failFast(await this.deviceChecker!.checkDevice(bf));
+    return failFast(await this.deviceChecker!.checkDevice(bf, ctx.teamId));
   }
 
   /** 工程目录 + 同步检查 */

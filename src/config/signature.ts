@@ -180,8 +180,6 @@ export const EnvCheckMessages = {
   REALNAME_REQUIRED:
     'Users without real-name verification are not supported.Complete real-name verification in AppGallery Connect.',
   SESSION_EXPIRED: 'User session expired or token invalid. Please login again.',
-  TEAM_ID_NOT_FOUND: (id: string) =>
-    `team-id for ${id} not found.Run devecocli auth team list to view the team to which the logged-in user belongs.`,
   REGION_CHINA_ONLY:
     'This feature is only available for accounts registered in Chinese mainland.',
 
@@ -196,16 +194,10 @@ export const EnvCheckMessages = {
     'Java environment not found (Windows/macOS/Linux only).',
   JAVA_REQUIRED:
     'Java runtime is required to run hvigor.Set JAVA_HOME or add Java to PATH.',
-  HAP_SIGN_TOOLS_MISSING: (relativePath: string) =>
-    `hap_sign_tools.jar not found.Check whether ${relativePath} exists.`,
 
   // ── project-checker.ts ──
   PROJECT_DIR_MISSING:
     'Not in a valid project directory (project-level build-profile.json5 not found).',
-  PRODUCT_NOT_FOUND: (productName: string) =>
-    `Product "${productName}" not found.Check the product property in the build-profile.json5 file.`,
-  BUNDLE_NAME_MISSING: (productName: string) =>
-    `bundleName was not found under product "${productName}".Check the bundleName configuration.`,
   ATOMIC_SERVICE_UNSUPPORTED:
     'AtomicService projects are not yet supported. Please configure signing manually.',
 } as const;

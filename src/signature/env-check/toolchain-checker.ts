@@ -71,7 +71,7 @@ export class ToolchainChecker {
 
     if (!fs.existsSync(hapSignToolPath)) {
       const relativePath = path.join('sdk', 'default', 'openharmony', 'toolchains', 'lib', 'hap_sign_tools.jar');
-      return fail(EnvCheckMessages.HAP_SIGN_TOOLS_MISSING(relativePath));
+      return fail(`hap_sign_tools.jar not found.Check whether ${relativePath} exists.`);
     }
     return { passed: true, message: '' };
   }
