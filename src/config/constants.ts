@@ -29,4 +29,7 @@ export {
 // 项目相关常量，用于 CLI 和 MCP 共享
 export { ProjectConstants } from './project';
 
+// IDE 下载路径
+export const IDE_DOWNLOAD_URL = 'https://developer.huawei.com/consumer/cn/download/';
+
 

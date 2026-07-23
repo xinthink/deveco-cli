@@ -10,12 +10,12 @@ import { discoverStudioInstallRoot } from './studio-discovery.js';
 import { compareStudioVersions, readStudioVersion } from './studio-version.js';
 import { resolveEnvRoot } from './environment-path.js';
 import { debugLog } from '../utils/logger.js';
+import { IDE_DOWNLOAD_URL } from '../config/constants.js';
 import {
   resolveCanonicalPath,
   resolvePathInsideRoot,
 } from '../utils/path-containment.js';
 
-const DOWNLOAD_URL = 'https://developer.huawei.com/consumer/cn/download/';
 const CLT_VERSION = /^#\s*Version:\s*(\S+)/;
 
 type InstallSourceType = 'clt' | 'studio';
@@ -284,7 +284,7 @@ export class ToolProvider {
     }
     if (compareStudioVersions(version, minimum) < 0) {
       throw new Error(
-        `The detected ${label} version is ${version}, which is below the minimum required version ${minimum}. Upgrade before using deveco-cli:\n${DOWNLOAD_URL}`
+        `The detected ${label} version is ${version}, which is below the minimum required version ${minimum}. Upgrade before using deveco-cli:\n${IDE_DOWNLOAD_URL}`
       );
     }
   }
