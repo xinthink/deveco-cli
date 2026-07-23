@@ -115,7 +115,7 @@ async function getDevices(
 
   const data = JSON.parse(response.data);
 
-  if (!data.list) {
+  if (!data || !data.list) {
     debuglog('query devices failed: response list is null');
     throw new Error(
       data.ret?.msg || SignatureErrorMessages.ERROR_WHILE_ADD_DEVICE
@@ -157,7 +157,7 @@ function mapCloudDeviceError(
   return new Error(SignatureErrorMessages.ERROR_WHILE_ADD_DEVICE);
 }
 
-async function getDeviceList(auth: AuthInfo): Promise<DeviceInfo[]> {
+export async function getDeviceList(auth: AuthInfo): Promise<DeviceInfo[]> {
   const pageSize = 100;
   const firstPage = await getDevices(auth, 1, pageSize);
 
@@ -217,12 +217,10 @@ async function addDevice(
     );
   }
 
-  const responseStr = JSON.stringify(response.data);
+  const responseStr = response.data;
+  const data = JSON.parse(response.data);
 
-  if (
-    responseStr.includes(SignatureResponseSignals.SQUARE_BRACKETS) ||
-    !responseStr.includes(SignatureResponseSignals.SUCCESS_MARKER)
-  ) {
+  if (!data || !data.ret || data.ret.code !== 0) {
     if (
       responseStr.includes(SignatureResponseSignals.DEVICE_EXCEEDS_LIMIT_CODE)
     ) {

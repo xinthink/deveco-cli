@@ -164,3 +164,40 @@ export const SignatureErrorMessages = {
   ERROR_SIGN_BUNDLE_NAME_VALIDATE:
     'The bundle name contains 7 to 128 characters, including only letters, digits, and underscores (_). It must be start with a letter and contain at least three segments separated by periods (.), each of the segments ending with a digit or letter.',
 } as const;
+
+/**
+ * 环境预检相关错误信息
+ */
+export const EnvCheckMessages = {
+  // ── env-checker.ts ──
+  TOOLCHAIN_INIT_FAILED: 'Auto-sign failed: unable to initialize toolchain',
+
+  // ── auth-checker.ts ──
+  LOGIN_REQUIRED:
+    'Failed to automatically generate signatures.Run devecocli auth login to sign in.',
+  TEAM_INFO_FAILED:
+    'Failed to obtain user team information.Check the network connection, HTTP proxy, and other configurations.',
+  REALNAME_REQUIRED:
+    'Users without real-name verification are not supported.Complete real-name verification in AppGallery Connect.',
+  SESSION_EXPIRED: 'User session expired or token invalid. Please login again.',
+  REGION_CHINA_ONLY:
+    'This feature is only available for accounts registered in Chinese mainland.',
+
+  // ── device-checker.ts ──
+  DEVICE_MISSING:
+    'Unable to create the profile file due to missing devices.Connect a device through IP or USB, or manually add a device in AppGallery Connect first.If you are installing the HAP package on an emulator, you can skip the signing step.',
+  DEVICE_DETECT_FAILED:
+    'Unable to detect devices. Please check hdc status. If installing HAP on an emulator, signature step can be skipped.',
+
+  // ── toolchain-checker.ts ──
+  JAVA_PLATFORM_UNSUPPORTED:
+    'Java environment not found (Windows/macOS/Linux only).',
+  JAVA_REQUIRED:
+    'Java runtime is required to run hvigor.Set JAVA_HOME or add Java to PATH.',
+
+  // ── project-checker.ts ──
+  PROJECT_DIR_MISSING:
+    'Not in a valid project directory (project-level build-profile.json5 not found).',
+  ATOMIC_SERVICE_UNSUPPORTED:
+    'AtomicService projects are not yet supported. Please configure signing manually.',
+} as const;

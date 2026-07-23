@@ -90,7 +90,7 @@ export class UserInfoFetcher {
       jwtToken: jwtToken,
       countryCode: tokenInfo.userInfo.nationalCode,
       language: getLanguageByCountryCode(tokenInfo.userInfo.nationalCode),
-      isRealName: tokenInfo.userInfo.realName === 'true',
+      isRealName: String(tokenInfo.userInfo.realName) === 'true',
     };
 
     return userInfo;
