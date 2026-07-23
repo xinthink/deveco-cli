@@ -292,6 +292,7 @@ export class AclPermissionConfig {
     try {
       text = this.readBuiltInConfigText();
     } catch {
+      debuglog(`read builtin acl permission failed.`);
       return;
     }
 

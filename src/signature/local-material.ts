@@ -9,6 +9,7 @@ import {
   SignatureErrorMessages,
 } from '../config/signature.js';
 import { getAutoSignFilePath, type SignFileSuffix } from './signature-tool.js';
+import { SignatureFiles } from './types';
 
 /**
  * 本地签名材料后缀（对齐 AutoSigningHandleService#deleteLocalSignFiles：
@@ -45,4 +46,22 @@ export function checkCertificateValidate(cerFilePath: string): void {
   if (!CertConstants.CERT_PATTERN.test(content)) {
     throw new Error(SignatureErrorMessages.ERR_CERT_INVALIDATE);
   }
+}
+
+/**
+ * 签名材料路径
+ *
+ * @param productName product
+ * @param projectRoot 工程路径
+ */
+export async function resolveSignatureFilePaths(
+  productName: string,
+  projectRoot: string
+): Promise<SignatureFiles> {
+  return {
+    certPath: await getAutoSignFilePath(productName, projectRoot, 'cer'),
+    csrPath: await getAutoSignFilePath(productName, projectRoot, 'csr'),
+    p12Path: await getAutoSignFilePath(productName, projectRoot, 'p12'),
+    profilePath: await getAutoSignFilePath(productName, projectRoot, 'p7b'),
+  };
 }

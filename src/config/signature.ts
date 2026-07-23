@@ -22,6 +22,23 @@ export const SignatureEndpoints = {
 
   /** 证书下载链接申请路径 */
   CERT_DOWNLOAD_URL_PATH: '/api/amis/app-manage/v1/objects/url/reapply',
+
+  /** 设备添加路径 */
+  DEVICE_ADD_PATH: '/api/cps/device-manage/v1/device/add',
+
+  /** 设备列表查询路径 */
+  DEVICE_LIST_PATH: '/api/cps/device-manage/v1/device/list',
+
+  /** provision添加路径 */
+  PROVISION_ADD_REAL_PATH:
+    '/api/cps/provision-manage/v1/ide/real/provision/add',
+
+  /** provision添加路径 */
+  PROVISION_ADD_TEST_PATH:
+    '/api/cps/provision-manage/v1/ide/test/provision/add',
+
+  /** provision删除路径 */
+  PROVISION_DELETE_PATH: '/api/cps/provision-manage/v1/provision/delete',
 } as const;
 
 /**
@@ -40,6 +57,18 @@ export const CertConstants = {
   /** 证书格式规范 */
   CERT_PATTERN: /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/,
 
+  /** 默认key值 */
+  TARGET_FRIENDLY_NAME: 'debugKey',
+
+  CERTIFICATE_PATTERN_GLOBAL:
+    /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g,
+
+  /** bundleName正则表达 */
+  BUNDLE_NAME_REGEX: /^[a-zA-Z][a-zA-Z0-9._-]*$/,
+
+  /** 证书起始格式 */
+  CERT_BEGIN_HEADER: '-----BEGIN CERTIFICATE-----',
+
   /** 证书保存目录（相对用户主目录） */
   CERT_SAVE_DIR: join('.ohos', 'config'),
 
@@ -54,6 +83,9 @@ export const SignatureResponseSignals = {
   /** 响应体含此子串表示成功 */
   SUCCESS_MARKER: '"code":0',
 
+  /** 返回结果为空 */
+  SQUARE_BRACKETS: '[]',
+
   /** statusCode=403 时 reason phrase 精确匹配此串 */
   OPENPROXY_BLOCKED_URL: 'Openproxy_Blocked_URL_list',
 
@@ -62,6 +94,18 @@ export const SignatureResponseSignals = {
 
   /** 响应体含此 ret.code 表示非 Harmony 用户（USER_NOT_HARMONY_ALLOW） */
   USER_NOT_HARMONY_CODE: '205389904',
+
+  /** device number exceeds limit */
+  DEVICE_EXCEEDS_LIMIT_CODE: '205389859',
+
+  /** deviceName is repeat */
+  DEVICE_NAME_REPEAT_CODE: '205389857',
+
+  /** test provision exceeds limit */
+  PROVISION_EXCEEDS_LIMIT_CODE: '205389938',
+
+  /** provision name is repeat */
+  PROVISION_NAME_REPEAT_CODE: '205389830',
 } as const;
 
 /**
@@ -96,4 +140,27 @@ export const SignatureErrorMessages = {
     'The user is not in harmony allow list, please grant the permission',
 
   ERR_READ_CSR: 'Failed to read the .csr file, please try again later',
+
+  ERROR_WHILE_ADD_DEVICE: 'Failed to add the device, please try again.',
+  DEVICE_LIMIT_REACHED:
+    'The number of devices has reached the limit. Delete some unused devices and try again.',
+  DEVICE_NAME_REPEAT: 'Duplicate device name, please try again.',
+  DEVICE_LIST_EMPTY: 'No devices available.',
+
+  ADD_PROFILE_FAIL: 'Failed to add the profile, please try again.',
+  NO_AGC_PERMISSION:
+    'You do not have the AppGallery Connect permission with the current team. Apply for the permission form the team administrator, or switch to a team with which you already have the permission.',
+  ERROR_WHILE_DOWNLOAD_PROFILE:
+    'Failed to download the profile, please try again.',
+  PROFILE_NAME_REPEAT: 'The profile name already exists in the AGC.',
+  ERROR_WHILE_PARSE_PROFILE: 'Failed to parse the profile, please try again.',
+  TEST_PROVISION_EXCEEDS_LIMIT: 'Provision number exceeds limit.',
+
+  CERTIFICATION_AND_PROFILE_NOT_INCONSISTENT:
+    'The certificate application file is inconsistent with the file in profile, please try again.',
+  CERTIFICATE_HAS_EXPIRED:
+    'The signature does not take effect or has expired. It may be the current system time is inaccurate, please calibrate the system time and sign again.',
+
+  ERROR_SIGN_BUNDLE_NAME_VALIDATE:
+    'The bundle name contains 7 to 128 characters, including only letters, digits, and underscores (_). It must be start with a letter and contain at least three segments separated by periods (.), each of the segments ending with a digit or letter.',
 } as const;

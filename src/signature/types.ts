@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Huawei Device Co., Ltd.
+ * SPDX-License-Identifier: MIT
+ */
+
 export interface AuthInfo {
   uid: string;
   teamId: string;
@@ -31,4 +36,50 @@ export interface GenerateCertificateResult {
   keyAlias: string;
   /** 明文密钥【高度敏感，禁止打印/持久化日志】 */
   keyPwd: string;
+}
+
+export interface SignatureFiles {
+  certPath: string;
+  csrPath: string;
+  p12Path: string;
+  profilePath: string;
+}
+
+export interface AutoSignOptions {
+  productName: string;
+  bundleName: string;
+  projectPath: string;
+  teamId: string;
+  force: boolean;
+  aclPermissionList?: string[];
+  allDeviceIds?: string[];
+  certIds?: string[];
+  keyAlias?: string;
+  keyPwd?: string;
+}
+
+export interface DownloadUrlInfo {
+  sourceUrl: string;
+  newUrl: string;
+  fileName: number;
+  sha256: string;
+}
+
+export interface DeviceInfo {
+  id: string;
+  udid: string;
+  deviceName: string;
+  deviceType?: string;
+  createTime?: string;
+}
+
+export interface DevicePageResult {
+  deviceList: DeviceInfo[];
+  total: number;
+}
+
+export interface ProfileInfo {
+  id: string;
+  name: string;
+  provisionFileUrl: string;
 }
