@@ -423,7 +423,15 @@ devecocli emulator sensor --target Phone --heartrate 80
 - `geolocation` 支持 `--longitude`、`--latitude`、`--altitude`、`--direction`。
 - `scene` 取值为 `outdoorRunning`、`outdoorCycling`、`drivingNavigation`。
 - `sensor` 支持 `--light-intensity`、`--humidity`、`--temperature`、`--steps`、`--heartrate`。
-- 折叠状态覆盖 3 类设备形态，去重后支持 13 个可输入 `state`，底层均映射为 `Emulator -instance <name> -foldedState <state>`。
+- `fold <state>` 会根据目标模拟器的设备类型校验状态，设备与参数必须匹配：
+
+  | 设备类型 | 支持的 `state` |
+  | --- | --- |
+  | `foldable` | `open`、`half-open`、`close` |
+  | `2in1_foldable` | `open`、`vertical-open`、`half-open`、`close` |
+  | `triplefold` | `single`、`double`、`triple`、`left-folded-right-half-folded`、`left-half-folded-right-expanded`、`left-expanded-right-folded`、`left-half-folded-right-folded`、`left-expanded-right-half-folded`、`left-half-folded-right-half-folded` |
+
+  校验以目标模拟器实际返回的 `deviceType` 为准。非上述三种设备类型以及不属于目标设备类型的状态会在命令下发前被拒绝。校验通过后，底层映射为 `Emulator -instance <name> -foldedState <state>`。
 - 设置 `DEVECO_CLI_DEBUG=1` 可查看底层命令映射，例如 `Emulator -instance <name> -shake`。
 
 ### `ui screenshot`

@@ -1147,7 +1147,7 @@ emulatorCommand
   .description('Start motion simulation scene')
   .requiredOption('--target <nameOrSerial>', 'Target emulator name or serial')
   .addArgument(
-    new Argument('<type>').choices([
+    new Argument('<type>', 'Motion simulation scene').choices([
       'outdoorRunning',
       'outdoorCycling',
       'drivingNavigation',

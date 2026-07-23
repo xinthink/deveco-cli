@@ -44,7 +44,7 @@ Manage local emulator instances and system images.
 - `stop <names...>`: Stop by name or serial (`127.0.0.1:<port>`).
 - Scene control commands require Emulator 7.0 or later. Use `DEVECO_CLI_DEBUG=1` to inspect the underlying `Emulator` command mapping.
 - `shake` / `power` / `rotate <left|right>` / `volume <up|down>` (Req: `--target <nameOrSerial>`): Basic emulator controls.
-- `fold <state>` (Req: `--target <nameOrSerial>`): Set foldable display state.
+- `fold <state>` (Req: `--target <nameOrSerial>`): Set foldable display state, matched against the target emulator's reported `deviceType`. `foldable` uses `open|half-open|close`; `2in1_foldable` uses `open|vertical-open|half-open|close`; `triplefold` uses `single|double|triple` or one of its six left/right folded-state combinations. Other device types and cross-device states are rejected before execution.
 - `battery` (Req: `--target`; one of `--level <0-100>` or `--status <charging|discharging>`): Set battery state.
 - `geolocation` (Req: `--target`; one of `--longitude`, `--latitude`, `--altitude`, `--direction`): Inject GPS data.
 - `scene <outdoorRunning|outdoorCycling|drivingNavigation>` (Req: `--target`): Start motion simulation.
