@@ -16,14 +16,10 @@ import {
 } from 'fs';
 import { execa } from 'execa';
 import { ToolProvider } from '../toolchain/index.js';
-import { getDownloadUrl } from '../toolchain/tool-provider.js';
-import { readStudioVersion } from '../toolchain/studio-version.js';
 import { HvigorAdapter } from '../utils/hvigor-adapter.js';
 import { cyan, yellow } from 'colorette';
 import { debugLog } from '../utils/logger.js';
 import ora from 'ora';
-
-const DEVECO_STUDIO_MIN_VERSION = '26.0.0.810';
 
 const FORMAT_VALUES = ['default', 'csv', 'json'] as const;
 type FormatValue = typeof FORMAT_VALUES[number];
@@ -51,35 +47,6 @@ function parseLimit(value: string): number {
 }
 
 /**
- * 平台白名单检查。
- */
-function checkOsSupported(): void {
-  const platform = os.platform();
-  if (platform !== 'darwin' && platform !== 'win32') {
-    throw new Error(
-      `Unsupported platform: ${platform}. compat only supports macOS and Windows.`
-    );
-  }
-}
-
-/**
- * 返回 arkanalyzer-apiscan 插件目录的绝对路径。
- */
-async function getPluginPath(): Promise<string> {
-  checkOsSupported();
-  const platform = os.platform();
-  const toolProvider = await ToolProvider.new();
-  const contentsPrefix = platform === 'darwin' ? 'Contents' : '';
-  return path.join(
-    toolProvider.devecoStudioPath,
-    contentsPrefix,
-    'plugins',
-    'harmony',
-    'arkanalyzer-apiscan'
-  );
-}
-
-/**
  * 升序排序 SDK 版本号。版本号形式 `*_X.Y.Z(N)_<suffix>`
  */
 function sortVersions(versions: string[]): string[] {
@@ -99,27 +66,6 @@ function parseSdkVersion(version: string): { apiVersion: number; suffix: string 
   const lastUnderscore = version.lastIndexOf('_');
   const suffix = lastUnderscore >= 0 ? version.slice(lastUnderscore + 1) : version;
   return { apiVersion, suffix };
-}
-
-/**
- * 获取 apiscan 插件路径。
- * 缺失时提示用户升级 DevEco Studio。
- */
-async function getApiscanPluginPaths(
-  pluginPath: string
-): Promise<{ apiChangeDir: string; scriptPath: string }> {
-  const apiChangeDir = path.join(pluginPath, 'resources', 'apiChange');
-  const scriptPath = path.join(pluginPath, 'api-change-scan.js');
-  if (existsSync(apiChangeDir) && existsSync(scriptPath)) {
-    return { apiChangeDir, scriptPath };
-  }
-  const toolProvider = await ToolProvider.new();
-  const current = readStudioVersion(toolProvider.toolchainRoot) ?? 'unknown';
-  throw new Error(
-    `A required component is missing. The detected DevEco Studio version is ${current}. ` +
-      `The minimum required version is ${DEVECO_STUDIO_MIN_VERSION}. ` +
-      `Upgrade before using 'check compat' at ${getDownloadUrl()}`
-  );
 }
 
 /**
@@ -162,8 +108,8 @@ function readFormatFromArgv(fallback: 'csv' | 'json'): 'csv' | 'json' {
 async function handleVersionsCommand(
   format: 'csv' | 'json'
 ): Promise<void> {
-  const pluginPath = await getPluginPath();
-  const { apiChangeDir } = await getApiscanPluginPaths(pluginPath);
+  const toolProvider = await ToolProvider.new();
+  const { apiChangeDir } = toolProvider.getApiscanPaths();
   debugLog(cyan(`[compat:versions] apiChangeDir: "${apiChangeDir}"`));
 
   const versions = listApiChangeVersions(apiChangeDir);
@@ -525,8 +471,10 @@ function buildToolArgs(
 /**
  * 执行兼容性扫描工具。
  */
-async function runScanTool(args: string[]): Promise<string> {
-  const toolProvider = await ToolProvider.new();
+async function runScanTool(
+  toolProvider: ToolProvider,
+  args: string[]
+): Promise<string> {
   const cwd = path.dirname(args[0]);
   try {
     const result = await execa(toolProvider.nodePath, args, {
@@ -804,8 +752,10 @@ function persistReportToDir(
 /**
  * 执行 hvigor compileNative 生成 native 产物。
  */
-async function runHvigorCompileNative(options: CheckOptions): Promise<void> {
-  const toolProvider = await ToolProvider.new();
+async function runHvigorCompileNative(
+  toolProvider: ToolProvider,
+  options: CheckOptions
+): Promise<void> {
   const hvigor = new HvigorAdapter(toolProvider, process.cwd(), true);
   const compileModule =
     options.modules && options.modules.length > 0
@@ -836,8 +786,8 @@ async function prepareCheckContext(files: string[], options: CheckOptions) {
     validateFiles(files);
   }
 
-  const pluginPath = await getPluginPath();
-  const { apiChangeDir, scriptPath } = await getApiscanPluginPaths(pluginPath);
+  const toolProvider = await ToolProvider.new();
+  const { apiChangeDir, scriptPath } = toolProvider.getApiscanPaths();
   debugLog(cyan(`[compat:check] script: "${scriptPath}"`));
 
   const availableVersions = listApiChangeVersions(apiChangeDir);
@@ -851,7 +801,7 @@ async function prepareCheckContext(files: string[], options: CheckOptions) {
   debugLog(cyan(`[compat:check] outputTarget: ${target.kind}`));
   validateOutputTarget(target);
 
-  return { project, scriptPath, target };
+  return { project, scriptPath, target, toolProvider };
 }
 
 /**
@@ -862,18 +812,18 @@ async function handleCheckCommand(
   options: CheckOptions
 ): Promise<void> {
   // [1] 参数校验、项目发现、版本校验、输出目标解析
-  const { project, scriptPath, target } = await prepareCheckContext(files, options);
+  const { project, scriptPath, target, toolProvider } = await prepareCheckContext(files, options);
 
   const spinner = ora({ text: 'Running compatibility check...', color: 'cyan' }).start();
 
   try {
     // [2] 执行 hvigor compileNative 生成 native 产物
-    await runHvigorCompileNative(options);
+    await runHvigorCompileNative(toolProvider, options);
 
     // [3] 执行 API 变更扫描
     const args = buildToolArgs(scriptPath, files, project, options);
     debugLogRunnableCommand(scriptPath, args);
-    const stdout = await runScanTool(args);
+    const stdout = await runScanTool(toolProvider, args);
 
     // [4] 解析扫描结果
     const tmpCsvPath = extractCsvPathFromOutput(stdout, os.tmpdir());
