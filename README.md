@@ -418,7 +418,7 @@ devecocli emulator sensor --target Phone --heartrate 80
 **说明：**
 
 - `--target` 支持模拟器名称或 `127.0.0.1:<port>` 序列号。
-- `battery --level` 取值范围为整数 `[0, 100]`。
+- `battery --level` 取值范围为整数 `[1, 100]`。
 - `battery --status` 取值为 `charging` 或 `discharging`。
 - `geolocation` 支持 `--longitude`、`--latitude`、`--altitude`、`--direction`。
 - `scene` 取值为 `outdoorRunning`、`outdoorCycling`、`drivingNavigation`。
