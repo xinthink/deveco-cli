@@ -96,6 +96,7 @@ devecocli init --path D:\work\ARKTS\NewData
 | `devecocli docs search`   | 搜索本地 HarmonyOS 文档                         |
 | `devecocli init`          | 安装内置技能或配置 `MCP`                           |
 | `devecocli skills`        | 管理 HarmonyOS 技能市场中的技能                     |
+| `devecocli check compat`  | 扫描源代码在两个 `SDK` 版本之间的 `API` 变更         |
 
 ## 命令集
 
@@ -132,6 +133,7 @@ Commands:
   init [options]         Install the deveco-cli skill or configure the deveco-mcp server into AI agents
   serve                  Host bundled auxiliary protocol servers
   docs [options]         Search and read HarmonyOS documentation from local docs directory
+  check                  Run DevEco project checks
   help [command]         display help for command
 ```
 
@@ -901,6 +903,74 @@ devecocli skills remove --skill skillname --agent agentname  # skillname需替�
 | `--cpp` | 与 `--arkts` 二选一，启动 C/C++ 语言服务（clangd） |
 | `--project-path <path>` | 可选，工程根路径，默认为当前工作目录 |
 | `--auto-detect` | 可选，当前目录向下查找工程根（检查当前目录自身及其子目录，最多 3 层子目录）；适用于 `--arkts` 和 `--cpp`；指定了 `--project-path` 则忽略 |
+
+### `check compat`
+
+基于 `DevEco Studio` 自带的 `apkanalyzer-apiscan` 插件，扫描源代码在两个 `SDK` 版本之间的 `API` 变更情况。
+
+**子命令：**
+
+| 子命令 | 说明 |
+| --- | --- |
+| `devecocli check compat` | 默认执行工程级扫描 |
+| `devecocli check compat --modules <m1> [m2...]` | 按模块扫描 |
+| `devecocli check compat <file1> [file2...]` | 按文件扫描（仅支持 `.ets`/`.c`/`.cpp`） |
+| `devecocli check compat versions` | 列出可用的目标 `SDK` 版本 |
+
+**命令格式：**
+
+```bash
+devecocli check compat [files...] --source-version <ver> --target-version <ver> [--modules <m...>] [--format <default|csv|json>] [--output-path <path>] [--limit <n>]
+```
+
+**参数：**
+
+| 参数名 | 说明 |
+| --- | --- |
+| `--source-version` | 必填，当前工程 `SDK` 版本 |
+| `--target-version` | 必填，目标 `SDK` 版本 |
+| `--modules` | 可选，指定扫描的模块（多个以空格分隔）。与文件参数互斥 |
+| `--format` | 可选，输出格式。`default`/`csv`/`json`。默认 `default`（控制台输出文本，文件输出 `csv`） |
+| `--output-path` | 可选，报告输出路径。目录或文件（扩展名必须与 `--format` 匹配） |
+| `--limit` | 可选，控制台显示的最大记录数，默认 `100` |
+
+**版本号说明：**
+
+- 可用版本可通过 `devecocli check compat versions` 查看
+- `zsh` 环境下版本号需用引号包裹（包含括号），例如 `"<source_version>"`、`"<target_version>"`
+
+**格式与输出组合：**
+
+| 场景 | 允许的 `--format` | 行为 |
+| --- | --- | --- |
+| 控制台输出（无 `--output-path`） | `default` / `json` | `default` 输出文本表格，`json` 输出 `JSON` |
+| 文件输出（`--output-path <file>`，扩展名必须匹配 `--format`） | `default` / `csv` / `json` | `default`/`csv` 写 `.csv` 文件；`json` 写 `.json` 文件 |
+| 目录输出（`--output-path <dir>`，无扩展名） | `default` / `csv` / `json` | `default`/`csv` 生成 `apiChange-res{N}.csv`；`json` 生成 `apiChange-res{N}.json` |
+
+**示例：**
+
+```bash
+# 工程级扫描，输出到控制台
+devecocli check compat --source-version "<source_version>" --target-version "<target_version>"
+
+# 输出 JSON 到控制台
+devecocli check compat --format json --source-version "<source_version>" --target-version "<target_version>"
+
+# 输出报告到目录（默认 csv）
+devecocli check compat --output-path ./report --source-version "<source_version>" --target-version "<target_version>"
+
+# 输出 JSON 报告到目录（生成 apiChange-res{N}.json）
+devecocli check compat --output-path ./report --format json --source-version "<source_version>" --target-version "<target_version>"
+
+# 输出报告到指定文件
+devecocli check compat --output-path ./report.json --format json --source-version "<source_version>" --target-version "<target_version>"
+
+# 文件级扫描
+devecocli check compat ./entry/src/main/ets/pages/Index.ets --source-version "<source_version>" --target-version "<target_version>"
+
+# 模块级扫描
+devecocli check compat --modules entry har1 --source-version "<source_version>" --target-version "<target_version>"
+```
 
 ## 常见问题
 

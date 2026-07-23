@@ -14,37 +14,23 @@ import {
   copyFileSync,
   writeFileSync,
 } from 'fs';
-import { execFileSync } from 'child_process';
+import { execa } from 'execa';
 import { ToolProvider } from '../toolchain/index.js';
 import { HvigorAdapter } from '../utils/hvigor-adapter.js';
-import { red, cyan, yellow } from 'colorette';
+import { cyan, yellow } from 'colorette';
 import { debugLog } from '../utils/logger.js';
 import ora from 'ora';
 
-/**
- * `--format` 取值。`default` 默认为 `csv`
- */
-const FORMAT_ALIASES: Readonly<Record<string, 'csv' | 'json'>> = {
-  csv: 'csv',
-  default: 'csv',
-  json: 'json',
-};
+const FORMAT_VALUES = ['default', 'csv', 'json'] as const;
+type FormatValue = typeof FORMAT_VALUES[number];
 
-function parseFormatValue(value: string): 'csv' | 'json' {
-  const normalized = FORMAT_ALIASES[value];
-  if (normalized) {
-    return normalized;
+function parseFormat(value: string): FormatValue {
+  if (FORMAT_VALUES.includes(value as FormatValue)) {
+    return value as FormatValue;
   }
   throw new InvalidArgumentError(
-    `--format must be one of: csv, json (got "${value}")`
+    `--format must be one of: ${FORMAT_VALUES.join(', ')} (got "${value}")`
   );
-}
-
-/**
- * commander 用的 `--format` 校验器。
- */
-function parseFormat(value: string): 'csv' | 'json' {
-  return parseFormatValue(value);
 }
 
 /**
@@ -58,35 +44,6 @@ function parseLimit(value: string): number {
     );
   }
   return n;
-}
-
-/**
- * 平台白名单检查。
- */
-function checkOsSupported(): void {
-  const platform = os.platform();
-  if (platform !== 'darwin' && platform !== 'win32') {
-    throw new Error(
-      `Unsupported platform: ${platform}. compat only supports macOS and Windows.`
-    );
-  }
-}
-
-/**
- * 返回 arkanalyzer-apiscan 插件目录的绝对路径。
- */
-async function getPluginPath(): Promise<string> {
-  checkOsSupported();
-  const platform = os.platform();
-  const toolProvider = await ToolProvider.new();
-  const contentsPrefix = platform === 'darwin' ? 'Contents' : '';
-  return path.join(
-    toolProvider.devecoStudioPath,
-    contentsPrefix,
-    'plugins',
-    'harmony',
-    'arkanalyzer-apiscan'
-  );
 }
 
 /**
@@ -115,12 +72,6 @@ function parseSdkVersion(version: string): { apiVersion: number; suffix: string 
  * 读取可用 SDK 版本列表。
  */
 function listApiChangeVersions(apiChangeDir: string): string[] {
-  if (!existsSync(apiChangeDir)) {
-    throw new Error(
-      `apiChange directory not found at: ${apiChangeDir}\n` +
-        `Ensure DevEco Studio (>= 6.1.0) is installed correctly.`
-    );
-  }
   const entries = readdirSync(apiChangeDir, { withFileTypes: true });
   const versions = entries
     .filter(
@@ -144,7 +95,8 @@ function readFormatFromArgv(fallback: 'csv' | 'json'): 'csv' | 'json' {
       value = arg.slice('--format='.length);
     }
     if (value !== undefined) {
-      return parseFormatValue(value);
+      const parsed = parseFormat(value);
+      return parsed === 'default' ? 'csv' : parsed;
     }
   }
   return fallback;
@@ -156,27 +108,22 @@ function readFormatFromArgv(fallback: 'csv' | 'json'): 'csv' | 'json' {
 async function handleVersionsCommand(
   format: 'csv' | 'json'
 ): Promise<void> {
-  try {
-    const pluginPath = await getPluginPath();
-    const apiChangeDir = path.join(pluginPath, 'resources', 'apiChange');
-    debugLog(cyan(`[compat:versions] apiChangeDir: "${apiChangeDir}"`));
+  const toolProvider = await ToolProvider.new();
+  const { apiChangeDir } = toolProvider.getApiscanPaths();
+  debugLog(cyan(`[compat:versions] apiChangeDir: "${apiChangeDir}"`));
 
-    const versions = listApiChangeVersions(apiChangeDir);
+  const versions = listApiChangeVersions(apiChangeDir);
 
-    if (format === 'json') {
-      console.log(
-        JSON.stringify({ count: versions.length, versions }, null, 2)
-      );
-    } else {
-      if (versions.length === 0) {
-        console.log('No SDK versions available.');
-        return;
-      }
-      console.log(versions.join('\n'));
+  if (format === 'json') {
+    console.log(
+      JSON.stringify({ versions, count: versions.length }, null, 2)
+    );
+  } else {
+    if (versions.length === 0) {
+      console.log('No SDK versions available.');
+      return;
     }
-  } catch (error) {
-    console.error(red((error as Error).message));
-    process.exit(1);
+    console.log(versions.join('\n'));
   }
 }
 
@@ -184,7 +131,7 @@ interface CheckOptions {
   sourceVersion?: string;
   targetVersion?: string;
   modules?: string[];
-  format: 'csv' | 'json';
+  format: FormatValue;
   outputPath?: string;
   limit: number;
 }
@@ -445,9 +392,20 @@ function printDetailsText(records: ApiChangeRecord[], limit: number): void {
 /**
  * 打印 json 格式的明细。
  */
-function printDetailsJson(records: ApiChangeRecord[]): void {
+function printDetailsJson(records: ApiChangeRecord[], limit: number): void {
+  const shown = records.slice(0, limit);
+  const hidden = records.length - shown.length;
   console.log();
-  console.log(JSON.stringify({ count: records.length, records }, null, 2));
+  console.log(
+    JSON.stringify({ count: records.length, records: shown }, null, 2)
+  );
+  if (hidden > 0) {
+    console.log(
+      yellow(
+        `... and ${hidden} more. you can re-run with --output-path <dir> to save the full report.`
+      )
+    );
+  }
 }
 
 /**
@@ -470,7 +428,7 @@ function resolveModulePaths(
 }
 
 /**
- * 构造 api-change-scan 工具参数。
+ * 构造扫描工具参数。
  */
 function buildToolArgs(
   scriptPath: string,
@@ -511,19 +469,23 @@ function buildToolArgs(
 }
 
 /**
- * 执行 api-change-scan 工具。
+ * 执行兼容性扫描工具。
  */
-async function runScanTool(args: string[]): Promise<string> {
-  const toolProvider = await ToolProvider.new();
+async function runScanTool(
+  toolProvider: ToolProvider,
+  args: string[]
+): Promise<string> {
   const cwd = path.dirname(args[0]);
   try {
-    const stdout = execFileSync(toolProvider.nodePath, args, {
+    const result = await execa(toolProvider.nodePath, args, {
       cwd,
-      stdio: ['ignore', 'pipe', 'inherit'],
-      encoding: 'utf8',
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'inherit',
     });
+    const stdout = result.stdout;
     if (process.env.DEVECO_CLI_DEBUG) {
-      console.log(cyan('[compat:check] === api-change-scan.js stdout ==='));
+      console.log(cyan('[compat:check] === scan stdout ==='));
       process.stdout.write(stdout);
       if (!stdout.endsWith('\n')) {
         process.stdout.write('\n');
@@ -534,7 +496,7 @@ async function runScanTool(args: string[]): Promise<string> {
   } catch (err) {
     const e = err as Error & { stdout?: string; stderr?: string };
     if (process.env.DEVECO_CLI_DEBUG && e.stdout) {
-      console.log(cyan('[compat:check] === api-change-scan.js stdout (on error) ==='));
+      console.log(cyan('[compat:check] === scan stdout (on error) ==='));
       process.stdout.write(e.stdout);
       if (!e.stdout.endsWith('\n')) {
         process.stdout.write('\n');
@@ -542,7 +504,7 @@ async function runScanTool(args: string[]): Promise<string> {
       console.log(cyan('[compat:check] === end stdout ==='));
     }
     const message = new Error(
-      `api-change-scan.js failed: ${e.message}` +
+      `Compatibility scan failed: ${e.message}` +
         (e.stderr ? `\n${e.stderr}` : '')
     );
     if (e.stdout) {
@@ -568,6 +530,12 @@ function validateCheckOptions(files: string[], options: CheckOptions): void {
   if (!options.targetVersion) {
     throw new Error('--target-version is required.');
   }
+  if (!options.outputPath && options.format === 'csv') {
+    throw new Error(
+      '--format csv requires --output-path. ' +
+        'For console output, use --format json or --format default (or omit the flag).'
+    );
+  }
 }
 
 /**
@@ -585,18 +553,10 @@ function validateVersionsInCatalog(
     missing.push(`--target-version "${options.targetVersion}"`);
   }
   if (missing.length > 0) {
-    const preview =
-      availableVersions.length <= 5
-        ? availableVersions.map((v) => `  ${v}`).join('\n')
-        : `${availableVersions
-            .slice(0, 5)
-            .map((v) => `  ${v}`)
-            .join('\n')}\n  ... (${availableVersions.length - 5} more)`;
     const verb = missing.length > 1 ? 'are' : 'is';
     throw new Error(
       `${missing.join(' and ')} ${verb} not in the available SDK version list.\n` +
-        `Run \`devecocli compat versions\` to see all available versions, e.g.:\n` +
-        `${preview}`
+        `Run \`devecocli compat versions\` to see all available versions.`
     );
   }
 
@@ -614,40 +574,26 @@ function validateVersionsInCatalog(
 }
 
 /**
- * 解析 api-change-scan.js 脚本路径。
- */
-function resolveScanScript(pluginPath: string): string {
-  const scriptPath = path.join(pluginPath, 'api-change-scan.js');
-  if (!existsSync(scriptPath)) {
-    throw new Error(
-      `api-change-scan.js not found at: ${scriptPath}. ` +
-        `Ensure DevEco Studio (>= 6.1.0) is installed correctly.`
-    );
-  }
-  return scriptPath;
-}
-
-/**
  * 按格式输出扫描结果。
  */
 function outputRecords(
   records: ApiChangeRecord[],
   csvPath: string | null,
-  format: 'csv' | 'json',
+  format: FormatValue,
   limit: number,
   outputTargetKind: 'file' | 'dir' | 'none'
 ): void {
-  // 1. 汇总段：所有组合都统一格式
-  printSummary(records, csvPath);
-
-  // 2. 明细段：仅在没传 --output-path 时打印（否则明细已经在文件里）
+  // 1. 明细段：仅在没传 --output-path 时打印（否则明细已经在文件里）
   if (outputTargetKind === 'none') {
     if (format === 'json') {
-      printDetailsJson(records);
+      printDetailsJson(records, limit);
     } else {
       printDetailsText(records, limit);
     }
   }
+
+  // 2. 汇总段：所有组合都统一格式
+  printSummary(records, csvPath);
 }
 
 /**
@@ -702,48 +648,29 @@ type OutputTarget =
   | { kind: 'none' };
 
 /**
- * `--output-path` 文件扩展名对应的 `--format`。
- */
-const EXT_TO_FORMAT: Readonly<Record<FileOutputExt, 'csv' | 'json'>> = {
-  '.csv': 'csv',
-  '.json': 'json',
-};
-
-/**
- * 校验文件扩展名与格式是否匹配。
- */
-function validateExtMatchesFormat(
-  ext: FileOutputExt,
-  format: 'csv' | 'json'
-): void {
-  if (EXT_TO_FORMAT[ext] !== format) {
-    throw new Error(
-      `The --output-path file extension '${ext}' does not match --format ${format}. ` +
-        `Use --format ${EXT_TO_FORMAT[ext]}, or rename the file to a matching extension.`
-    );
-  }
-}
-
-/**
- * 解析输出目标类型。
+ * 解析输出目标类型，同时校验 format 与 outputPath 的组合。
  */
 function resolveOutputTarget(
   outputPath: string | undefined,
-  format: 'csv' | 'json'
+  format: FormatValue
 ): OutputTarget {
   if (!outputPath) {
     return { kind: 'none' };
   }
+
   const ext = path.extname(outputPath).toLowerCase();
-  if (isFileOutputExt(ext)) {
-    validateExtMatchesFormat(ext, format);
-    return {
-      kind: 'file',
-      filePath: path.resolve(outputPath),
-      ext,
-    };
+  if (!isFileOutputExt(ext)) {
+    return { kind: 'dir', dirPath: path.resolve(outputPath) };
   }
-  return { kind: 'dir', dirPath: path.resolve(outputPath) };
+
+  const isCsvFormat = format === 'default' || format === 'csv';
+  if ((ext === '.csv' && !isCsvFormat) || (ext === '.json' && format !== 'json')) {
+    throw new Error(
+      `The --output-path file extension '${ext}' does not match --format ${format}. ` +
+        `Use --format ${ext === '.json' ? 'json' : 'default'}, or rename the file.`
+    );
+  }
+  return { kind: 'file', filePath: path.resolve(outputPath), ext };
 }
 
 /**
@@ -775,6 +702,15 @@ function validateOutputTarget(target: OutputTarget): void {
 }
 
 /**
+ * 序列化记录为 JSON 报告文本（count + records,2 空格缩进,末尾换行）。
+ */
+function buildJsonReport(records: ApiChangeRecord[]): string {
+  return (
+    JSON.stringify({ count: records.length, records }, null, 2) + '\n'
+  );
+}
+
+/**
  * 写入报告文件。
  */
 function writeReportFile(
@@ -786,20 +722,27 @@ function writeReportFile(
   if (ext === '.csv') {
     copyFileSync(tmpCsvPath, filePath);
   } else {
-    const payload = JSON.stringify(
-      { count: records.length, records },
-      null,
-      2
-    );
-    writeFileSync(filePath, payload + '\n', 'utf8');
+    writeFileSync(filePath, buildJsonReport(records), 'utf8');
   }
   debugLog(cyan(`[compat:check] saved report: "${filePath}"`));
 }
 
 /**
- * 复制报告到用户指定目录。
+ * 复制报告到用户指定目录,按 format 决定写 .csv 还是 .json。
  */
-function persistCsvToDir(tmpCsvPath: string, userOutputDir: string): string {
+function persistReportToDir(
+  tmpCsvPath: string,
+  records: ApiChangeRecord[],
+  userOutputDir: string,
+  format: FormatValue
+): string {
+  if (format === 'json') {
+    const baseName = path.basename(tmpCsvPath, '.csv');
+    const jsonPath = path.join(userOutputDir, `${baseName}.json`);
+    writeFileSync(jsonPath, buildJsonReport(records), 'utf8');
+    debugLog(cyan(`[compat:check] saved report: "${jsonPath}"`));
+    return jsonPath;
+  }
   const destPath = path.join(userOutputDir, path.basename(tmpCsvPath));
   copyFileSync(tmpCsvPath, destPath);
   debugLog(cyan(`[compat:check] saved report: "${destPath}"`));
@@ -809,8 +752,10 @@ function persistCsvToDir(tmpCsvPath: string, userOutputDir: string): string {
 /**
  * 执行 hvigor compileNative 生成 native 产物。
  */
-async function runHvigorCompileNative(options: CheckOptions): Promise<void> {
-  const toolProvider = await ToolProvider.new();
+async function runHvigorCompileNative(
+  toolProvider: ToolProvider,
+  options: CheckOptions
+): Promise<void> {
   const hvigor = new HvigorAdapter(toolProvider, process.cwd(), true);
   const compileModule =
     options.modules && options.modules.length > 0
@@ -841,11 +786,10 @@ async function prepareCheckContext(files: string[], options: CheckOptions) {
     validateFiles(files);
   }
 
-  const pluginPath = await getPluginPath();
-  const scriptPath = resolveScanScript(pluginPath);
+  const toolProvider = await ToolProvider.new();
+  const { apiChangeDir, scriptPath } = toolProvider.getApiscanPaths();
   debugLog(cyan(`[compat:check] script: "${scriptPath}"`));
 
-  const apiChangeDir = path.join(pluginPath, 'resources', 'apiChange');
   const availableVersions = listApiChangeVersions(apiChangeDir);
   validateVersionsInCatalog(options, availableVersions);
 
@@ -857,7 +801,7 @@ async function prepareCheckContext(files: string[], options: CheckOptions) {
   debugLog(cyan(`[compat:check] outputTarget: ${target.kind}`));
   validateOutputTarget(target);
 
-  return { project, scriptPath, target };
+  return { project, scriptPath, target, toolProvider };
 }
 
 /**
@@ -867,40 +811,48 @@ async function handleCheckCommand(
   files: string[],
   options: CheckOptions
 ): Promise<void> {
-  const { project, scriptPath, target } = await prepareCheckContext(files, options);
+  // [1] 参数校验、项目发现、版本校验、输出目标解析
+  const { project, scriptPath, target, toolProvider } = await prepareCheckContext(files, options);
 
   const spinner = ora({ text: 'Running compatibility check...', color: 'cyan' }).start();
 
   try {
-    await runHvigorCompileNative(options);
+    // [2] 执行 hvigor compileNative 生成 native 产物
+    await runHvigorCompileNative(toolProvider, options);
 
+    // [3] 执行 API 变更扫描
     const args = buildToolArgs(scriptPath, files, project, options);
     debugLogRunnableCommand(scriptPath, args);
+    const stdout = await runScanTool(toolProvider, args);
 
-    const stdout = await runScanTool(args);
+    // [4] 解析扫描结果
     const tmpCsvPath = extractCsvPathFromOutput(stdout, os.tmpdir());
     if (!tmpCsvPath) {
-      throw new Error('api-change-scan.js did not print "CSV saved to: <path>" — tool output format may have changed.');
+      throw new Error('Scanner output format unexpected: missing report path.');
     }
     debugLog(cyan(`[compat:check] tmp csv: "${tmpCsvPath}"`));
-
     const records = parseApiChangeCsv(tmpCsvPath);
 
+    // 输出结果文件
     let finalPath: string | null = null;
     if (target.kind === 'file') {
       writeReportFile(tmpCsvPath, records, target.filePath, target.ext);
       finalPath = target.filePath;
     } else if (target.kind === 'dir') {
-      finalPath = persistCsvToDir(tmpCsvPath, target.dirPath);
+      finalPath = persistReportToDir(tmpCsvPath, records, target.dirPath, options.format);
+    } else if (target.kind === 'none') {
+      // 不输出文件
+    } else {
+      throw new Error(`Unexpected output target kind: ${(target as { kind: string }).kind}`);
     }
     cleanupTmpReport(tmpCsvPath);
 
+    // [5] 输出结果到控制台
     spinner.stop();
     outputRecords(records, finalPath, options.format, options.limit, target.kind);
   } catch (error) {
     spinner.fail('Compatibility check failed');
-    console.error(red((error as Error).message));
-    process.exit(1);
+    throw error;
   }
 }
 
@@ -933,9 +885,9 @@ compatCommand
   )
   .option(
     '--format <format>',
-    'Output format (choices: csv, json; "default" is accepted as an alias for csv)',
+    'Output format: "json" or "default" (text) for console; "csv", "json", or "default" for file output (--output-path). "csv" requires --output-path.',
     parseFormat,
-    'csv'
+    'default'
   )
   .option(
     '--output-path <path>',

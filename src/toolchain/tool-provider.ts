@@ -18,6 +18,15 @@ import {
 
 const CLT_VERSION = /^#\s*Version:\s*(\S+)/;
 
+/**
+ * compat 命令所需的最低 DevEco Studio 版本。
+ */
+const COMPAT_MIN_STUDIO_VERSION = '26.0.0.810';
+
+export function getDownloadUrl(): string {
+  return DOWNLOAD_URL;
+}
+
 type InstallSourceType = 'clt' | 'studio';
 
 type SignatureVerificationResult = {
@@ -623,6 +632,46 @@ export class ToolProvider {
   }
   public detectApiLevel(): number {
     return this.getMaxApiLevel();
+  }
+
+  private _apiscanPaths?: { apiChangeDir: string; scriptPath: string };
+
+  getApiscanPaths(): { apiChangeDir: string; scriptPath: string } {
+    if (this._apiscanPaths) {
+      return this._apiscanPaths;
+    }
+    const platform = os.platform();
+    if (platform !== 'darwin' && platform !== 'win32') {
+      throw new Error(
+        `Unsupported platform: ${platform}. compat only supports macOS and Windows.`
+      );
+    }
+    if (!this._devecoStudioPath) {
+      throw new Error(
+        'DevEco Studio is required for compatibility checking. ' +
+          'Set DEVECO_CLI_STUDIO_PATH or install DevEco Studio.'
+      );
+    }
+    const contentsPrefix = platform === 'darwin' ? 'Contents' : '';
+    const pluginPath = path.join(
+      this._devecoStudioPath,
+      contentsPrefix,
+      'plugins',
+      'harmony',
+      'arkanalyzer-apiscan'
+    );
+    const apiChangeDir = path.join(pluginPath, 'resources', 'apiChange');
+    const scriptPath = path.join(pluginPath, 'api-change-scan.js');
+    if (!fs.existsSync(apiChangeDir) || !fs.existsSync(scriptPath)) {
+      const current = readStudioVersion(this._toolchainRoot) ?? 'unknown';
+      throw new Error(
+        `A required component is missing. The detected DevEco Studio version is ${current}. ` +
+          `The minimum required version is ${COMPAT_MIN_STUDIO_VERSION}. ` +
+          `Upgrade before using 'check compat' at ${DOWNLOAD_URL}`
+      );
+    }
+    this._apiscanPaths = { apiChangeDir, scriptPath };
+    return this._apiscanPaths;
   }
 
   public static verifySignature(file: string): void {

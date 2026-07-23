@@ -6,7 +6,7 @@ Guidance for AI coding assistants working in this repo.
 
 `deveco-cli` wraps the DevEco Studio toolchain (`ohpm`, `hvigor`, `hdc`, `emulator`, `hilog`, bundled `node` + JBR + SDK) plus a HarmonyOS skills installer and a project-scaffolding template engine — all behind a single `devecocli` binary. Distribution is one minified ESM bundle `dist/cli.js` (bin: `devecocli`).
 
-Commands shipped: `build`, `run`, `update`, `device`, `emulator`, `skills`, `log`, `create`, `init`, `serve`, `docs`, `ui`.
+Commands shipped: `build`, `run`, `update`, `device`, `emulator`, `skills`, `log`, `create`, `init`, `serve`, `docs`, `ui`, `check`.
 
 User-facing invocation guide for AI agents lives in `SKILL.md` — update it whenever a command or flag changes.
 
@@ -44,6 +44,7 @@ There is **no test framework** (no vitest/jest, no `*.test.ts`). Verification = 
 src/
 ├── cli.ts                    # Commander entry; global-agent bootstrap; preAction version check
 ├── commands/                 # One file per subcommand. Keep it thin: CLI shape + spinner + render.
+├── compat/                   # compat command: SDK API compatibility scanning (single-file module — see "Compat module" below)
 ├── skills/                   # HarmonyOS skills marketplace client (api + installer + agents + mcp-installer)
 ├── service/                  # Domain helpers (device, emulator, doc)
 ├── utils/                    # Adapters (hdc, hilog, ohpm, hvigor) + shared validators
@@ -66,6 +67,7 @@ index/                        # Source for `npm run build:index` (regenerates in
 **Device selection**: `service/device-manager.ts` is the single source for "what's connected". Commands that accept a device use a shared resolver that maps a user-supplied name or serial to a concrete serial.
 **Skills / MCP init**: `commands/init.ts` and `commands/skills.ts` share `src/skills/agents.ts` helpers (`parseAgentList` / `getAllExistingAgents` / `summarizeOperationResults`). `--skill` and `--mcp` are mutually exclusive; default is `--skill`.
 **Docs index**: `commands/doc.ts` triggers `awaitDocReady()` (spinner while postinstall installs the index in background). The postinstall script extracts the prebuilt `index.zip` only — `docs.zip` is read on demand. To refresh the index: `npm run build:index` then republish.
+**Compat module**: `src/compat/compat.ts` (registered as `check compat` in `src/commands/check.ts`) drives DevEco Studio's bundled `apkanalyzer-apiscan` plugin via Node — `hvigor compileNative` for native side, then `node api-change-scan.js --startVersion/--endVersion/...` to produce a CSV report. Format values are `default | csv | json`; `default` writes csv to a file but renders text to console, `csv` requires `--output-path`, file extension must match `--format`. Directory output (`--output-path` is a directory, no extension) is format-aware: `--format json` writes `apiChange-res{N}.json`, `--format default`/`csv` writes `apiChange-res{N}.csv` (via `persistReportToDir`). Spinner uses `execa` (async) so the animation runs during the scan — do not switch back to `execFileSync` (sync blocks the event loop and the spinner freezes). `HvigorAdapter` is instantiated with `silent: true` for this command so hvigor's own output is suppressed.
 
 ## Standard paradigm: how to add a new domain module
 
