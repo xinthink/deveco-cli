@@ -9,6 +9,7 @@ import { ToolProvider } from '../toolchain/index.js';
 import {
   findClangdPath,
   findDevEcoPath,
+  findHarmonyProjectInDir,
   normalizePath,
   compileCommandsPath,
 } from '../../mcp/src-server/utils/common.js';
@@ -17,6 +18,8 @@ import { initMcpLogger, mcpLog } from '../../mcp/src-server/utils/mcp-logger.js'
 
 export interface CppLspOptions {
   projectPath?: string;
+  /** 未指定 --project-path 时，开启后从 cwd 及其子目录向下查找工程根（不向上搜索）。 */
+  autoDetect?: boolean;
 }
 
 /**
@@ -62,7 +65,19 @@ async function resolvePaths(options: CppLspOptions): Promise<{
     process.exit(1);
   }
 
-  const projectPath = normalizePath(options.projectPath ?? process.cwd());
+  // 指定路径→直接用（不搜，安全）；未指定+--auto-detect→从 cwd 向下搜（不向上）；否则用 cwd。
+  let projectPath: string;
+  if (options.projectPath) {
+    projectPath = normalizePath(path.resolve(options.projectPath));
+    mcpLog.info(`projectPath=specified ('${projectPath}'), no search`);
+  } else if (options.autoDetect) {
+    const found = findHarmonyProjectInDir(process.cwd());
+    projectPath = normalizePath(found ?? process.cwd());
+    mcpLog.info(`findHarmonyProjectInDir('${process.cwd()}') => ${found ?? 'null, fallback to cwd'}`);
+  } else {
+    projectPath = normalizePath(path.resolve(process.cwd()));
+    mcpLog.info(`projectPath=cwd ('${projectPath}'), no search (pass --auto-detect to search subdirs)`);
+  }
   const clangdPath = findClangdPath(devecoPath);
   if (!clangdPath) {
     mcpLog.error(

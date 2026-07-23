@@ -855,7 +855,7 @@ devecocli skills remove --skill skillname --agent agentname  # skillname需替�
 
 ### `serve lsp`
 
-启动本地 `LSP` 语言服务。智能体配置 `LSP` 服务后，可通过 `LSP` 协议获取 `ArkTS` 代码补全、跳转定义、悬浮提示、引用查找、诊断等语言特性。当前支持 `ArkTS`（`ace-server`）。
+启动本地 `LSP` 语言服务。智能体配置 `LSP` 服务后，可通过 `LSP` 协议获取代码补全、跳转定义、悬浮提示、引用查找、诊断等语言特性。当前支持 `ArkTS`和 `clangd`。
 
 ```bash
 {
@@ -870,10 +870,37 @@ devecocli skills remove --skill skillname --agent agentname  # skillname需替�
       "extensions": [
         ".ets"
       ]
+    },
+    "clangd": {
+      "command": [
+        "devecocli",
+        "serve",
+        "lsp",
+        "--cpp"
+      ],
+      "extensions": [
+        ".c",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".h",
+        ".hpp",
+        ".hxx",
+        ".hh"
+      ]
     }
   }
 }
 ```
+
+**参数：**
+
+| 参数名 | 说明 |
+| --- | --- |
+| `--arkts` | 与 `--cpp` 二选一，启动 ArkTS 语言服务（ace-server） |
+| `--cpp` | 与 `--arkts` 二选一，启动 C/C++ 语言服务（clangd） |
+| `--project-path <path>` | 可选，工程根路径，默认为当前工作目录 |
+| `--auto-detect` | 可选，当前目录向下查找工程根（检查当前目录自身及其子目录，最多 3 层子目录）；适用于 `--arkts` 和 `--cpp`；指定了 `--project-path` 则忽略 |
 
 ## 常见问题
 

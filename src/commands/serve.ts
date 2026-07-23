@@ -62,7 +62,8 @@ serveCommand
   .description('Start a bundled LSP language server')
   .option('--arkts', 'Start the ArkTS language server (ace-server)')
   .option('--cpp', 'Start the C/C++ language server (clangd)')
-  .option('--project-path <path>', 'HarmonyOS project root path', process.cwd())
+  .option('--project-path <path>', 'project root path (used as-is, no search)')
+  .option('--auto-detect', 'When --project-path is not specified, search the current directory and its subdirectories for the project root (no upward search)')
   .action(async (options) => {
     if (options.arkts && options.cpp) {
       console.error('--arkts and --cpp are mutually exclusive. Specify only one.');
@@ -71,10 +72,12 @@ serveCommand
     if (options.arkts) {
       await startArktsLspServer({
         projectPath: options.projectPath,
+        autoDetect: options.autoDetect,
       });
     } else if (options.cpp) {
       await startClangdLspServer({
         projectPath: options.projectPath,
+        autoDetect: options.autoDetect,
       });
     } else {
       console.error('Use --arkts or --cpp to specify which language server to start.');
