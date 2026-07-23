@@ -87,6 +87,7 @@ devecocli init --path D:\work\ARKTS\NewData
 | ------------------------- | ----------------------------------------- |
 | `devecocli create`        | 创建新的 HarmonyOS 项目                         |
 | `devecocli build`         | 构建项目并产出 `.hap` / `.hsp` / `.har` / `.app` |
+| `devecocli check lint`    | 检查代码规范并输出实践建议与报告                      |
 | `devecocli run`           | 安装并运行应用                                   |
 | `devecocli device list`   | 查看当前连接设备                                  |
 | `devecocli emulator list` | 查看本地模拟器实例                                 |
@@ -311,6 +312,29 @@ devecocli build --product oversea --modules entry --build-mode release
 ```bash
 devecocli build clean
 ```
+
+### `check lint`
+
+检查代码规范并输出实践建议与报告。
+
+**命令格式：**
+
+```bash
+devecocli check lint [path]
+```
+
+**参数：**
+
+| 参数名                        | 说明                                                                  |
+| ---------------------------- | --------------------------------------------------------------------- |
+| `[path]`                     | 可选，待检查的文件或目录；默认使用 `build-profile.json5` 所在的项目根目录，否则使用当前目录 |
+| `--config-path <path>`       | Code Linter 配置文件路径，仅支持 `.json` 或 `.json5`；默认使用待检查项目根目录下的 `code-linter.json5`，显式指定时必须与待检查路径属于同一项目 |
+| `--fix`                      | 自动修复可修复的问题                                                  |
+| `--incremental`              | 仅检查 Git 未提交文件                                                 |
+| `--product <name>`           | `build-profile.json5` 中定义的 product，默认为 `default`              |
+| `--format <default\|json>`   | 完整报告格式；`default` 输出 Markdown，`json` 输出 JSON                |
+| `--output-path <path>`       | 完整报告文件或目录；目录形式会自动生成带时间戳的报告文件               |
+| `--limit <number>`           | 未指定 `--output-path` 时，限制终端显示的问题数量                      |
 
 ### `emulator list`
 
