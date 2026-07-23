@@ -35,6 +35,7 @@ export async function generateTestProfileFile(
   auth: AuthInfo,
   options: AutoSignOptions
 ): Promise<string> {
+  console.log('Start generating profile');
   const { productName, bundleName, projectPath, aclPermissionList, allDeviceIds, certIds, keyAlias, keyPwd } = options;
 
   if (allDeviceIds == null || allDeviceIds.length === 0) {
@@ -138,7 +139,7 @@ async function addProvision(
 
   const data = JSON.parse(response.data);
 
-  if (data.ret?.code !== 0) {
+  if (!data || !data.ret || data.ret.code !== 0) {
     debuglog(`add provision fail: ${response.data}`);
     parsingAddProvisionException(response.data, provisionName);
     throw new Error(data.ret?.msg || SignatureErrorMessages.ADD_PROFILE_FAIL);
@@ -224,8 +225,8 @@ async function deleteProvision(auth: AuthInfo, id: string): Promise<void> {
     );
   }
   const data = JSON.parse(response.data);
-  if (data?.ret?.code !== 0) {
-    debuglog(`delete provision failed: ${data}`);
+  if (!data || !data.ret || data.ret.code !== 0) {
+    debuglog(`delete provision failed: ${response.data}`);
   }
 }
 

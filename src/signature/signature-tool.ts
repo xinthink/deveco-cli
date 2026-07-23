@@ -400,10 +400,13 @@ export async function generateP12AndCSR(
     // p12/csr 共用同一基名（getAutoSignFilePath() + 后缀）
     // 旧材料清理由 deleteLocalSignFiles 在生成前统一完成，此处只负责生成
     const p12FilePath = await getAutoSignFilePath(productName ?? '', projectRoot, 'p12');
-    const csrFilePath = await getAutoSignFilePath(productName ?? '', projectRoot, 'csr');
+    const csrFilePath = await getAutoSignFilePath(
+      productName ?? '',
+      projectRoot,
+      'csr'
+    );
 
-    logger.info(`待生成P12密钥库路径：${p12FilePath}`);
-    logger.info(`待生成CSR证书请求路径：${csrFilePath}`);
+    console.log('Start generating p12');
 
     await generateP12Store({
         keyAlias: p12Opts?.keyAlias ?? DEFAULT_CFG.keyAlias,
@@ -415,6 +418,7 @@ export async function generateP12AndCSR(
     });
 
     await assertP12FileExists(p12FilePath);
+    console.log('Start generating csr');
     await generateCsrFile({
         subject: csrOpts?.subject ?? DEFAULT_CFG.csrSubject,
         outFile: csrFilePath,

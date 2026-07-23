@@ -49,6 +49,7 @@ export async function generateCertificate(
     throw new Error(SignatureErrorMessages.ERR_READ_CSR);
   }
 
+  console.log('Start generating certificate');
   await addCertificate(auth, csrContent, certName);
 
   const newCert = await findCertByName(auth, certName);
@@ -66,12 +67,18 @@ export async function generateCertificate(
 
   checkCertificateValidate(cerFilePath);
 
+  const profileFilePath = await getAutoSignFilePath(
+    product, projectRoot, 'p7b'
+  );
+
   return {
     p12FilePath: p12AndCsr.p12FilePath,
     csrFilePath: p12AndCsr.csrFilePath,
     cerFilePath,
+    profileFilePath,
     certId: newCert.id,
     keyAlias: p12AndCsr.keyAlias,
     keyPwd: p12AndCsr.keyPwd,
+    storePassword: p12AndCsr.keyPwd,
   };
 }

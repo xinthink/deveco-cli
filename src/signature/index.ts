@@ -17,3 +17,5 @@ export {
 } from './cert-api.js';
 export { generateP12AndCSR } from './signature-tool.js';
 export type { GenerateP12AndCSRResult, P12KeyPairOpts, CSRKeyPairOpts, SignFileSuffix } from './signature-tool.js';
+export { ReGenerateSign } from './re-generate-sign.js';
+export type { ReGenerateSignParams, ReGenerateSignResult, ReGenerateCheckDetails } from './re-generate-sign.js';

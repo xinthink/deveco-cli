@@ -163,6 +163,22 @@ export class Project {
     throw new Error('Could not find bundleName in AppScope/app.json5.');
   }
 
+  public isAtomicService(): boolean {
+    const appJson5Path = path.join(this.rootDir, 'AppScope', 'app.json5');
+    if (!fs.existsSync(appJson5Path)) {
+      return false;
+    }
+    try {
+      const content = fs.readFileSync(appJson5Path, 'utf-8');
+      const json = json5.parse(content) as {
+        app?: { bundleType?: string };
+      };
+      return json?.app?.bundleType === 'atomicService';
+    } catch {
+      return false;
+    }
+  }
+
   public getMainAbility(moduleName: string, ability?: string): string {
     if (ability) {
       return ability;
