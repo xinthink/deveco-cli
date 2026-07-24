@@ -7,7 +7,6 @@ import fs from 'fs';
 import path from 'path';
 import { ToolProvider } from '../../toolchain/index.js';
 import { debugLog } from '../../utils/logger.js';
-import { EnvCheckMessages } from '../../config/signature.js';
 import type { CheckResult } from './types.js';
 
 export class ToolchainChecker {
@@ -23,7 +22,7 @@ export class ToolchainChecker {
       return { passed: true, message: '' };
     } catch (e) {
       debugLog(`[EnvCheck] Java check failed: ${(e as Error).message}`);
-      return fail(EnvCheckMessages.JAVA_PLATFORM_UNSUPPORTED);
+      return fail(`${(e as Error).message}`);
     }
   }
 
