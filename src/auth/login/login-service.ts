@@ -112,12 +112,12 @@ export class LoginService {
    * @returns 如果已登录返回 true，否则返回 false
    */
   public async isLoggedIn(): Promise<boolean> {
-    const jwtToken = await tokenStorage.loadJwtToken();
-    if (jwtToken == null) {
+    const resolvedToken = await tokenStorage.resolveJwtToken();
+    if (resolvedToken == null) {
       return false;
     }
     const res = await tokenChecker.checkJwtToken(
-      jwtToken,
+      resolvedToken.token,
       () => this.getRegionalizedBaseUrl(),
       this.config.jwtTokenCheckUrl
     );
@@ -125,7 +125,9 @@ export class LoginService {
       return true;
     }
     // jwtToken失效，需要重新登录
-    await tokenStorage.clearToken();
+    if (resolvedToken.source === 'deveco-cli') {
+      await tokenStorage.clearToken();
+    }
     return false;
   }
 
@@ -135,12 +137,17 @@ export class LoginService {
    * @throws If not logged in
    */
   public async logout(): Promise<boolean> {
-    const jwtToken = await tokenStorage.loadJwtToken();
-    if (jwtToken == null) {
+    const resolvedToken = await tokenStorage.resolveJwtToken();
+    if (resolvedToken == null) {
       return false;
     }
+    if (resolvedToken.source === 'deveco-code') {
+      throw new Error(
+        'Login is managed by deveco-code. Log out from deveco-code instead.'
+      );
+    }
     const regionalizedBaseUrl = this.getRegionalizedBaseUrl();
-    const logoutUrl = `${regionalizedBaseUrl}/${this.config.logoutUrl}?jwtToken=${jwtToken}`;
+    const logoutUrl = `${regionalizedBaseUrl}/${this.config.logoutUrl}?jwtToken=${resolvedToken.token}`;
     try {
       await httpClient.post(logoutUrl, { timeout: 5000 });
     } finally {
