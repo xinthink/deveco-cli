@@ -2,17 +2,40 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { Command } from 'commander';
+import { Command, InvalidArgumentError } from 'commander';
 import { createLintCommand } from '../codelinter/index.js';
 import {
-  compatCommand,
   handleCheckCommand,
   handleVersionsCommand,
-  parseFormat,
-  parseLimit,
-  readFormatFromArgv,
   type CheckOptions,
 } from '../compat/compat.js';
+
+function parseLimit(value: string): number {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new InvalidArgumentError(
+      `--limit must be a positive integer (got "${value}")`
+    );
+  }
+  return n;
+}
+
+function readFormatFromArgv(): string | undefined {
+  const argv = process.argv;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--format' && i + 1 < argv.length) {
+      return argv[i + 1];
+    }
+    if (argv[i].startsWith('--format=')) {
+      return argv[i].slice('--format='.length);
+    }
+  }
+  return undefined;
+}
+
+const compatCommand = new Command('compat').description(
+  'Compatibility checking utilities.'
+);
 
 compatCommand
   .description(
@@ -37,7 +60,6 @@ compatCommand
   .option(
     '--format <format>',
     'Output format: "json" or "default" (text) for console; "csv", "json", or "default" for file output (--output-path). "csv" requires --output-path.',
-    parseFormat,
     'default'
   )
   .option(
@@ -59,9 +81,9 @@ compatCommand
   .description(
     'List all available target SDK versions for compatibility checking'
   )
+  .option('--format <format>', 'Output format: default or json')
   .action(async () => {
-    const format = readFormatFromArgv('csv');
-    await handleVersionsCommand(format);
+    await handleVersionsCommand(readFormatFromArgv());
   });
 
 const checkCommand = new Command('check')

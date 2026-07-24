@@ -142,7 +142,7 @@ Manage HarmonyOS skills in AI agents/projects.
 
 ### `devecocli check compat` `[Outside sandbox]`
 Scan source code for breaking API changes between two SDK versions. Built on top of DevEco Studio's `arkanalyzer-apiscan` plugin.
-- `versions`: List available target SDK versions.
+- `versions`: List available target SDK versions. Opts: `--format <default|json>` (default: `default`).
 - Default (no args): project-level scan.
 - `--modules <m1> [m2...]`: Module-level scan.
 - `<file1> [file2...]`: File-level scan (`.ets`/`.c`/`.cpp` only).

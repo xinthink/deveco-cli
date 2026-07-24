@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { Command, InvalidArgumentError } from 'commander';
+import { InvalidArgumentError } from 'commander';
 import * as path from 'path';
 import * as os from 'os';
 import { Project } from '../utils/project.js';
@@ -24,27 +24,7 @@ import ora from 'ora';
 const FORMAT_VALUES = ['default', 'csv', 'json'] as const;
 type FormatValue = typeof FORMAT_VALUES[number];
 
-function parseFormat(value: string): FormatValue {
-  if (FORMAT_VALUES.includes(value as FormatValue)) {
-    return value as FormatValue;
-  }
-  throw new InvalidArgumentError(
-    `--format must be one of: ${FORMAT_VALUES.join(', ')} (got "${value}")`
-  );
-}
-
-/**
- * `--limit` 取值校验。
- */
-function parseLimit(value: string): number {
-  const n = Number(value);
-  if (!Number.isInteger(n) || n <= 0) {
-    throw new InvalidArgumentError(
-      `--limit must be a positive integer (got "${value}")`
-    );
-  }
-  return n;
-}
+const VERSIONS_FORMAT_VALUES = ['default', 'json'] as const;
 
 /**
  * 升序排序 SDK 版本号。版本号形式 `*_X.Y.Z(N)_<suffix>`
@@ -81,33 +61,16 @@ function listApiChangeVersions(apiChangeDir: string): string[] {
   return sortVersions(versions);
 }
 
-/**
- * 从 process.argv 读 `--format` 值。
- */
-function readFormatFromArgv(fallback: 'csv' | 'json'): 'csv' | 'json' {
-  const argv = process.argv;
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
-    let value: string | undefined;
-    if (arg === '--format' && i + 1 < argv.length) {
-      value = argv[i + 1];
-    } else if (arg.startsWith('--format=')) {
-      value = arg.slice('--format='.length);
-    }
-    if (value !== undefined) {
-      const parsed = parseFormat(value);
-      return parsed === 'default' ? 'csv' : parsed;
-    }
-  }
-  return fallback;
-}
+
 
 /**
  * `compat versions` 入口。
  */
-async function handleVersionsCommand(
-  format: 'csv' | 'json'
-): Promise<void> {
+async function handleVersionsCommand(format?: string): Promise<void> {
+  format = format === undefined ? 'default' : format;
+  if (!VERSIONS_FORMAT_VALUES.includes(format)) {
+    throw new Error(`--format must be ${VERSIONS_FORMAT_VALUES.join(' or ')}. got "${format}"`);
+  }
   const toolProvider = await ToolProvider.new();
   const { apiChangeDir } = toolProvider.getApiscanPaths();
   debugLog(cyan(`[compat:versions] apiChangeDir: "${apiChangeDir}"`));
@@ -115,9 +78,7 @@ async function handleVersionsCommand(
   const versions = listApiChangeVersions(apiChangeDir);
 
   if (format === 'json') {
-    console.log(
-      JSON.stringify({ versions, count: versions.length }, null, 2)
-    );
+    console.log(JSON.stringify({ versions, count: versions.length }, null, 2));
   } else {
     if (versions.length === 0) {
       console.log('No SDK versions available.');
@@ -397,7 +358,7 @@ function printDetailsJson(records: ApiChangeRecord[], limit: number): void {
   const hidden = records.length - shown.length;
   console.log();
   console.log(
-    JSON.stringify({ count: records.length, records: shown }, null, 2)
+    JSON.stringify({ records: shown, count: records.length }, null, 2)
   );
   if (hidden > 0) {
     console.log(
@@ -518,6 +479,11 @@ async function runScanTool(
  * 校验必需参数和互斥关系。
  */
 function validateCheckOptions(files: string[], options: CheckOptions): void {
+  if (!FORMAT_VALUES.includes(options.format)) {
+    throw new InvalidArgumentError(
+      `--format must be default, csv, or json (console: default|json, file: default|csv|json). got "${options.format}"`
+    );
+  }
   if (files.length > 0 && options.modules && options.modules.length > 0) {
     throw new Error(
       'Cannot use `--modules` together with file arguments. ' +
@@ -706,7 +672,7 @@ function validateOutputTarget(target: OutputTarget): void {
  */
 function buildJsonReport(records: ApiChangeRecord[]): string {
   return (
-    JSON.stringify({ count: records.length, records }, null, 2) + '\n'
+    JSON.stringify({ records, count: records.length }, null, 2) + '\n'
   );
 }
 
@@ -856,19 +822,8 @@ async function handleCheckCommand(
   }
 }
 
-/**
- * 根 `compat` 命令。
- */
-const compatCommand = new Command('compat').description(
-  'Compatibility checking utilities.'
-);
-
 export {
-  compatCommand,
   handleCheckCommand,
   handleVersionsCommand,
-  parseFormat,
-  parseLimit,
-  readFormatFromArgv,
   CheckOptions,
 }

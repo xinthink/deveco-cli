@@ -23,10 +23,6 @@ const CLT_VERSION = /^#\s*Version:\s*(\S+)/;
  */
 const COMPAT_MIN_STUDIO_VERSION = '26.0.0.810';
 
-export function getDownloadUrl(): string {
-  return DOWNLOAD_URL;
-}
-
 type InstallSourceType = 'clt' | 'studio';
 
 type SignatureVerificationResult = {
@@ -667,7 +663,7 @@ export class ToolProvider {
       throw new Error(
         `A required component is missing. The detected DevEco Studio version is ${current}. ` +
           `The minimum required version is ${COMPAT_MIN_STUDIO_VERSION}. ` +
-          `Upgrade before using 'check compat' at ${DOWNLOAD_URL}`
+          `Upgrade before using 'check compat' at ${IDE_DOWNLOAD_URL}`
       );
     }
     this._apiscanPaths = { apiChangeDir, scriptPath };
