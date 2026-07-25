@@ -5,7 +5,6 @@
 
 import { ToolProvider } from '../toolchain';
 import { debugLog } from '../utils/logger.js';
-import { EnvCheckMessages } from '../config/signature.js';
 import { ProjectChecker } from './env-check/project-checker.js';
 import { ToolchainChecker } from './env-check/toolchain-checker.js';
 import { AuthChecker } from './env-check/auth-checker.js';
@@ -86,7 +85,7 @@ export class EnvChecker {
       return true;
     } catch (e) {
       debugLog(`[EnvCheck] ToolProvider.new() failed: ${(e as Error).message}`);
-      throw new Error(EnvCheckMessages.TOOLCHAIN_INIT_FAILED, { cause: e });
+      throw new Error(`${(e as Error).message}`, { cause: e });
     }
   }
 
