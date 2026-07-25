@@ -8,6 +8,13 @@ import { homedir } from 'os';
 import { LocalCrypto } from '../utils/local-crypto.js';
 import { AppConfig } from '../auth-config';
 
+export type TokenSource = 'deveco-cli' | 'deveco-code';
+
+export interface ResolvedJwtToken {
+  token: string;
+  source: TokenSource;
+}
+
 export class TokenStorage {
   private tokenFilePath: string;
 
@@ -47,9 +54,52 @@ export class TokenStorage {
 
   /**
    * 从磁盘加载 JWT Token
-   * 使用 LocalCrypto 解密
+   * 优先读取 deveco-code 注入的登录态，再回退到 CLI 自身存储。
    */
   public async loadJwtToken(): Promise<string | null> {
+    return (await this.resolveJwtToken())?.token ?? null;
+  }
+
+  public async resolveJwtToken(): Promise<ResolvedJwtToken | null> {
+    const devecoCodeToken = this.loadDevecoCodeToken();
+    if (devecoCodeToken) {
+      return { token: devecoCodeToken, source: 'deveco-code' };
+    }
+
+    const localToken = await this.loadLocalJwtToken();
+    return localToken ? { token: localToken, source: 'deveco-cli' } : null;
+  }
+
+  private loadDevecoCodeToken(): string | null {
+    if (process.env.DEVECO_CLI_AUTH_SOURCE !== 'deveco-code') {
+      return null;
+    }
+    const configDir = process.env.DEVECO_CODE_AUTH_DIR?.trim();
+    if (!configDir) {
+      return null;
+    }
+
+    try {
+      const tokenFilePath = path.join(configDir, AppConfig.TOKEN_FILE_NAME);
+      if (!fs.existsSync(tokenFilePath)) {
+        return null;
+      }
+      const tokenData: unknown = JSON.parse(
+        fs.readFileSync(tokenFilePath, 'utf8')
+      );
+      if (!LocalCrypto.isEncryptedBlob(tokenData)) {
+        return null;
+      }
+      return LocalCrypto.decryptForLocalStorageFromDirectory(
+        tokenData,
+        configDir
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  private async loadLocalJwtToken(): Promise<string | null> {
     try {
       if (!fs.existsSync(this.tokenFilePath)) {
         return null;
