@@ -37,6 +37,21 @@ function validateProjectConfig(project: Project, options: BuildOptions) {
   }
 }
 
+function validateRequestedModules(project: Project, modules: string[]) {
+  const availableModules = project.profile.modules.map((module) => module.name);
+  const availableModuleSet = new Set(availableModules);
+
+  for (const moduleArg of modules) {
+    const moduleName = moduleArg.split('@', 1)[0];
+    if (!availableModuleSet.has(moduleName)) {
+      throw new Error(
+        `Module '${moduleName}' not found in project-level build-profile.json5. ` +
+          `Available modules: ${availableModules.join(', ') || 'none'}`
+      );
+    }
+  }
+}
+
 function determineModulesToBuild(
   project: Project,
   options: BuildOptions
@@ -45,6 +60,7 @@ function determineModulesToBuild(
 
   if (options.modules && options.modules.length > 0) {
     initialModules = options.modules;
+    validateRequestedModules(project, initialModules);
   } else {
     // Default behavior: find entry module or the only module
     const allModules = project.profile.modules;
@@ -216,8 +232,6 @@ const buildCommand = new Command('build')
       const currentDir = process.cwd();
       const project = Project.discover(currentDir);
       console.warn(yellow('Ensure the project source is trustworthy before proceeding.'));
-      const toolProvider = await ToolProvider.new();
-      toolProvider.assertJava();
 
       validateProjectConfig(project, options);
 
@@ -241,6 +255,9 @@ const buildCommand = new Command('build')
         const moduleTasks = processModuleTasks(project, modulesToBuild);
         buildTarget = { type: 'modules', modulesToBuild, moduleTasks };
       }
+
+      const toolProvider = await ToolProvider.new();
+      toolProvider.assertJava();
 
       const ohpmAdapter = new OhpmAdapter(toolProvider, project.rootDir);
       const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
