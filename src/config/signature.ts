@@ -169,6 +169,10 @@ export const SignatureErrorMessages = {
  * 环境预检相关错误信息
  */
 export const EnvCheckMessages = {
+  // ── env-checker.ts ──
+  TOOLCHAIN_INIT_FAILED: 'Auto-sign failed: unable to initialize toolchain',
+
+  // ── auth-checker.ts ──
   LOGIN_REQUIRED:
     'Failed to automatically generate signatures.Run devecocli auth login to sign in.',
   TEAM_INFO_FAILED:
