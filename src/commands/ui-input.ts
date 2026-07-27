@@ -4,6 +4,7 @@
  */
 import { SpinnerHelper } from '../utils/spinner-helper.js';
 import { Command } from 'commander';
+import { debugLog } from '../utils/logger.js';
 import {
   DIRECTION_MAP,
   assertTargetParams,
@@ -15,6 +16,13 @@ import {
   runHdcShell,
 } from '../ui/input/index.js';
 import type { ClickOptions, SwipeOptions, TextOptions } from '../ui/input/index.js';
+
+function escapeShellText(text: string): string {
+  const encoded = Buffer.from(text, 'utf8').toString('base64');
+  const cmd = `"$(printf '%s' '${encoded}' | base64 -d)"`;
+  debugLog(`escapeShellText: ${text} -> ${cmd}`);
+  return cmd;
+}
 
 async function withSpinner(
   startText: string,
@@ -173,15 +181,16 @@ async function handleText(
     assertTargetParams(x, y, options.id, options.window, false);
     assertNonEmpty(text, 'text');
     const { hdcPath, deviceId } = await initDevice(options.device);
+    const escaped = escapeShellText(text);
     if (x !== undefined) {
-      await runHdcShell(hdcPath, deviceId, ['uitest', 'uiInput', 'inputText', `${x}`, `${y}`, text]);
+      await runHdcShell(hdcPath, deviceId, ['uitest', 'uiInput', 'inputText', `${x}`, `${y}`, escaped]);
       spinner.succeed(`input ${text} at (${x}, ${y})`);
     } else if (options.id) {
       const { x: cx, y: cy } = await resolveTarget(hdcPath, deviceId, undefined, undefined, options.id, options.window);
-      await runHdcShell(hdcPath, deviceId, ['uitest', 'uiInput', 'inputText', `${cx}`, `${cy}`, text]);
+      await runHdcShell(hdcPath, deviceId, ['uitest', 'uiInput', 'inputText', `${cx}`, `${cy}`, escaped]);
       spinner.succeed(`input ${text} at (${cx}, ${cy})`);
     } else {
-      await runHdcShell(hdcPath, deviceId, ['uitest', 'uiInput', 'text', text]);
+      await runHdcShell(hdcPath, deviceId, ['uitest', 'uiInput', 'text', escaped]);
       spinner.succeed(`input ${text}`);
     }
   });
