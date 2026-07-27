@@ -34,12 +34,12 @@ enum ProjectLifecycle {
  * C++ 项目生命周期状态枚举（与 ArkTS 状态机并行，独立运转）
  */
 enum CppLifecycle {
-  IDLE_CPP,          // 无项目 / 未启动 C++ 初始化
-  DISCOVERING_CPP,   // 检测 C++ 模块
-  SYNCING_CPP,       // 执行 compileNative + 合并 compile_commands.json
-  INITIALIZING_CPP,  // clangd spawn + initialize
-  READY_CPP,         // C++ 工具可用（含"无 C++ 代码"提前就绪）
-  ERROR_CPP,         // sync 或 init 失败，可重试
+  IDLE_CPP, // 无项目 / 未启动 C++ 初始化
+  DISCOVERING_CPP, // 检测 C++ 模块
+  SYNCING_CPP, // 执行 compileNative + 合并 compile_commands.json
+  INITIALIZING_CPP, // clangd spawn + initialize
+  READY_CPP, // C++ 工具可用（含"无 C++ 代码"提前就绪）
+  ERROR_CPP, // sync 或 init 失败，可重试
 }
 
 const MAX_INIT_RETRY = 3;
@@ -87,12 +87,12 @@ export class DevecoCliMcpServer {
 
   // C++ 项目生命周期状态（与 ArkTS 状态机并行，独立运转）
   private cppProjectState: CppLifecycle = CppLifecycle.IDLE_CPP;
-  private cppInitPromise: Promise<void> | null = null;  // 互斥锁：保证同一时刻只有一个 C++ 初始化流程在执行
-  private cppNeedsReinit: boolean = false;              // 路径变更标记
-  private cppInitRetryCount: number = 0;                // 连续初始化失败计数
-  private cppSyncSkippedDueToLock: boolean = false;     // C++ sync 因锁被占用而跳过
-  private cppSyncSkipStartedAt: number = 0;             // 首次因锁竞争跳过 C++ sync 的时间戳
-  private cppHasNoCppCode: boolean = false;              // 工程无 C++ 代码，C++ 工具应返回 "no C++ code"
+  private cppInitPromise: Promise<void> | null = null; // 互斥锁：保证同一时刻只有一个 C++ 初始化流程在执行
+  private cppNeedsReinit: boolean = false; // 路径变更标记
+  private cppInitRetryCount: number = 0; // 连续初始化失败计数
+  private cppSyncSkippedDueToLock: boolean = false; // C++ sync 因锁被占用而跳过
+  private cppSyncSkipStartedAt: number = 0; // 首次因锁竞争跳过 C++ sync 的时间戳
+  private cppHasNoCppCode: boolean = false; // 工程无 C++ 代码，C++ 工具应返回 "no C++ code"
 
   constructor(config: McpServerConfig = {}) {
     this.config = config;
@@ -648,7 +648,9 @@ export class DevecoCliMcpServer {
       return { content: [{ type: 'text', text: 'Missing or invalid parameters. Required: file (string), line (number), character (number).' }], isError: true };
     }
     const containmentResult = this.validateContainment([file]);
-    if (containmentResult) { return containmentResult; }
+    if (containmentResult) { 
+      return containmentResult; 
+    }
     return this.routeArktsRequest('codeAction', () => this.arktsCheckTool!.handleCodeAction({ file, line, character }));
   }
 
@@ -662,7 +664,9 @@ export class DevecoCliMcpServer {
       return { content: [{ type: 'text', text: 'Missing or invalid parameters. Required: file (string), line (number), character (number), newName (non-empty string).' }], isError: true };
     }
     const containmentResult = this.validateContainment([file]);
-    if (containmentResult) { return containmentResult; }
+    if (containmentResult) { 
+      return containmentResult; 
+    }
     return this.routeArktsRequest('rename', () => this.arktsCheckTool!.handleRename({ file, line, character, newName }));
   }
 
@@ -679,7 +683,9 @@ export class DevecoCliMcpServer {
       return { content: [{ type: 'text', text: 'Parameter direction must be "supertypes" or "subtypes".' }], isError: true };
     }
     const containmentResult = this.validateContainment([file]);
-    if (containmentResult) { return containmentResult; }
+    if (containmentResult) { 
+      return containmentResult; 
+    }
     return this.routeArktsRequest(`typeHierarchy(${direction})`, () => this.arktsCheckTool!.handleTypeHierarchy({ file, line, character, direction }));
   }
 
@@ -727,6 +733,9 @@ export class DevecoCliMcpServer {
         return this.handleErrorCheck();
       case ProjectLifecycle.READY:
         return readyAction();
+      default:
+        mcpLog.warn(`ArkTS ${logLabel} rejected: unknown project state ${this.projectState}`);
+        return { content: [{ type: 'text', text: 'Unknown project state, please retry' }], isError: true };
     }
   }
 
@@ -828,6 +837,9 @@ export class DevecoCliMcpServer {
           return { content: [{ type: 'text', text: 'C++ LSP is not ready, please retry later' }], isError: true };
         }
         return readyAction();
+      default:
+        mcpLog.warn(`C++ ${logLabel} rejected: unknown C++ project state ${this.cppProjectState}`);
+        return { content: [{ type: 'text', text: 'Unknown C++ project state, please retry' }], isError: true };
     }
   }
 

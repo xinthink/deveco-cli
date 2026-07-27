@@ -649,22 +649,7 @@ export class ArktsCheckTool {
 
     mcpLog.info(`handleTypeHierarchy: file=${resolved} line=${args.line} char=${args.character} direction=${args.direction}`);
     try {
-      const result = await this.withOpenFile(resolved, async (uri) => {
-        const prepareResult = await this.manager!.sendFeatureRequest(LSP_METHOD.PREPARE_TYPE_HIERARCHY, {
-          textDocument: { uri }, position: { line: args.line, character: args.character },
-        });
-        const items = Array.isArray(prepareResult) ? prepareResult : (prepareResult ? [prepareResult] : []);
-        if (items.length === 0) {
-          return { items: [], results: [] };
-        }
-        const method = args.direction === 'supertypes' ? LSP_METHOD.SUPERTYPES : LSP_METHOD.SUBTYPES;
-        const allResults: unknown[] = [];
-        for (const item of items) {
-          const res = await this.manager!.sendFeatureRequest(method, { item });
-          if (Array.isArray(res)) { allResults.push(...res); } else if (res) { allResults.push(res); }
-        }
-        return { items, results: allResults };
-      });
+      const result = await this.fetchTypeHierarchy(resolved, args.line, args.character, args.direction);
       const text = `typeHierarchy (${args.direction}): ${JSON.stringify(result, null, 2)}`;
       return { content: [{ type: 'text', text }] };
     } catch (err) {
@@ -690,6 +675,47 @@ export class ArktsCheckTool {
     } catch (err) {
       return this.buildErrorResponse('completionItemResolve', err);
     }
+  }
+
+  /**
+   * typeHierarchy 内部方法：两步请求 prepareTypeHierarchy → supertypes/subtypes。
+   * 返回准备项列表及展平后的层级结果。
+   */
+  private async fetchTypeHierarchy(
+    file: string,
+    line: number,
+    character: number,
+    direction: 'supertypes' | 'subtypes'
+  ): Promise<{ items: unknown[]; results: unknown[] }> {
+    return this.withOpenFile(file, async (uri) => {
+      const prepareResult = await this.manager!.sendFeatureRequest(LSP_METHOD.PREPARE_TYPE_HIERARCHY, {
+        textDocument: { uri }, position: { line, character },
+      });
+      const items = Array.isArray(prepareResult) ? prepareResult : (prepareResult ? [prepareResult] : []);
+      if (items.length === 0) {
+        return { items: [], results: [] };
+      }
+      
+      const method = direction === 'supertypes' ? LSP_METHOD.SUPERTYPES : LSP_METHOD.SUBTYPES;
+      const results = await this.collectHierarchyItems(method, items);
+      return { items, results };
+    });
+  }
+
+  /**
+   * 遍历准备项，向 LSP 发送 supertypes/subtypes 请求并展平结果。
+   */
+  private async collectHierarchyItems(method: string, items: unknown[]): Promise<unknown[]> {
+    const allResults: unknown[] = [];
+    for (const item of items) {
+      const res = await this.manager!.sendFeatureRequest(method, { item });
+      if (Array.isArray(res)) {
+        allResults.push(...res);
+      } else if (res) {
+        allResults.push(res);
+      }
+    }
+    return allResults;
   }
 
   // ---------- 低价值方法（实现但不暴露为 tool） ----------

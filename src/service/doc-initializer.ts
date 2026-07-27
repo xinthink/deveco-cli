@@ -333,7 +333,7 @@ export class DocInitializer {
       await runInitPipeline(options, spinner);
     } catch (error) {
       if (release) {
-        return handleInitError(error, spinner);
+        await handleInitError(error, spinner);
       }
       throw error;
     } finally {
