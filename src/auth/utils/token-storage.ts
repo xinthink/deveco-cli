@@ -10,27 +10,25 @@ import { AppConfig } from '../auth-config';
 
 export type TokenSource = 'deveco-cli' | 'deveco-code';
 
-export interface ResolvedJwtToken {
-  token: string;
-  source: TokenSource;
+export function getTokenSource(): TokenSource {
+  return process.env.DEVECO_CLI_AUTH_SOURCE === 'deveco-code'
+    ? 'deveco-code'
+    : 'deveco-cli';
 }
 
 export class TokenStorage {
-  private tokenFilePath: string;
-
-  constructor(configDir?: string) {
+  private getLocalTokenFilePath(): string {
     const configPath =
-      configDir ||
       process.env.DEVECO_CLI_DATA_DIR ||
       path.join(homedir(), AppConfig.CONFIG_DIR_NAME, AppConfig.APP_NAME);
-    this.tokenFilePath = path.join(configPath, AppConfig.TOKEN_FILE_NAME);
+    return path.join(configPath, AppConfig.TOKEN_FILE_NAME);
   }
 
   /**
    * 确保配置目录存在
    */
   private ensureConfigDir(): void {
-    const dir = path.dirname(this.tokenFilePath);
+    const dir = path.dirname(this.getLocalTokenFilePath());
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
@@ -47,31 +45,26 @@ export class TokenStorage {
 
     const tokenData = LocalCrypto.encryptForLocalStorage(token);
     this.ensureConfigDir();
-    fs.writeFileSync(this.tokenFilePath, JSON.stringify(tokenData, null, 2), {
+    const tokenFilePath = this.getLocalTokenFilePath();
+    fs.writeFileSync(tokenFilePath, JSON.stringify(tokenData, null, 2), {
       mode: 0o600,
     });
   }
 
   /**
    * 从磁盘加载 JWT Token
-   * 优先读取 deveco-code 注入的登录态，再回退到 CLI 自身存储。
+   * deveco-code 模式下只读取外部目录的 token，不回退。
+   * CLI 模式下读取 CLI 本地存储的 token。
    */
   public async loadJwtToken(): Promise<string | null> {
-    return (await this.resolveJwtToken())?.token ?? null;
-  }
-
-  public async resolveJwtToken(): Promise<ResolvedJwtToken | null> {
-    const devecoCodeToken = this.loadDevecoCodeToken();
-    if (devecoCodeToken) {
-      return { token: devecoCodeToken, source: 'deveco-code' };
+    if (getTokenSource() === 'deveco-code') {
+      return this.loadDevecoCodeToken();
     }
-
-    const localToken = await this.loadLocalJwtToken();
-    return localToken ? { token: localToken, source: 'deveco-cli' } : null;
+    return this.loadLocalJwtToken();
   }
 
   private loadDevecoCodeToken(): string | null {
-    if (process.env.DEVECO_CLI_AUTH_SOURCE !== 'deveco-code') {
+    if (getTokenSource() !== 'deveco-code') {
       return null;
     }
     const configDir = process.env.DEVECO_CODE_AUTH_DIR?.trim();
@@ -100,12 +93,13 @@ export class TokenStorage {
   }
 
   private async loadLocalJwtToken(): Promise<string | null> {
+    const tokenFilePath = this.getLocalTokenFilePath();
     try {
-      if (!fs.existsSync(this.tokenFilePath)) {
+      if (!fs.existsSync(tokenFilePath)) {
         return null;
       }
 
-      const tokenData = JSON.parse(fs.readFileSync(this.tokenFilePath, 'utf8'));
+      const tokenData = JSON.parse(fs.readFileSync(tokenFilePath, 'utf8'));
       if (!LocalCrypto.isEncryptedBlob(tokenData)) {
         return null;
       }
@@ -120,9 +114,13 @@ export class TokenStorage {
    * 清除存储的 Token
    */
   public async clearToken(): Promise<void> {
+    if (getTokenSource() === 'deveco-code') {
+      throw new Error('Current session is managed by DevEco Code. Cannot modify via CLI.');
+    }
+    const tokenFilePath = this.getLocalTokenFilePath();
     try {
-      if (fs.existsSync(this.tokenFilePath)) {
-        fs.unlinkSync(this.tokenFilePath);
+      if (fs.existsSync(tokenFilePath)) {
+        fs.unlinkSync(tokenFilePath);
       }
     } catch (err) {
       throw new Error('Failed to clear token', { cause: err });

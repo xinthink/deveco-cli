@@ -4,7 +4,7 @@
  */
 import * as crypto from 'crypto';
 import { LocalAuthServer } from './local-auth-server';
-import { tokenStorage } from '../utils/token-storage';
+import { tokenStorage, getTokenSource } from '../utils/token-storage';
 import type { UserInfo, LoginConfig } from '../types/auth-types';
 import { getRegionalizedBaseUrl } from '../utils/region';
 import { DEFAULT_LOGIN_CONFIG } from '../auth-config';
@@ -112,12 +112,12 @@ export class LoginService {
    * @returns 如果已登录返回 true，否则返回 false
    */
   public async isLoggedIn(): Promise<boolean> {
-    const resolvedToken = await tokenStorage.resolveJwtToken();
-    if (resolvedToken == null) {
+    const jwtToken = await tokenStorage.loadJwtToken();
+    if (!jwtToken) {
       return false;
     }
     const res = await tokenChecker.checkJwtToken(
-      resolvedToken.token,
+      jwtToken,
       () => this.getRegionalizedBaseUrl(),
       this.config.jwtTokenCheckUrl
     );
@@ -125,7 +125,7 @@ export class LoginService {
       return true;
     }
     // jwtToken失效，需要重新登录
-    if (resolvedToken.source === 'deveco-cli') {
+    if (getTokenSource() === 'deveco-cli') {
       await tokenStorage.clearToken();
     }
     return false;
@@ -137,17 +137,12 @@ export class LoginService {
    * @throws If not logged in
    */
   public async logout(): Promise<boolean> {
-    const resolvedToken = await tokenStorage.resolveJwtToken();
-    if (resolvedToken == null) {
+    const jwtToken = await tokenStorage.loadJwtToken();
+    if (!jwtToken) {
       return false;
     }
-    if (resolvedToken.source === 'deveco-code') {
-      throw new Error(
-        'Login is managed by deveco-code. Log out from deveco-code instead.'
-      );
-    }
     const regionalizedBaseUrl = this.getRegionalizedBaseUrl();
-    const logoutUrl = `${regionalizedBaseUrl}/${this.config.logoutUrl}?jwtToken=${resolvedToken.token}`;
+    const logoutUrl = `${regionalizedBaseUrl}/${this.config.logoutUrl}?jwtToken=${jwtToken}`;
     try {
       await httpClient.post(logoutUrl, { timeout: 5000 });
     } finally {

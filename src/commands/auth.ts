@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: MIT
  */
 import { Command } from 'commander';
-import { cyan } from 'colorette';
+import { red, cyan } from 'colorette';
 import * as readline from 'readline';
-import { loginService, getTeamList, type Team } from '../auth';
+import { loginService, getTeamList, getTokenSource, type Team } from '../auth';
 
 function renderTeamTable(teams: Team[]): string {
   if (teams.length === 0) {
@@ -40,6 +40,10 @@ authCommand
   .command('login')
   .description('Log in to your Huawei Developer account')
   .action(async () => {
+    if (getTokenSource() === 'deveco-code') {
+      console.log(red('Login is managed by deveco-code. Login from deveco-code instead.'));
+      return;
+    }
     try {
       const isLoggedIn = await loginService.isLoggedIn();
       if (isLoggedIn) {
@@ -65,6 +69,10 @@ authCommand
   .command('logout')
   .description('Log out of your Huawei Developer account')
   .action(async () => {
+    if (getTokenSource() === 'deveco-code') {
+      console.log(red('Login is managed by deveco-code. Log out from deveco-code instead.'));
+      return;
+    }
     try {
       const loggedOut = await loginService.logout();
       if (loggedOut) {
@@ -110,7 +118,11 @@ teamCommand
     try {
       const isLoggedIn = await loginService.isLoggedIn();
       if (!isLoggedIn) {
-        console.log(cyan('Please run `devecocli auth login` first.'));
+        if (getTokenSource() === 'deveco-code') {
+          console.log(red('Not logged in. Please login via DevEco Code first.'));
+        } else {
+          console.log(cyan('Please run `devecocli auth login` first.'));
+        }
         return;
       }
       const result = await getTeamList();

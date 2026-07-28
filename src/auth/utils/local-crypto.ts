@@ -64,10 +64,9 @@ function ensureRootKeys(): void {
   ensureDirectories();
   for (const keyId of rootKeyIds) {
     const filePath = getRootKeyPath(keyId);
-    if (fs.existsSync(filePath)) {
-      continue;
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, crypto.randomBytes(kekLength), { mode: 0o600 });
     }
-    fs.writeFileSync(filePath, crypto.randomBytes(kekLength), { mode: 0o600 });
   }
 }
 
