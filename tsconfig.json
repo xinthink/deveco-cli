@@ -9,8 +9,8 @@
     "declaration": true,
     "outDir": "./dist",
     "rootDir": ".",
-    "types": ["node"]
+    "types": ["node", "proper-lockfile"]
   },
-  "include": ["src/**/*", "mcp/src-server/**/*"],
+  "include": ["src/**/*", "mcp/src-server/**/*", "tsup.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

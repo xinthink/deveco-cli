@@ -3,70 +3,109 @@
  * SPDX-License-Identifier: MIT
  */
 import { Command } from 'commander';
+import * as path from 'path';
 import { green, red, cyan } from 'colorette';
 import { execa } from 'execa';
+import {
+  getPackageName,
+  getCurrentVersion,
+  getPublishTag,
+  getUpdateDisableMode,
+} from '../update/index.js';
+import { VersionCache } from '../update/version-cache.js';
+import { getCliDataDir } from '../utils/cli-data-dir.js';
+import { debugLog } from '../utils/logger.js';
 
-function getPublishTag(): string {
-  return process.env.npm_config_tag || 'latest';
-}
+const updateCommand = new Command('update').description(
+  'Update deveco-cli to latest'
+);
 
-function getPackageName(): string {
-  return process.env.npm_package_name || 'deveco-cli';
-}
+updateCommand.command('_check', { hidden: true }).action(async () => {
+  const cache = new VersionCache(path.join(getCliDataDir(), 'update'));
 
-function getCurrentVersion(): string {
-  return process.env.npm_package_version || '0.0.1';
-}
-
-const updateCommand = new Command('update')
-  .description('Update deveco-cli to latest')
-  .action(async () => {
-    const packageName = getPackageName();
-    const currentVersion = getCurrentVersion();
+  try {
     const publishTag = getPublishTag();
+    const pkgName = getPackageName();
 
-    console.log(cyan(`Checking for updates...`));
+    // Fetch the tag-pinned version's package.json: dist-tags are absent at the
+    // top level when querying a specific version/tag, so read `version` and
+    // `blockedVersions` directly from that version's metadata.
+    debugLog(`Executing: npm view ${pkgName}@${publishTag} --json`);
+    const { stdout } = await execa('npm', [
+      'view',
+      `${pkgName}@${publishTag}`,
+      '--json',
+    ]);
+    const info = JSON.parse(stdout) as Record<string, unknown>;
 
-    try {
-      // Get the tagged version from npm registry
-      const { stdout: latestVersion } = await execa('npm', [
-        'view',
-        packageName,
-        `dist-tags.${publishTag}`,
-      ]);
-      const latest = latestVersion.trim();
+    const latestVersion =
+      typeof info.version === 'string' ? info.version.trim() : null;
+    const blockedVersions = Array.isArray(info.blockedVersions)
+      ? (info.blockedVersions as string[])
+      : [];
 
-      if (!latest || latest === currentVersion) {
-        console.log(
-          green(
-            `\n${packageName} is already up to date (v${currentVersion}, tag: ${publishTag})`
-          )
-        );
-        return;
-      }
+    await cache.writeSuccess(
+      latestVersion,
+      blockedVersions,
+      getCurrentVersion(),
+      publishTag
+    );
+  } catch (error) {
+    await cache.writeError(
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+});
 
+updateCommand.action(async () => {
+  if (getUpdateDisableMode() === 'all') {
+    throw new Error(
+      'devecocli update is disabled (DEVECO_CLI_DISABLE_UPDATE=all).'
+    );
+  }
+  const currentVersion = getCurrentVersion();
+  const publishTag = getPublishTag();
+
+  console.log(cyan(`Checking for updates...`));
+  const pkgName = getPackageName();
+  try {
+    // Get the tagged version from npm registry
+    const { stdout: latestVersion } = await execa('npm', [
+      'view',
+      pkgName,
+      `dist-tags.${publishTag}`,
+    ]);
+    const latest = latestVersion.trim();
+
+    if (!latest || latest === currentVersion) {
       console.log(
-        cyan(`\nNew version found: ${latest} (current: ${currentVersion})`)
+        green(
+          `\n${pkgName} is already up to date (v${currentVersion}, tag: ${publishTag})`
+        )
       );
-      console.log(cyan(`Updating ${packageName}...`));
-
-      // Execute npm install -g <package-name>@<tag>
-      await execa('npm', ['install', '-g', `${packageName}@${publishTag}`], {
-        stdio: 'inherit',
-      });
-
-      console.log(
-        '\n' +
-          green(`${packageName} updated successfully to version ${latest}.`)
-      );
-    } catch (error) {
-      const e = error as Error;
-      console.error(red(`Failed to update ${packageName}`));
-      if (e.message) {
-        console.error(red(e.message));
-      }
-      process.exit(1);
+      return;
     }
-  });
+
+    console.log(
+      cyan(`\nNew version found: ${latest} (current: ${currentVersion})`)
+    );
+    console.log(cyan(`Updating ${pkgName}...`));
+
+    await execa('npm', ['install', '-g', `${pkgName}@${publishTag}`], {
+      stdio: 'inherit',
+    });
+
+    console.log(
+      '\n' + green(`${pkgName} updated successfully to version ${latest}.`)
+    );
+  } catch (error) {
+    const e = error as Error;
+    console.error(red(`Failed to update ${pkgName}`));
+    if (e.message) {
+      console.error(red(e.message));
+    }
+    process.exit(1);
+  }
+});
 
 export default updateCommand;

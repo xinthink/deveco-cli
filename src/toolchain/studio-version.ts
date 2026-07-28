@@ -69,15 +69,4 @@ export function readStudioVersion(root: string): string | undefined {
     return undefined;
   }
 }
-export function compareStudioVersions(left: string, right: string): number {
-  const length = Math.max(left.split('.').length, right.split('.').length);
-  for (let index = 0; index < length; index++) {
-    const diff =
-      Number(left.split('.')[index] ?? 0) -
-      Number(right.split('.')[index] ?? 0);
-    if (diff) {
-      return diff;
-    }
-  }
-  return 0;
-}
+export { compareNumericVersions as compareStudioVersions } from '../utils/semver.js';
