@@ -38,7 +38,7 @@ function buildLexiconMissingHint(): string {
 function buildJiebaInstallHint(): string {
   const logPath = getDocInitLogPath();
   return [
-    'Chinese tokenizer (@node-rs/jieba) failed to load.',
+    'Chinese tokenizer (jieba-wasm) failed to load.',
     '',
     `Node.js: ${process.version} (required: >=18)`,
     '',
@@ -47,7 +47,6 @@ function buildJiebaInstallHint(): string {
     'Try:',
     '  1. Reinstall: npm uninstall -g @deveco/deveco-cli && npm install -g <package.tgz>',
     '  2. Use Node.js 18 or newer',
-    '  3. Configure npm registry/proxy if your network blocks optional platform packages',
   ].join('\n');
 }
 

@@ -18,9 +18,7 @@ export default defineConfig({
   minify: true,
   splitting: false,
   external: [
-    '@node-rs/jieba',
-    '@node-rs/jieba/dict.js',
-    '@node-rs/jieba-wasm32-wasi',
+    'jieba-wasm',
     'better-sqlite3',
     '@sqlite.org/sqlite-wasm',
     'yauzl',
