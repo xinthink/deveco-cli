@@ -119,15 +119,16 @@ Inspect UI on a connected device. All subcommands accept `--device <name|serial>
 | `click [x] [y]` | Tap at the specified coordinates or node | `--id <id>` (auto-resolves to center), `--window <windowId>` (used with `--id`) |
 | `doubleclick [x] [y]` | Double-tap at the specified coordinates or node | `--id <id>`, `--window <windowId>` |
 | `longclick [x] [y]` | Long-press at the specified coordinates or node | `--id <id>`, `--window <windowId>` |
-| `swipe <x1> <y1> <x2> <y2>` | Swipe from one point to another | `--speed <n>` (200–40000, px/s) |
+| `swipe <x1> <y1> <x2> <y2>` | Swipe from one point to another (precise coordinates, custom speed) | `--speed <n>` (200–40000, px/s) |
 | `fling <x1> <y1> <x2> <y2>` | Fling from one point to another | `--speed <n>` (200–40000, px/s) |
 | `drag <x1> <y1> <x2> <y2>` | Drag from one point to another | `--speed <n>` (200–40000, px/s) |
-| `dircfling <direction>` | Fling in a fixed direction | `direction`: `up`, `down`, `left`, `right` |
+| `dircfling <direction>` | Quick directional fling (system default speed, ideal for scrolling) | `direction`: `up`, `down`, `left`, `right` |
 | `text <text> [x] [y]` | Input text at a target location or the currently focused field | `--id <id>` (auto-resolves to center), `--window <windowId>` (used with `--id`) |
 
-- Coordinates and `--id` are mutually exclusive. Provide either `x y` or `--id <id>`; for `text`, if neither is given the text goes to the currently focused field.
-- `--window <windowId>` may only be used together with `--id`.
-- Default: focused window only. Use `--window <id>` or `--all-windows` to target specific/all windows (mutually exclusive).
+- **Coordinates vs `--id`**: Mutually exclusive. Provide either `x y` or `--id <id>`. For `text`, if neither is given, text goes to the currently focused field.
+- **`--window`**: May only be used together with `--id`. Default is focused window. Secondary display operations via `--id` + `--window` are not supported.
+- **`swipe` vs `dircfling`**: `swipe` requires exact start/end coordinates and supports `--speed`; `dircfling` only needs a direction (`up/down/left/right`) and uses system default speed (ideal for page/list scrolling).
+- **Text encoding**: Special characters in `text` are Base64-encoded internally to safely pass through device shell.
 - `--format json` pairs well with `jq`.
 - `--mode raw`: full layout tree, no filtering.
 - `--mode simplified` (default): folds meaningless wrapper containers (non-root, no `id`, no text, not interactive) by lifting their surviving children up. `--depth` truncates after folding.

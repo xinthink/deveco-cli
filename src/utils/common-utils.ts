@@ -64,21 +64,6 @@ export class CommonUtils {
     return Math.round(minuteValue * 60);
   }
 
-  static assertRelativeTimeRange(
-    fromSeconds?: number,
-    toSeconds?: number
-  ): void {
-    if (
-      fromSeconds !== undefined &&
-      toSeconds !== undefined &&
-      fromSeconds < toSeconds
-    ) {
-      throw new Error(
-        '--from must be greater than or equal to --to when both are provided (e.g. --from 30s --to 10s)'
-      );
-    }
-  }
-
   static filterLogsByRelativeWindow(
     logs: string,
     fromSeconds?: number,
