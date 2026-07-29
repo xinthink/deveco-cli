@@ -7,10 +7,11 @@ import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { ToolProvider } from '../toolchain/index.js';
 import {
-  findArktsLangServerPath,
   findHarmonyProjectInDir,
   getMcpLogDirectory,
   normalizePath,
+  resolveArktsServerEntry,
+  resolveToolchainPaths,
 } from '../../mcp/src-server/utils/common.js';
 import { computeLspServerMaxSize, toUnixPath } from '../../mcp/src-server/lsp/utils.js';
 import { ModulesDependencyParse } from '../../mcp/src-server/lsp/parse/ModulesDependencyParse.js';
@@ -49,7 +50,10 @@ async function resolvePaths(options: ArktsLspOptions): Promise<{
   serverMaxSize: number;
 }> {
   const toolProvider = await ToolProvider.new();
-  toolProvider.require({ clt: false });
+  const devecoPath: string | null =
+    toolProvider.sourceType === 'clt'
+      ? toolProvider.toolchainRoot
+      : toolProvider.devecoStudioPath;
   // 指定路径→直接用（不搜，安全）；未指定+--auto-detect→从 cwd 向下搜（不向上）；否则用 cwd。
   let projectPath: string;
   if (options.projectPath) {
@@ -63,20 +67,18 @@ async function resolvePaths(options: ArktsLspOptions): Promise<{
     projectPath = normalizePath(process.cwd());
     mcpLog.info(`projectPath=cwd ('${projectPath}'), no search (pass --auto-detect to search subdirs)`);
   }
-  const sdkPath = toolProvider.sdkPath;
-  const arktsLangServerPath = findArktsLangServerPath(
-    toolProvider.devecoStudioPath
-  );
+  // 启动期一次性固定 sdkPath / arktsLangServerPath（按 CLT|Studio 布局派生）。
+  const { sdkPath, arktsLangServerPath } = resolveToolchainPaths(devecoPath);
   if (!arktsLangServerPath) {
-    mcpLog.error('ace-server not found in DevEco Studio installation.');
+    mcpLog.error('ace-server not found (install DevEco Studio / CLT).');
     process.exit(1);
   }
-  const serverPath = path.resolve(arktsLangServerPath, 'ace-server', 'out', 'standardIndex', 'index.js');
+  const serverPath = resolveArktsServerEntry(arktsLangServerPath, true);
   const logPath = path.join(getMcpLogDirectory(), 'lsp-server', String(Date.now()));
   fs.mkdirSync(logPath, { recursive: true });
   const serverMaxSize = resolveServerMaxSize(projectPath, sdkPath);
 
-  mcpLog.info(`projectPath=${projectPath}, sdkPath=${sdkPath}, serverPath=${serverPath}, logPath=${logPath}, serverMaxSize=${serverMaxSize}MB`);
+  mcpLog.info(`projectPath=${projectPath}, sdkPath=${sdkPath}, arktsLangServerPath=${arktsLangServerPath}, serverPath=${serverPath}, logPath=${logPath}, serverMaxSize=${serverMaxSize}MB`);
   return { projectPath, sdkPath, serverPath, logPath, serverMaxSize };
 }
 
