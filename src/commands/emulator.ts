@@ -6,7 +6,6 @@ import { Argument, Command, Option } from 'commander';
 import { tryGetHdcShellParams } from '../utils/hdc-param.js';
 import { green, cyan, red, yellow, gray } from 'colorette';
 import ora, { type Ora } from 'ora';
-import { exitWithListCommandError } from '../utils/ora-fail.js';
 import { renderTable, type TableRow } from '../utils/text-table.js';
 import type { EmulatorInfo } from '../service/emulator-types.js';
 import { normalizeListNameKey } from '../service/emulator-types.js';
@@ -252,20 +251,30 @@ const EMULATOR_LIST_TABLE_HEADERS = [
   'OS Version',
 ] as const;
 
-function buildEmulatorListRow(
-  emu: EmulatorInfo,
-  serial: string | undefined,
-  effectiveRunning: boolean
-): TableRow {
+type EmulatorListFormat = 'table' | 'json';
+
+interface EmulatorListItem {
+  name: string;
+  status: 'running' | 'stopped';
+  serial: string | null;
+  deviceType: string | null;
+  osVersion: string | null;
+}
+
+interface EmulatorListOptions {
+  format: EmulatorListFormat;
+}
+
+function buildEmulatorListRow(item: EmulatorListItem): TableRow {
   return {
     cells: [
-      emu.name,
-      effectiveRunning ? 'running' : 'stopped',
-      serial ?? '-',
-      emu.deviceType ?? '-',
-      emu.osVersion ?? '-',
+      item.name,
+      item.status,
+      item.serial ?? '-',
+      item.deviceType ?? '-',
+      item.osVersion ?? '-',
     ],
-    highlight: effectiveRunning,
+    highlight: item.status === 'running',
   };
 }
 
@@ -370,11 +379,11 @@ interface EnrichedEmulator {
   effectiveRunning: boolean;
 }
 
-function buildSortedEmulatorRows(
+function buildSortedEmulatorList(
   emulators: EmulatorInfo[],
   productSerialMap: Map<string, string>,
   hvdSerialMap: Map<string, string>
-): TableRow[] {
+): EmulatorListItem[] {
   const enriched: EnrichedEmulator[] = emulators.map((emu) => ({
     emu,
     serial: productSerialMap.get(emu.name) ?? hvdSerialMap.get(emu.name),
@@ -386,14 +395,19 @@ function buildSortedEmulatorRows(
     }
     return a.emu.name.localeCompare(b.emu.name);
   });
-  return enriched.map((item) =>
-    buildEmulatorListRow(item.emu, item.serial, item.effectiveRunning)
-  );
+  return enriched.map(({ emu, serial, effectiveRunning }) => ({
+    name: emu.name,
+    status: effectiveRunning ? 'running' : 'stopped',
+    serial: serial ?? null,
+    deviceType: emu.deviceType ?? null,
+    osVersion: emu.osVersion ?? null,
+  }));
 }
 
 async function listAction(
   emulatorManager: EmulatorManager,
   hdcPath: string,
+  format: EmulatorListFormat,
   spinner?: Ora
 ) {
   try {
@@ -404,7 +418,11 @@ async function listAction(
 
     if (emulators.length === 0) {
       spinner?.stop();
-      console.log(yellow('  No emulator instances found.'));
+      if (format === 'json') {
+        console.log('[]');
+      } else {
+        console.log(yellow('  No emulator instances found.'));
+      }
       return;
     }
 
@@ -418,17 +436,22 @@ async function listAction(
     );
 
     spinner?.stop();
-    const rows = buildSortedEmulatorRows(
+    const items = buildSortedEmulatorList(
       emulators,
       productSerialMap,
       hvdSerialMap
     );
+    if (format === 'json') {
+      console.log(JSON.stringify(items, null, 2));
+      return;
+    }
+    const rows = items.map(buildEmulatorListRow);
     console.log(renderTable(EMULATOR_LIST_TABLE_HEADERS, rows));
   } catch (error) {
-    exitWithListCommandError(
-      spinner,
-      `Failed to list emulators: ${(error as Error).message}`
-    );
+    spinner?.stop();
+    throw new Error(`Failed to list emulators: ${(error as Error).message}`, {
+      cause: error,
+    });
   }
 }
 
@@ -719,7 +742,7 @@ function batteryAction(options: BatteryOptions): EmulatorControlAction {
   if (options.level !== undefined) {
     actions.push({
       type: 'battery',
-      level: parseRangeInteger('--level', options.level, 1, 100),
+      level: parseRangeInteger('--level', options.level, 0, 100),
     });
   }
   if (options.status !== undefined) {
@@ -1119,7 +1142,10 @@ emulatorCommand
   .command('battery')
   .description('Set battery level or charging status')
   .requiredOption('--target <nameOrSerial>', 'Target emulator name or serial')
-  .option('--level <1-100>', 'Battery level, SOC (integer 1-100)')
+  .option(
+    '--level <0-100>',
+    'Battery level, SOC (charging: 0-100; not charging: 1-100)'
+  )
   .addOption(
     new Option('--status <status>', 'Charging status').choices([
       'charging',
@@ -1178,13 +1204,21 @@ emulatorCommand
 emulatorCommand
   .command('list')
   .description('List all emulator instances')
-  .action(async () => {
+  .addOption(
+    new Option('--format <format>', 'Output format')
+      .choices(['table', 'json'])
+      .default('table')
+  )
+  .action(async (options: EmulatorListOptions) => {
     const { manager, toolProvider } = await initEmulatorManager();
-    const spinner = ora({
-      text: 'Listing emulators…',
-      color: 'cyan',
-    }).start();
-    await listAction(manager, toolProvider.hdcPath, spinner);
+    const spinner =
+      options.format === 'table'
+        ? ora({
+            text: 'Listing emulators…',
+            color: 'cyan',
+          }).start()
+        : undefined;
+    await listAction(manager, toolProvider.hdcPath, options.format, spinner);
   });
 
 emulatorCommand
