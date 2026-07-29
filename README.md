@@ -92,6 +92,9 @@ devecocli init --path D:\work\ARKTS\NewData
 | `devecocli device list`   | 查看当前连接设备                                  |
 | `devecocli emulator list` | 查看本地模拟器实例                                 |
 | `devecocli ui screenshot` | 对真机或模拟器执行 UI 截图                          |
+| `devecocli ui click`      | 点击指定坐标或节点 ID                             |
+| `devecocli ui swipe`      | 自定义滑动（指定起点、终点和速度）                   |
+| `devecocli ui text`       | 输入文本到焦点或指定位置                            |
 | `devecocli log`           | 查看 `hilog` 或崩溃日志                          |
 | `devecocli docs search`   | 搜索本地 HarmonyOS 文档                         |
 | `devecocli init`          | 安装内置技能或配置 `MCP`                           |
@@ -436,40 +439,6 @@ devecocli emulator sensor --target Phone --heartrate 80
   校验以目标模拟器实际返回的 `deviceType` 为准。非上述三种设备类型以及不属于目标设备类型的状态会在命令下发前被拒绝。校验通过后，底层映射为 `Emulator -instance <name> -foldedState <state>`。
 - 设置 `DEVECO_CLI_DEBUG=1` 可查看底层命令映射，例如 `Emulator -instance <name> -shake`。
 
-### `ui screenshot`
-
-对真机或模拟器执行 UI 截图。`devecocli ui` 当前只交付截图能力。
-
-**命令格式：**
-
-```bash
-devecocli ui screenshot [--device <name|serial>] [--path <path>]
-```
-
-**参数：**
-
-| 参数                       | 说明                       | 默认值       |
-| ------------------------ | ------------------------ | ---------- |
-| --device \<name\|serial> | 真机或模拟器名称/序列号；多设备时必填     | 单设备自动选择 |
-| --display \<displayId>   | 目标屏幕 ID，可选                | 默认屏幕     |
-| --path \<path>           | 截图输出路径，可选；目录或父目录必须已存在 | `./screenshot-<timestamp>.png` |
-
-**示例：**
-
-```bash
-devecocli ui screenshot --device Phone
-mkdir -p screenshots
-devecocli ui screenshot --device Phone --path ./screenshots/phone.png
-devecocli ui screenshot --device Phone --display 0 --path ./screenshots/phone.png
-```
-
-**说明：**
-
-- `ui screenshot` 支持真机和模拟器。
-- 仅有一个可用设备时可省略 `--device`，多个设备同时连接时必须指定。
-- 截图能力统一通过 `ui screenshot` 提供，不放在模拟器场景操作命令中。
-- 截图统一使用 `hdc shell snapshot_display` 和 `hdc file recv` 实现；设置 `DEVECO_CLI_DEBUG=1` 可查看实际执行命令。
-
 ### `emulator create`
 
 创建模拟器
@@ -657,6 +626,264 @@ devecocli device view --target <serialOrName>
 devecocli device view
 devecocli device view --target 127.0.0.1:5555
 devecocli device view -t "My Device Name"
+```
+
+### `ui screenshot`
+
+对真机或模拟器执行 UI 截图。
+
+**命令格式：**
+
+```bash
+devecocli ui screenshot --device <name|serial> --display <displayId> --path <path>
+```
+
+**参数：**
+
+| 参数                       | 说明                       | 默认值       |
+| ------------------------ | ------------------------ | ---------- |
+| --device \<name\|serial> | 真机或模拟器名称/序列号；多设备时必填     | 单设备自动选择 |
+| --display \<displayId>   | 目标屏幕 ID，可选                | 默认屏幕     |
+| --path \<path>           | 截图输出路径，可选；目录或父目录必须已存在 | `./screenshot-<timestamp>.png` |
+
+**示例：**
+
+```bash
+devecocli ui screenshot --device Phone
+mkdir -p screenshots
+devecocli ui screenshot --device Phone --path ./screenshots/phone.png
+devecocli ui screenshot --device Phone --display 0 --path ./screenshots/phone.png
+```
+
+**说明：**
+
+- `ui screenshot` 支持真机和模拟器。
+- 仅有一个可用设备时可省略 `--device`，多个设备同时连接时必须指定。
+- 截图能力统一通过 `ui screenshot` 提供，不放在模拟器场景操作命令中。
+- 截图统一使用 `hdc shell snapshot_display` 和 `hdc file recv` 实现；设置 `DEVECO_CLI_DEBUG=1` 可查看实际执行命令。
+
+### `ui click`
+
+点击指定坐标或节点 ID 的中心位置。
+
+**命令格式：**
+
+```bash
+devecocli ui click [x] [y] --device <name|serial> --id <id> --window <windowId>
+```
+
+**参数：**
+
+| 参数 | 说明 |
+| --- | --- |
+| `[x] [y]` | 可选，目标坐标。缺省时需配合 `--id` 使用 |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+| --id \<id> | 节点 ID，自动解析为中心坐标。不可与 `[x] [y]` 同时使用 |
+| --window \<windowId> | 目标窗口 ID，需与 `--id` 配合使用 |
+
+**示例：**
+
+```bash
+devecocli ui click 100 200
+devecocli ui click 100 200 --device Phone
+devecocli ui click --id submit_button
+devecocli ui click --id submit_button --window main_window
+```
+
+### `ui doubleclick`
+
+双击指定坐标或节点 ID 的中心位置。
+
+**命令格式：**
+
+```bash
+devecocli ui doubleclick [x] [y] --device <name|serial> --id <id> --window <windowId>
+```
+
+**参数：**
+
+| 参数 | 说明 |
+| --- | --- |
+| `[x] [y]` | 可选，目标坐标。缺省时需配合 `--id` 使用 |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+| --id \<id> | 节点 ID，自动解析为中心坐标。不可与 `[x] [y]` 同时使用 |
+| --window \<windowId> | 目标窗口 ID，需与 `--id` 配合使用 |
+
+**示例：**
+
+```bash
+devecocli ui doubleclick 100 200
+devecocli ui doubleclick 100 200 --device Phone
+devecocli ui doubleclick --id photo_thumb
+devecocli ui doubleclick --id photo_thumb --window main_window
+```
+
+### `ui longclick`
+
+长按指定坐标或节点 ID 的中心位置。
+
+**命令格式：**
+
+```bash
+devecocli ui longclick [x] [y] --device <name|serial> --id <id> --window <windowId>
+```
+
+**参数：**
+
+| 参数 | 说明 |
+| --- | --- |
+| `[x] [y]` | 可选，目标坐标。缺省时需配合 `--id` 使用 |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+| --id \<id> | 节点 ID，自动解析为中心坐标。不可与 `[x] [y]` 同时使用  |
+| --window \<windowId> | 目标窗口 ID，需与 `--id` 配合使用 |
+
+**示例：**
+
+```bash
+devecocli ui longclick 100 200
+devecocli ui longclick 100 200 --device Phone
+devecocli ui longclick --id menu_item
+devecocli ui longclick --id menu_item --window main_window
+```
+
+### `ui swipe`
+
+自定义滑动（指定起点、终点和速度）。
+
+**命令格式：**
+
+```bash
+devecocli ui swipe <x1> <y1> <x2> <y2> --device <name|serial> --speed <n>
+```
+
+**参数：**
+
+| 参数 | 说明 |
+| --- | --- |
+| `<x1> <y1> <x2> <y2>` | 必选，起点和终点坐标 |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+| --speed \<n> | 可选，滑动速度（像素/秒），范围 `200` ~ `40000` |
+
+**示例：**
+
+```bash
+devecocli ui swipe 100 500 100 200
+devecocli ui swipe 100 500 100 200 --device Phone
+devecocli ui swipe 100 500 100 200 --speed 1000
+```
+
+### `ui fling`
+
+快速滑动（Fling）。
+
+**命令格式：**
+
+```bash
+devecocli ui fling <x1> <y1> <x2> <y2> --device <name|serial> --speed <n>
+```
+
+**参数：**
+
+| 参数 | 说明 |
+| --- | --- |
+| `<x1> <y1> <x2> <y2>` | 必选，起点和终点坐标 |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+| --speed \<n> | 可选，滑动速度（像素/秒），范围 `200` ~ `40000` |
+
+**示例：**
+
+```bash
+devecocli ui fling 100 800 100 200
+devecocli ui fling 100 800 100 200 --device Phone
+devecocli ui fling 100 800 100 200 --speed 3000
+```
+
+### `ui drag`
+
+拖拽操作。
+
+**命令格式：**
+
+```bash
+devecocli ui drag <x1> <y1> <x2> <y2> --device <name|serial> --speed <n>
+```
+
+**参数：**
+
+| 参数 | 说明 |
+| --- | --- |
+| `<x1> <y1> <x2> <y2>` | 必选，起点和终点坐标 |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+| --speed \<n> | 可选，滑动速度（像素/秒），范围 `200` ~ `40000` |
+
+**示例：**
+
+```bash
+# 拖拽操作
+devecocli ui drag 100 500 100 200
+devecocli ui drag 100 500 100 200 --device Phone
+devecocli ui drag 100 500 100 200 --speed 1500
+```
+
+### `ui dircfling`
+
+向指定方向快速滑动。
+
+**命令格式：**
+
+```bash
+devecocli ui dircfling <direction> --device <name|serial>
+```
+
+**参数：**
+
+| 参数 | 说明 |
+| --- | --- |
+| `<direction>` | 必选，方向，取值为 `up`, `down`, `left`, `right` |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+
+**示例：**
+
+```bash
+devecocli ui dircfling up
+devecocli ui dircfling down --device Phone
+devecocli ui dircfling left
+devecocli ui dircfling right
+```
+
+**与 `ui swipe` 的区别：**
+
+- `ui swipe` 需要指定精确的起点和终点坐标，支持自定义速度，适用于特定区域滑动。
+- `ui dircfling` 仅需指定方向，使用系统默认速度，适用于页面滚动或列表快速滑动。
+
+### `ui text`
+
+输入文本到当前焦点、指定坐标或指定节点位置。
+
+**命令格式：**
+
+```bash
+devecocli ui text <text> [x] [y] --device <name|serial> --id <id> --window <windowId>
+```
+
+**参数：**
+
+| 参数 | 说明 |
+| --- | --- |
+| `<text>` | 必选，待输入的文本 |
+| `[x] [y]` | 可选，目标坐标 |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+| --id \<id> | 节点 ID，自动解析为中心坐标。不可与 `[x] [y]`同时使用 |
+| --window \<windowId> | 目标窗口 ID，需与 `--id` 配合使用 |
+
+**示例：**
+
+```bash
+devecocli ui text "Hello World"
+devecocli ui text "Hello World" --device Phone
+devecocli ui text "Hello World" 100 200
+devecocli ui text "Hello World" --id search_box
+devecocli ui text "Hello World" --id search_box --window main_window
 ```
 
 ### `run`
