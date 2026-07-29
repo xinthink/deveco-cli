@@ -8,7 +8,7 @@ description: >-
 
 `devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc`, emulator toolchain, and bundled skills installer. **Prefer `devecocli` over invoking underlying tools directly.**
 
-Available commands: `build`, `check`, `run`, `update`, `device`, `emulator`, `ui`, `skills`, `log`, `create`, `init`, `serve`, `docs`, `signature`, `login`, `logout`, `whoami`.
+Available commands: `build`, `check`, `run`, `update`, `device`, `emulator`, `ui`, `skills`, `log`, `create`, `init`, `serve`, `docs`, `signature`, `auth`.
 
 **Sandbox Rule**: Commands tagged `[Outside sandbox]` must be run outside the sandbox.
 
@@ -88,7 +88,7 @@ Build, install, and launch.
 
 ### `devecocli signature generate` `[Outside sandbox]`
 Auto-generate HarmonyOS signing materials (local p12/csr + cloud cert + test profile) and write signing config to `build-profile.json5`.
-- **Prereq**: `devecocli login` first; run from a project directory (with `build-profile.json5`); a connected device or emulator is required for device registration.
+- **Prereq**: `devecocli auth login` first; run from a project directory (with `build-profile.json5`); a connected device or emulator is required for device registration.
 - `--product <name>`: Product name for local p12/csr file naming (default: `default`).
 - `--team-id <id>`: Specify the team-id (default: current user's id).
 - `--force`: Force regenerate even if existing materials are valid.
@@ -146,15 +146,18 @@ MUTUALLY EXCLUSIVE modes for setup:
 - `-f, --force`: Overwrite existing config.
 *MCP Rules*: Global MCP (no `--project`) only supports `opencode` and `cursor`. Others require `--project`.
 
-### `devecocli login`
+### `devecocli auth login`
 Sign in to your Huawei Developer account. Opens a browser for OAuth authentication. Required before `signature generate`.
-*Ex*: `devecocli login`
+*Ex*: `devecocli auth login`
 
-### `devecocli logout`
+### `devecocli auth logout`
 Sign out and clear locally stored credentials.
 
-### `devecocli whoami`
+### `devecocli auth status`
 Show the current logged-in user.
+
+### `devecocli auth team list`
+List team accounts the current user has joined.
 
 ### `devecocli skills`
 Manage HarmonyOS skills in AI agents/projects.
@@ -191,7 +194,7 @@ Validation order: `files` + `--modules` mutually exclusive → `--source-version
 - **Release build**:
   `devecocli build --product oversea --build-mode release`
 - **First-time signing setup**:
-  `devecocli login` -> `devecocli signature generate --product default` -> `devecocli build` -> `devecocli run`
+  `devecocli auth login` -> `devecocli signature generate --product default` -> `devecocli build` -> `devecocli run`
 
 ## Troubleshooting
 
@@ -199,9 +202,9 @@ Validation order: `files` + `--modules` mutually exclusive → `--source-version
 - **"Multiple entry modules" / "No entry module"**: Pass `--modules` (build) or `--module` (run).
 - **"No active devices" / "Multiple devices connected"**: Connect/start emulator. Pass `-t <serial>` (device view) or `--device <name|serial>` (run/log).
 - **`error:install sign info inconsistent`**: Signing key changed. Run `devecocli run --uninstall` or `devecocli signature generate --force`.
-- **`Not logged in. Run devecocli login first`**: Run `devecocli login` to authenticate.
+- **`Not logged in. Run devecocli auth login first`**: Run `devecocli auth login` to authenticate.
 - **`Provision number exceeds limit`**: Test provision quota is full. Delete old test provisions in DevEco Studio (Signing Configs) or AGC console, then retry `devecocli signature generate`.
-- **`Invalid AccessToken. Sign in and try again`**: Token expired. Run `devecocli login` again.
+- **`Invalid AccessToken. Sign in and try again`**: Token expired. Run `devecocli auth login` again.
 - **`skills add` agent not found**: Valid: `codebuddy`, `cursor`, `opencode`, `qoder`, `trae-cn`.
 - **`emulator start` / `image download` blocked on agreement**: User MUST accept agreements. Interactive: `devecocli emulator license` (requires TTY). Non-interactive (CI/scripts): `devecocli emulator license accept`. Agents cannot run the interactive form; suggest the user run it, or use `license accept` if a non-TTY flow is acceptable. Do not retry until accepted.
 - **`image download` failure / timeout**: Do NOT auto-retry. Give the command to the user to run manually in their terminal.

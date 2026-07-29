@@ -8,12 +8,8 @@ import { homedir } from 'os';
 import { LocalCrypto } from '../utils/local-crypto.js';
 import { AppConfig } from '../auth-config';
 
-export type TokenSource = 'deveco-cli' | 'deveco-code';
-
-export function getTokenSource(): TokenSource {
-  return process.env.DEVECO_CLI_AUTH_SOURCE === 'deveco-code'
-    ? 'deveco-code'
-    : 'deveco-cli';
+export function isDevecoCodeAuth(): boolean {
+  return process.env.DEVECO_CLI_AUTH_SOURCE === AppConfig.AUTH_SOURCE_DEVECO_CODE;
 }
 
 export class TokenStorage {
@@ -53,18 +49,18 @@ export class TokenStorage {
 
   /**
    * 从磁盘加载 JWT Token
-   * deveco-code 模式下只读取外部目录的 token，不回退。
-   * CLI 模式下读取 CLI 本地存储的 token。
+   * 如果设置了 DEVECO_CLI_AUTH_SOURCE=deveco-code，从DEVECO_CODE_AUTH_DIR读取
+   * 否则读取 CLI 本地存储的 token。
    */
   public async loadJwtToken(): Promise<string | null> {
-    if (getTokenSource() === 'deveco-code') {
+    if (isDevecoCodeAuth()) {
       return this.loadDevecoCodeToken();
     }
     return this.loadLocalJwtToken();
   }
 
   private loadDevecoCodeToken(): string | null {
-    if (getTokenSource() !== 'deveco-code') {
+    if (!isDevecoCodeAuth()) {
       return null;
     }
     const configDir = process.env.DEVECO_CODE_AUTH_DIR?.trim();
@@ -114,7 +110,7 @@ export class TokenStorage {
    * 清除存储的 Token
    */
   public async clearToken(): Promise<void> {
-    if (getTokenSource() === 'deveco-code') {
+    if (isDevecoCodeAuth()) {
       throw new Error('Current session is managed by DevEco Code. Cannot modify via CLI.');
     }
     const tokenFilePath = this.getLocalTokenFilePath();

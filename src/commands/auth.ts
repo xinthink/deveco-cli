@@ -5,7 +5,7 @@
 import { Command } from 'commander';
 import { red, cyan } from 'colorette';
 import * as readline from 'readline';
-import { loginService, getTeamList, getTokenSource, DefinedError, type Team } from '../auth';
+import { loginService, getTeamList, isDevecoCodeAuth, DefinedError, type Team } from '../auth';
 
 function renderTeamTable(teams: Team[]): string {
   if (teams.length === 0) {
@@ -40,8 +40,8 @@ authCommand
   .command('login')
   .description('Log in to your Huawei Developer account')
   .action(async () => {
-    if (getTokenSource() === 'deveco-code') {
-      console.log(red('Login is managed by deveco-code. Login from deveco-code instead.'));
+    if (isDevecoCodeAuth()) {
+      console.log(red('Login is managed by DevEco Code. Login from DevEco Code instead.'));
       return;
     }
     try {
@@ -72,8 +72,8 @@ authCommand
   .command('logout')
   .description('Log out of your Huawei Developer account')
   .action(async () => {
-    if (getTokenSource() === 'deveco-code') {
-      console.log(red('Login is managed by deveco-code. Log out from deveco-code instead.'));
+    if (isDevecoCodeAuth()) {
+      console.log(red('Login is managed by DevEco Code. Log out from DevEco Code instead.'));
       return;
     }
     try {
@@ -116,12 +116,11 @@ const teamCommand = authCommand
 teamCommand
   .command('list')
   .description('List team accounts the current user has joined')
-  .option('--json', 'output as JSON', false)
-  .action(async (options: { json: boolean }) => {
+  .action(async () => {
     try {
       const isLoggedIn = await loginService.isLoggedIn();
       if (!isLoggedIn) {
-        if (getTokenSource() === 'deveco-code') {
+        if (isDevecoCodeAuth()) {
           console.log(red('Not logged in. Please login via DevEco Code first.'));
         } else {
           console.log(cyan('Please run `devecocli auth login` first.'));
@@ -129,10 +128,6 @@ teamCommand
         return;
       }
       const result = await getTeamList();
-      if (options.json) {
-        console.log(JSON.stringify(result, null, 2));
-        return;
-      }
       console.log(renderTeamTable(result.teamList));
     } catch (error) {
       throw new Error('Failed to list teams', { cause: error });

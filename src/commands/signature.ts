@@ -161,7 +161,7 @@ async function getAuthInfo(
   const token = await loginService.refreshToken();
   if (!userInfo || !token) {
     throw new Error(
-      'Failed to obtain login credentials. Run `devecocli login` again.'
+      'Failed to obtain login credentials. Run `devecocli auth login` again.'
     );
   }
   return {

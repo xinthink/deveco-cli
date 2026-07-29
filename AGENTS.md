@@ -6,7 +6,7 @@ Guidance for AI coding assistants working in this repo.
 
 `deveco-cli` wraps the DevEco Studio toolchain (`ohpm`, `hvigor`, `hdc`, `emulator`, `hilog`, bundled `node` + JBR + SDK) plus a HarmonyOS skills installer and a project-scaffolding template engine — all behind a single `devecocli` binary. Distribution is one minified ESM bundle `dist/cli.js` (bin: `devecocli`).
 
-Commands shipped: `build`, `run`, `update`, `device`, `emulator`, `skills`, `log`, `create`, `init`, `serve`, `docs`, `ui`, `check`.
+Commands shipped: `build`, `run`, `update`, `device`, `emulator`, `skills`, `log`, `create`, `init`, `serve`, `docs`, `ui`, `check`, `auth`, `signature`.
 
 User-facing invocation guide for AI agents lives in `SKILL.md` — update it whenever a command or flag changes.
 
@@ -45,6 +45,7 @@ src/
 ├── cli.ts                    # Commander entry; global-agent bootstrap; preAction version check
 ├── commands/                 # One file per subcommand. Keep it thin: CLI shape + spinner + render.
 ├── compat/                   # compat command: SDK API compatibility scanning (single-file module — see "Compat module" below)
+├── auth/                     # auth command: login, logout, status, team (login flow + encrypted token storage)
 ├── skills/                   # HarmonyOS skills marketplace client (api + installer + agents + mcp-installer)
 ├── service/                  # Domain helpers (device, emulator, doc)
 ├── utils/                    # Adapters (hdc, hilog, ohpm, hvigor) + shared validators

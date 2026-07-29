@@ -126,6 +126,7 @@ Commands:
   update                 Update deveco-cli to the latest version
   device                 Manage connected devices
   emulator               Manage emulator instances
+  auth                   Authentication commands (login, logout, status, team)
   ui                     Inspect and interact with UI on a connected device
   skills                 Manage HarmonyOS skills
   log [options]          Obtain device application logs
@@ -270,6 +271,56 @@ devecocli create --app-name <name> --project-path <path> --bundle-name <bundle> 
 devecocli create --project-path ./MyApp --app-name MyApp
 devecocli create --project-path ./MyApp --app-name MyApp --bundle-name com.acme.myapp --api-level 23
 devecocli create --app-name MyApp
+```
+
+### `auth login`
+
+登录华为开发者账号，打开浏览器完成授权。
+
+**命令格式：**
+
+```bash
+devecocli auth login
+```
+
+**说明：**
+
+- 海外账户暂不支持
+
+### `auth logout`
+
+登出并清除本地存储的凭据
+
+**命令格式：**
+
+```bash
+devecocli auth logout
+```
+
+### `auth status`
+
+显示当前登录的用户
+
+**命令格式：**
+
+```bash
+devecocli auth status
+```
+
+### `auth team list`
+
+列出当前用户已加入的团队
+
+**命令格式：**
+
+```bash
+devecocli auth team list
+```
+
+**示例：**
+
+```bash
+devecocli auth team list
 ```
 
 ### `build`
