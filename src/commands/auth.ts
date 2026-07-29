@@ -5,7 +5,7 @@
 import { Command } from 'commander';
 import { red, cyan } from 'colorette';
 import * as readline from 'readline';
-import { loginService, getTeamList, getTokenSource, type Team } from '../auth';
+import { loginService, getTeamList, getTokenSource, DefinedError, type Team } from '../auth';
 
 function renderTeamTable(teams: Team[]): string {
   if (teams.length === 0) {
@@ -61,6 +61,9 @@ authCommand
         cyan(`Login successful. Logged in as ${userInfo.userName}.`)
       );
     } catch (error) {
+      if (error instanceof DefinedError) {
+        throw error;
+      }
       throw new Error('Login failed', { cause: error });
     }
   });

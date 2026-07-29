@@ -12,6 +12,7 @@ import { openBrowser } from './browser';
 import { tokenChecker } from '../utils/token-checker';
 import { userInfoFetcher } from './user-info-fetcher';
 import { httpClient } from '../../utils/http-client';
+import { DefinedError } from '../utils/errors.js';
 
 /**
  * 登录服务类
@@ -73,7 +74,7 @@ export class LoginService {
 
       // 海外账户不在支持范围内
       if (callbackData.siteId !== '1') {
-        throw new Error('Non-China accounts are not supported.');
+        throw new DefinedError('Non-China accounts are not supported.');
       }
 
       const jwtToken = await userInfoFetcher.getJwtToken(
