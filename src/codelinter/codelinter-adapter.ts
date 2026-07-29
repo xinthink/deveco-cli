@@ -38,6 +38,7 @@ interface ResolvedLintTarget {
 }
 
 const TEMP_DIRECTORY_PREFIX = 'deveco-codelinter-';
+const SUPPORTED_LINT_FILE_EXTENSIONS = ['.ets', '.ts', '.js'] as const;
 
 /** 封装 Code Linter 工具链解析、命令执行和报告标准化。 */
 export class CodelinterAdapter {
@@ -111,6 +112,19 @@ export class CodelinterAdapter {
     const stat = fs.statSync(resolved);
     if (!stat.isFile() && !stat.isDirectory()) {
       throw new Error(`Lint path must be a file or directory: ${candidate}`);
+    }
+    if (stat.isFile()) {
+      const extension = path.extname(resolved).toLowerCase();
+      const supported = SUPPORTED_LINT_FILE_EXTENSIONS.some(
+        (supportedExtension) => supportedExtension === extension
+      );
+      if (!supported) {
+        throw new Error(
+          `Unsupported lint file extension "${extension || '<none>'}": ` +
+            `${resolved}. Supported extensions: ` +
+            `${SUPPORTED_LINT_FILE_EXTENSIONS.join(', ')}.`
+        );
+      }
     }
     const resolvedProjectRoot = this.discoverProjectRoot(
       resolved,
