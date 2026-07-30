@@ -18,22 +18,9 @@ import {
 } from '../utils/emulator-image-list-parse.js';
 
 const EMULATOR_UNINSTALL_NO_IMAGE_RE = /no images are available/i;
+const EMULATOR_FOLDED_STATE_ERROR_RE =
+  /Scenario simulation failed\s*[：:]/i;
 const MIN_CONTROL_EMULATOR_VERSION = '7.0.0';
-const FOLDED_STATES_BY_DEVICE_TYPE: Record<string, readonly string[]> = {
-  'foldable': ['open', 'half-open', 'close'],
-  '2in1_foldable': ['open', 'vertical-open', 'half-open', 'close'],
-  'triplefold': [
-    'single',
-    'double',
-    'triple',
-    'left-folded-right-half-folded',
-    'left-half-folded-right-expanded',
-    'left-expanded-right-folded',
-    'left-half-folded-right-folded',
-    'left-expanded-right-half-folded',
-    'left-half-folded-right-half-folded',
-  ],
-};
 
 export type EmulatorControlAction =
   | { type: 'shake' }
@@ -59,26 +46,6 @@ export type EmulatorControlAction =
 
 function normalizeToken(value: string): string {
   return value.normalize('NFKC').trim().toLowerCase();
-}
-
-function assertFoldedStateSupported(
-  emulator: EmulatorInfo,
-  state: string
-): void {
-  const deviceType = emulator.deviceType?.trim();
-  const supportedStates = deviceType
-    ? FOLDED_STATES_BY_DEVICE_TYPE[normalizeToken(deviceType)]
-    : undefined;
-  if (!supportedStates) {
-    throw new Error(
-      `Fold-state control is not supported for emulator "${emulator.name}" (device type: ${deviceType || 'unknown'}).`
-    );
-  }
-  if (!supportedStates.includes(state)) {
-    throw new Error(
-      `Fold state "${state}" is not supported by emulator "${emulator.name}" (device type: ${deviceType}). Available states: ${supportedStates.join(', ')}.`
-    );
-  }
 }
 
 function isNoImagesAvailableError(error: unknown): boolean {
@@ -260,14 +227,15 @@ export class EmulatorManager {
     if (!(await this.isAlreadyRunning(target.name, target))) {
       throw new Error(`Emulator "${instance}" is not running.`);
     }
-    if (action.type === 'folded-state') {
-      assertFoldedStateSupported(target, action.state);
-    }
     const args = this.buildControlArgs(target.name, action);
     debugLog(
       `[EmulatorManager] control ${formatControlAction(action)} -> ${commandText(this.emulatorPath, args)}`
     );
     await this.runEmulatorChecked(args, {
+      extraReject:
+        action.type === 'folded-state'
+          ? [EMULATOR_FOLDED_STATE_ERROR_RE]
+          : undefined,
       printOutputOnSuccess: false,
     });
   }
