@@ -135,6 +135,7 @@ devecocli init --path D:\work\ARKTS\NewData
 | `devecocli docs search`   | 搜索本地 HarmonyOS 文档                         |
 | `devecocli init`          | 安装内置技能或配置 `MCP`                           |
 | `devecocli skills`        | 管理 HarmonyOS 技能市场中的技能                     |
+| `devecocli signature generate` | 自动生成调试签名材料并配置到项目     |
 | `devecocli check compat`  | 扫描源代码在两个 `SDK` 版本之间的 `API` 变更         |
 
 ## 命令集
@@ -174,6 +175,7 @@ Commands:
   serve                  Host bundled auxiliary protocol servers
   docs [options]         Search and read HarmonyOS documentation from local docs directory
   check                  Run DevEco project checks
+  signature              Generate application signature
   help [command]         display help for command
 ```
 
@@ -1217,6 +1219,44 @@ devecocli skills remove --skill skillname --agent agentname  # skillname需替�
 | `--cpp` | 与 `--arkts` 二选一，启动 C/C++ 语言服务（clangd） |
 | `--project-path <path>` | 可选，工程根路径，默认为当前工作目录 |
 | `--auto-detect` | 可选，当前目录向下查找工程根（检查当前目录自身及其子目录，最多 3 层子目录）；适用于 `--arkts` 和 `--cpp`；指定了 `--project-path` 则忽略 |
+
+### `signature generate`
+
+自动生成 HarmonyOS 调试签名材料（包括p12密钥库、csr证书请求文件、p7b配置文件、cer证书文件），并将签名配置写入项目的 `build-profile.json5` 中。
+
+**命令格式：**
+
+```bash
+devecocli signature generate  --product <product> --team-id <team-id> --force --help
+``` 
+
+**参数：**
+
+| 参数名                   | 说明                                      |
+|-----------------------|-----------------------------------------|
+| --product \<product\> | 可选，指定product生成签名，默认为 `default`          |
+| --team-id \<team-id\> | 可选，指定生效的team-id,默认使用自身作为团队信息            |
+| --force               | 可选，强制覆盖已存在的证书文件 |
+| --help,--h            | 可选，查看帮助信息                               |
+
+**示例：**
+
+```bash
+# 自动生成签名并写入工程配置
+devecocli signature generate
+
+# 指定product
+devecocli signature generate --product default
+
+# 指定team-id
+devecocli signature generate --team-id 1222
+
+# 强制覆盖已存在的证书文件
+devecocli signature generate --force
+
+# 查询帮助信息
+devecocli signature generate --help
+```
 
 ### `check compat`
 
