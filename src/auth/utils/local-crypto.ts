@@ -6,8 +6,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import * as os from 'os';
 import { homedir } from 'os';
 import { AppConfig, CryptoConstants } from '../auth-config.js';
+import { DefinedError } from './errors.js';
 
 interface WrappedDekData {
   version: number;
@@ -47,16 +49,38 @@ const keyDirPath = path.join(
 );
 const wrappedDekPath = path.join(configPath, AppConfig.KEY_FILE_NAME);
 
+function getPermissionHint(dirPath: string): string {
+  const platform = os.platform();
+  if (platform === 'win32') {
+    return `Permission denied. Please run as administrator or grant write permission to ${dirPath}.`;
+  }
+  return `Permission denied. You can try: sudo chown -R $(whoami) ${dirPath}`;
+}
+
 function getRootKeyPath(keyId: string): string {
   return path.join(keyDirPath, `${keyId}.bin`);
 }
 
 function ensureDirectories(): void {
   if (!fs.existsSync(configPath)) {
-    fs.mkdirSync(configPath, { recursive: true, mode: 0o700 });
+    try {
+      fs.mkdirSync(configPath, { recursive: true, mode: 0o700 });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EACCES') {
+        throw new DefinedError(getPermissionHint(configPath));
+      }
+      throw err;
+    }
   }
   if (!fs.existsSync(keyDirPath)) {
-    fs.mkdirSync(keyDirPath, { recursive: true, mode: 0o700 });
+    try {
+      fs.mkdirSync(keyDirPath, { recursive: true, mode: 0o700 });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EACCES') {
+        throw new DefinedError(getPermissionHint(path.dirname(keyDirPath)));
+      }
+      throw err;
+    }
   }
 }
 
@@ -64,10 +88,9 @@ function ensureRootKeys(): void {
   ensureDirectories();
   for (const keyId of rootKeyIds) {
     const filePath = getRootKeyPath(keyId);
-    if (fs.existsSync(filePath)) {
-      continue;
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, crypto.randomBytes(kekLength), { mode: 0o600 });
     }
-    fs.writeFileSync(filePath, crypto.randomBytes(kekLength), { mode: 0o600 });
   }
 }
 

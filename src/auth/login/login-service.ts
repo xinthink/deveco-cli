@@ -4,7 +4,7 @@
  */
 import * as crypto from 'crypto';
 import { LocalAuthServer } from './local-auth-server';
-import { tokenStorage } from '../utils/token-storage';
+import { tokenStorage, isDevecoCodeAuth } from '../utils/token-storage';
 import type { UserInfo, LoginConfig } from '../types/auth-types';
 import { getRegionalizedBaseUrl } from '../utils/region';
 import { DEFAULT_LOGIN_CONFIG } from '../auth-config';
@@ -12,6 +12,8 @@ import { openBrowser } from './browser';
 import { tokenChecker } from '../utils/token-checker';
 import { userInfoFetcher } from './user-info-fetcher';
 import { httpClient } from '../../utils/http-client';
+import { DefinedError } from '../utils/errors.js';
+import { debugLog } from '../../utils/logger';
 
 /**
  * 登录服务类
@@ -55,6 +57,7 @@ export class LoginService {
    */
   public async login(): Promise<UserInfo> {
     try {
+      debugLog(`Login started, isDevecoCodeAuth: ${isDevecoCodeAuth()}`);
       const clientSecret = this.generateClientSecret();
 
       this.server = new LocalAuthServer(
@@ -64,16 +67,19 @@ export class LoginService {
         this.config.failedRedirectUrl
       );
       await this.server.start();
+      debugLog(`Local auth server started on port ${this.server.getPort()}`);
 
       await this.openLoginPage(this.server.getPort(), clientSecret);
+      debugLog('Browser opened for authentication');
 
       const callbackData = await this.server.waitForCallback(
         this.config.timeout
       );
+      debugLog(`Callback received: siteId=${callbackData.siteId}`);
 
       // 海外账户不在支持范围内
       if (callbackData.siteId !== '1') {
-        throw new Error('Non-China accounts are not supported.');
+        throw new DefinedError('Non-China accounts are not supported.');
       }
 
       const jwtToken = await userInfoFetcher.getJwtToken(
@@ -83,6 +89,7 @@ export class LoginService {
         this.config.tempTokenCheckUrl,
         this.config.appId
       );
+      debugLog('JWT token received');
 
       const userInfo = await userInfoFetcher.getUserInfoFromJwt(
         jwtToken,
@@ -93,9 +100,11 @@ export class LoginService {
             this.config.jwtTokenCheckUrl
           )
       );
+      debugLog(`User info received: ${userInfo.userName}`);
 
       // 保存 jwtToken 到磁盘
       await tokenStorage.saveJwtToken(jwtToken);
+      debugLog('JWT token saved');
 
       return userInfo;
     } finally {
@@ -112,12 +121,12 @@ export class LoginService {
    * @returns 如果已登录返回 true，否则返回 false
    */
   public async isLoggedIn(): Promise<boolean> {
-    const resolvedToken = await tokenStorage.resolveJwtToken();
-    if (resolvedToken == null) {
+    const jwtToken = await tokenStorage.loadJwtToken();
+    if (!jwtToken) {
       return false;
     }
     const res = await tokenChecker.checkJwtToken(
-      resolvedToken.token,
+      jwtToken,
       () => this.getRegionalizedBaseUrl(),
       this.config.jwtTokenCheckUrl
     );
@@ -125,7 +134,7 @@ export class LoginService {
       return true;
     }
     // jwtToken失效，需要重新登录
-    if (resolvedToken.source === 'deveco-cli') {
+    if (!isDevecoCodeAuth()) {
       await tokenStorage.clearToken();
     }
     return false;
@@ -137,17 +146,12 @@ export class LoginService {
    * @throws If not logged in
    */
   public async logout(): Promise<boolean> {
-    const resolvedToken = await tokenStorage.resolveJwtToken();
-    if (resolvedToken == null) {
+    const jwtToken = await tokenStorage.loadJwtToken();
+    if (!jwtToken) {
       return false;
     }
-    if (resolvedToken.source === 'deveco-code') {
-      throw new Error(
-        'Login is managed by deveco-code. Log out from deveco-code instead.'
-      );
-    }
     const regionalizedBaseUrl = this.getRegionalizedBaseUrl();
-    const logoutUrl = `${regionalizedBaseUrl}/${this.config.logoutUrl}?jwtToken=${resolvedToken.token}`;
+    const logoutUrl = `${regionalizedBaseUrl}/${this.config.logoutUrl}?jwtToken=${jwtToken}`;
     try {
       await httpClient.post(logoutUrl, { timeout: 5000 });
     } finally {
