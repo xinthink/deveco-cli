@@ -4,8 +4,17 @@
  */
 import { execa } from 'execa';
 import * as path from 'path';
-import { ToolProvider } from '../toolchain/index.js';
+import { ToolProvider } from '../toolchain';
+import * as fs from 'fs';
+import * as os from 'os';
 import { debugLog } from './logger.js';
+
+interface DaemonInfo {
+  pid: number;
+  state: string;
+  cwdPath: string;
+  port: number;
+}
 
 export class HvigorAdapter {
   private toolProvider: ToolProvider;
@@ -104,6 +113,59 @@ export class HvigorAdapter {
   public async stopDaemon(): Promise<void> {
     await this.runHvigor(['--stop-daemon']);
   }
+
+  public async ensureDaemonRunning(): Promise<void> {
+    if (this.findProjectDaemon()) {
+      debugLog('[HvigorAdapter] Daemon already running.');
+      return;
+    }
+    debugLog('[HvigorAdapter] No daemon running, starting via --sync --daemon (no hap build).');
+    await this.runHvigor(['--sync', '--daemon']);
+  }
+
+  public isDaemonRunning(projectRoot?: string): boolean {
+    return this.findProjectDaemon(projectRoot) !== null;
+  }
+
+  public findProjectDaemon(projectRoot?: string): DaemonInfo | null {
+    const registryPath = this.getDaemonRegistryPath();
+    if (!fs.existsSync(registryPath)) {
+      return null;
+    }
+
+    try {
+      const content = fs.readFileSync(registryPath, 'utf-8');
+      const registry = JSON.parse(content) as Record<string, DaemonInfo>;
+      const cwd = projectRoot ?? this.projectRoot;
+
+      const alive = Object.values(registry).filter(
+        (d) =>
+          d.cwdPath === cwd &&
+          (d.state === 'idle' || d.state === 'half_busy' || d.state === 'busy') &&
+          this.isProcessAlive(d.pid)
+      );
+
+      return alive.length > 0 ? alive[alive.length - 1] : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private getDaemonRegistryPath(): string {
+    const hvigorHome =
+      process.env.HVIGOR_USER_HOME || path.join(os.homedir(), '.hvigor');
+    return path.join(hvigorHome, 'daemon', 'cache', 'daemon-sec.json');
+  }
+
+  private isProcessAlive(pid: number): boolean {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
 
   /**
    * 只触发 native（c/c++）编译，不生成 hap/har。

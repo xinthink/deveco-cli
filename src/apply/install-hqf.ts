@@ -41,12 +41,14 @@ export class InstallHqf {
    * @param target       - 设备序列号（如 "127.0.0.1:5555"）
    * @param hqfPaths     - 签名后的 hqf 文件绝对路径数组
    * @param bundleName   - 应用 bundleName（用于命名设备端临时文件）
+   * @param isHotReload
    * @returns InstallHqfResult 包含安装结果
    */
   public async install(
     target: string,
     hqfPaths: string[],
-    bundleName: string
+    bundleName: string,
+    isHotReload = false
   ): Promise<InstallHqfResult> {
     for (const hqfPath of hqfPaths) {
       if (!fs.existsSync(hqfPath)) {
@@ -66,7 +68,7 @@ export class InstallHqf {
         remoteHqfPaths.push(remoteHqfPath);
         await this.pushHqf(target, hqfPaths[i], remoteDir, remoteHqfPath);
       }
-      return await this.executeQuickfix(target, remoteHqfPaths);
+      return await this.executeQuickfix(target, remoteHqfPaths, isHotReload);
     } catch (error) {
       const msg = `hqf install error: ${(error as Error).message}`;
       console.error(`[Apply] ${msg}`);
@@ -109,15 +111,17 @@ export class InstallHqf {
    */
   private async executeQuickfix(
     target: string,
-    remoteHqfPaths: string[]
+    remoteHqfPaths: string[],
+    isHotReload = false
   ): Promise<InstallHqfResult> {
     console.log(
       `[Apply] Installing ${remoteHqfPaths.length} hqf patch(es) via quickfix...`
     );
-    const quickfixResult = await this.runHdc(
-      ['-t', target, 'shell', 'bm', 'quickfix', '-a', '-f', ...remoteHqfPaths, '-o'],
-      false
-    );
+    const args = ['-t', target, 'shell', 'bm', 'quickfix', '-a', '-f', ...remoteHqfPaths];
+    if (!isHotReload) {
+      args.push('-o');
+    }
+    const quickfixResult = await this.runHdc(args, false);
 
     debugLog(`[InstallHqf] quickfix output: ${quickfixResult}`);
 

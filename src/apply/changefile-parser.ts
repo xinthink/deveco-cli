@@ -37,9 +37,13 @@ export function parseApplyFileList(txtPath: string, projectRoot: string): string
 
   for (const line of lines) {
     const abs = path.resolve(normalizedRoot, line);
-    const check = CommonUtils.isPathContainedWithSymlink(line, normalizedRoot);
+    const relativeLine = path.isAbsolute(line) ? path.relative(normalizedRoot, line) : line;
+    if (relativeLine.startsWith('..')) {
+      throw new Error(`File path is outside the project directory: ${line}`);
+    }
+    const check = CommonUtils.isPathContainedWithSymlink(relativeLine, normalizedRoot);
     if (!check.contained) {
-      if (CommonUtils.isPathContained(line, normalizedRoot).contained && !fs.existsSync(abs)) {
+      if (!fs.existsSync(abs)) {
         throw new Error(`File not found: ${line}`);
       }
       const suffix = check.reason ? `; ${check.reason}` : '';
