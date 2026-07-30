@@ -5,8 +5,9 @@
     <a href="https://www.npmjs.com/package/@deveco/deveco-cli"><img src="https://img.shields.io/npm/v/@deveco/deveco-cli.svg" alt="NPM Version" /></a>
     <a href="https://www.npmjs.com/package/@deveco/deveco-cli"><img src="https://img.shields.io/npm/dm/@deveco/deveco-cli.svg" alt="NPM Downloads" /></a>
     <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-%3E%3D18-green.svg" alt="Node.js" /></a>
-    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-blue.svg" alt="Platform" />
+    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue.svg" alt="Platform" />
     <a href="https://developer.huawei.com/consumer/cn/download/"><img src="https://img.shields.io/badge/DevEco%20Studio-%3E%3D6.1.0-orange.svg" alt="DevEco Studio" /></a>
+    <img src="https://img.shields.io/badge/Command%20Line%20Tools-%3E%3D26.0.0-orange.svg" alt="Command Line Tools" />
     <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" /></a>
   </p>
 </div>
@@ -18,9 +19,9 @@
 
 ### 前置要求
 
-- 操作系统为 `macOS` 或 `Windows`
+- 操作系统为 `macOS` 、 `Windows` 或 `Linux`（需配置对应环境变量）
 - Node.js >= 18，推荐使用22及以上版本
-- [DevEco Studio](https://developer.huawei.com/consumer/cn/download/) >= 6.1.0
+- [DevEco Studio](https://developer.huawei.com/consumer/cn/download/) >= 6.1.0 或 [Command Line Tools](https://developer.huawei.com/consumer/cn/download/)  >= 26.0.0
   - **macOS**：必须安装在 `~/Applications` 或 `/Applications` 目录下。
 
 ### 安装
@@ -52,6 +53,41 @@ devecocli docs read harmonyos-guides/application-models/arkts-page-start-overvie
 ```
 
 更多命令和参数可通过 `devecocli --help` 或各子命令的 `--help` 查看。
+
+## 环境变量
+
+`devecocli` 当需要使用非默认安装路径、多版本并存时固定选型，Command Line Tools或在Linux下运行时，可通过以下环境变量显式指定工具链根：
+
+| 名称                     | 说明                                                   |
+| ------------------------ | ------------------------------------------------------ |
+| `DEVECO_CLI_STUDIO_PATH` | 显式指定 DevEco Studio 安装根，优先级最高              |
+| `DEVECO_CLI_CLT_PATH`    | 显式指定 Command Line Tools 安装根 |
+
+完整优先级链：
+
+```text
+DEVECO_CLI_STUDIO_PATH > DEVECO_CLI_CLT_PATH > Auto_Detect
+```
+
+### 平台与版本约束
+
+| 平台    | DevEco Studio Auto_Detect                     | Command Line Tools | 最低版本                      |
+| ------- | --------------------------------------------- | ------------------ | ----------------------------- |
+| Windows | 支持                                          | 可选               | Studio `6.1.0` / CLT `26.0.0` |
+| macOS   | 支持                                          | 可选               | 同上                          |
+| Linux   | 不支持                                        | 必选               | CLT `26.0.0`                  |
+
+### 使用示例
+
+```bash
+# 设置 DevEco Studio
+export DEVECO_CLI_STUDIO_PATH="/Applications/DevEco-Studio.app" （可带或不带尾部 Contents）
+devecocli device list
+
+# 设置 CLT
+export DEVECO_CLI_CLT_PATH=/opt/command-line-tools
+devecocli device list
+```
 
 ## AI Agent 集成
 
@@ -92,6 +128,9 @@ devecocli init --path D:\work\ARKTS\NewData
 | `devecocli device list`   | 查看当前连接设备                                  |
 | `devecocli emulator list` | 查看本地模拟器实例                                 |
 | `devecocli ui screenshot` | 对真机或模拟器执行 UI 截图                          |
+| `devecocli ui click`      | 点击指定坐标或节点 ID                             |
+| `devecocli ui swipe`      | 自定义滑动（指定起点、终点和速度）                   |
+| `devecocli ui text`       | 输入文本到焦点或指定位置                            |
 | `devecocli log`           | 查看 `hilog` 或崩溃日志                          |
 | `devecocli docs search`   | 搜索本地 HarmonyOS 文档                         |
 | `devecocli init`          | 安装内置技能或配置 `MCP`                           |
@@ -126,6 +165,7 @@ Commands:
   update                 Update deveco-cli to the latest version
   device                 Manage connected devices
   emulator               Manage emulator instances
+  auth                   Authentication commands (login, logout, status, team)
   ui                     Inspect and interact with UI on a connected device
   skills                 Manage HarmonyOS skills
   log [options]          Obtain device application logs
@@ -270,6 +310,56 @@ devecocli create --app-name <name> --project-path <path> --bundle-name <bundle> 
 devecocli create --project-path ./MyApp --app-name MyApp
 devecocli create --project-path ./MyApp --app-name MyApp --bundle-name com.acme.myapp --api-level 23
 devecocli create --app-name MyApp
+```
+
+### `auth login`
+
+登录华为开发者账号，打开浏览器完成授权。
+
+**命令格式：**
+
+```bash
+devecocli auth login
+```
+
+**说明：**
+
+- 海外账户暂不支持
+
+### `auth logout`
+
+登出并清除本地存储的凭据
+
+**命令格式：**
+
+```bash
+devecocli auth logout
+```
+
+### `auth status`
+
+显示当前登录的用户
+
+**命令格式：**
+
+```bash
+devecocli auth status
+```
+
+### `auth team list`
+
+列出当前用户已加入的团队
+
+**命令格式：**
+
+```bash
+devecocli auth team list
+```
+
+**示例：**
+
+```bash
+devecocli auth team list
 ```
 
 ### `build`
@@ -435,40 +525,6 @@ devecocli emulator sensor --target Phone --heartrate 80
 
   校验以目标模拟器实际返回的 `deviceType` 为准。非上述三种设备类型以及不属于目标设备类型的状态会在命令下发前被拒绝。校验通过后，底层映射为 `Emulator -instance <name> -foldedState <state>`。
 - 设置 `DEVECO_CLI_DEBUG=1` 可查看底层命令映射，例如 `Emulator -instance <name> -shake`。
-
-### `ui screenshot`
-
-对真机或模拟器执行 UI 截图。`devecocli ui` 当前只交付截图能力。
-
-**命令格式：**
-
-```bash
-devecocli ui screenshot [--device <name|serial>] [--path <path>]
-```
-
-**参数：**
-
-| 参数                       | 说明                       | 默认值       |
-| ------------------------ | ------------------------ | ---------- |
-| --device \<name\|serial> | 真机或模拟器名称/序列号；多设备时必填     | 单设备自动选择 |
-| --display \<displayId>   | 目标屏幕 ID，可选                | 默认屏幕     |
-| --path \<path>           | 截图输出路径，可选；目录或父目录必须已存在 | `./screenshot-<timestamp>.png` |
-
-**示例：**
-
-```bash
-devecocli ui screenshot --device Phone
-mkdir -p screenshots
-devecocli ui screenshot --device Phone --path ./screenshots/phone.png
-devecocli ui screenshot --device Phone --display 0 --path ./screenshots/phone.png
-```
-
-**说明：**
-
-- `ui screenshot` 支持真机和模拟器。
-- 仅有一个可用设备时可省略 `--device`，多个设备同时连接时必须指定。
-- 截图能力统一通过 `ui screenshot` 提供，不放在模拟器场景操作命令中。
-- 截图统一使用 `hdc shell snapshot_display` 和 `hdc file recv` 实现；设置 `DEVECO_CLI_DEBUG=1` 可查看实际执行命令。
 
 ### `emulator create`
 
@@ -657,6 +713,264 @@ devecocli device view --target <serialOrName>
 devecocli device view
 devecocli device view --target 127.0.0.1:5555
 devecocli device view -t "My Device Name"
+```
+
+### `ui screenshot`
+
+对真机或模拟器执行 UI 截图。
+
+**命令格式：**
+
+```bash
+devecocli ui screenshot --device <name|serial> --display <displayId> --path <path>
+```
+
+**参数：**
+
+| 参数                       | 说明                       | 默认值       |
+| ------------------------ | ------------------------ | ---------- |
+| --device \<name\|serial> | 真机或模拟器名称/序列号；多设备时必填     | 单设备自动选择 |
+| --display \<displayId>   | 目标屏幕 ID，可选                | 默认屏幕     |
+| --path \<path>           | 截图输出路径，可选；目录或父目录必须已存在 | `./screenshot-<timestamp>.png` |
+
+**示例：**
+
+```bash
+devecocli ui screenshot --device Phone
+mkdir -p screenshots
+devecocli ui screenshot --device Phone --path ./screenshots/phone.png
+devecocli ui screenshot --device Phone --display 0 --path ./screenshots/phone.png
+```
+
+**说明：**
+
+- `ui screenshot` 支持真机和模拟器。
+- 仅有一个可用设备时可省略 `--device`，多个设备同时连接时必须指定。
+- 截图能力统一通过 `ui screenshot` 提供，不放在模拟器场景操作命令中。
+- 截图统一使用 `hdc shell snapshot_display` 和 `hdc file recv` 实现；设置 `DEVECO_CLI_DEBUG=1` 可查看实际执行命令。
+
+### `ui click`
+
+点击指定坐标或节点 ID 的中心位置。
+
+**命令格式：**
+
+```bash
+devecocli ui click [x] [y] --device <name|serial> --id <id> --window <windowId>
+```
+
+**参数：**
+
+| 参数 | 说明 |
+| --- | --- |
+| `[x] [y]` | 可选，目标坐标。缺省时需配合 `--id` 使用 |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+| --id \<id> | 节点 ID，自动解析为中心坐标。不可与 `[x] [y]` 同时使用 |
+| --window \<windowId> | 目标窗口 ID，需与 `--id` 配合使用 |
+
+**示例：**
+
+```bash
+devecocli ui click 100 200
+devecocli ui click 100 200 --device Phone
+devecocli ui click --id submit_button
+devecocli ui click --id submit_button --window main_window
+```
+
+### `ui doubleclick`
+
+双击指定坐标或节点 ID 的中心位置。
+
+**命令格式：**
+
+```bash
+devecocli ui doubleclick [x] [y] --device <name|serial> --id <id> --window <windowId>
+```
+
+**参数：**
+
+| 参数 | 说明 |
+| --- | --- |
+| `[x] [y]` | 可选，目标坐标。缺省时需配合 `--id` 使用 |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+| --id \<id> | 节点 ID，自动解析为中心坐标。不可与 `[x] [y]` 同时使用 |
+| --window \<windowId> | 目标窗口 ID，需与 `--id` 配合使用 |
+
+**示例：**
+
+```bash
+devecocli ui doubleclick 100 200
+devecocli ui doubleclick 100 200 --device Phone
+devecocli ui doubleclick --id photo_thumb
+devecocli ui doubleclick --id photo_thumb --window main_window
+```
+
+### `ui longclick`
+
+长按指定坐标或节点 ID 的中心位置。
+
+**命令格式：**
+
+```bash
+devecocli ui longclick [x] [y] --device <name|serial> --id <id> --window <windowId>
+```
+
+**参数：**
+
+| 参数 | 说明 |
+| --- | --- |
+| `[x] [y]` | 可选，目标坐标。缺省时需配合 `--id` 使用 |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+| --id \<id> | 节点 ID，自动解析为中心坐标。不可与 `[x] [y]` 同时使用  |
+| --window \<windowId> | 目标窗口 ID，需与 `--id` 配合使用 |
+
+**示例：**
+
+```bash
+devecocli ui longclick 100 200
+devecocli ui longclick 100 200 --device Phone
+devecocli ui longclick --id menu_item
+devecocli ui longclick --id menu_item --window main_window
+```
+
+### `ui swipe`
+
+自定义滑动（指定起点、终点和速度）。
+
+**命令格式：**
+
+```bash
+devecocli ui swipe <x1> <y1> <x2> <y2> --device <name|serial> --speed <n>
+```
+
+**参数：**
+
+| 参数 | 说明 |
+| --- | --- |
+| `<x1> <y1> <x2> <y2>` | 必选，起点和终点坐标 |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+| --speed \<n> | 可选，滑动速度（像素/秒），范围 `200` ~ `40000` |
+
+**示例：**
+
+```bash
+devecocli ui swipe 100 500 100 200
+devecocli ui swipe 100 500 100 200 --device Phone
+devecocli ui swipe 100 500 100 200 --speed 1000
+```
+
+### `ui fling`
+
+快速滑动（Fling）。
+
+**命令格式：**
+
+```bash
+devecocli ui fling <x1> <y1> <x2> <y2> --device <name|serial> --speed <n>
+```
+
+**参数：**
+
+| 参数 | 说明 |
+| --- | --- |
+| `<x1> <y1> <x2> <y2>` | 必选，起点和终点坐标 |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+| --speed \<n> | 可选，滑动速度（像素/秒），范围 `200` ~ `40000` |
+
+**示例：**
+
+```bash
+devecocli ui fling 100 800 100 200
+devecocli ui fling 100 800 100 200 --device Phone
+devecocli ui fling 100 800 100 200 --speed 3000
+```
+
+### `ui drag`
+
+拖拽操作。
+
+**命令格式：**
+
+```bash
+devecocli ui drag <x1> <y1> <x2> <y2> --device <name|serial> --speed <n>
+```
+
+**参数：**
+
+| 参数 | 说明 |
+| --- | --- |
+| `<x1> <y1> <x2> <y2>` | 必选，起点和终点坐标 |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+| --speed \<n> | 可选，滑动速度（像素/秒），范围 `200` ~ `40000` |
+
+**示例：**
+
+```bash
+# 拖拽操作
+devecocli ui drag 100 500 100 200
+devecocli ui drag 100 500 100 200 --device Phone
+devecocli ui drag 100 500 100 200 --speed 1500
+```
+
+### `ui dircfling`
+
+向指定方向快速滑动。
+
+**命令格式：**
+
+```bash
+devecocli ui dircfling <direction> --device <name|serial>
+```
+
+**参数：**
+
+| 参数 | 说明 |
+| --- | --- |
+| `<direction>` | 必选，方向，取值为 `up`, `down`, `left`, `right` |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+
+**示例：**
+
+```bash
+devecocli ui dircfling up
+devecocli ui dircfling down --device Phone
+devecocli ui dircfling left
+devecocli ui dircfling right
+```
+
+**与 `ui swipe` 的区别：**
+
+- `ui swipe` 需要指定精确的起点和终点坐标，支持自定义速度，适用于特定区域滑动。
+- `ui dircfling` 仅需指定方向，使用系统默认速度，适用于页面滚动或列表快速滑动。
+
+### `ui text`
+
+输入文本到当前焦点、指定坐标或指定节点位置。
+
+**命令格式：**
+
+```bash
+devecocli ui text <text> [x] [y] --device <name|serial> --id <id> --window <windowId>
+```
+
+**参数：**
+
+| 参数 | 说明 |
+| --- | --- |
+| `<text>` | 必选，待输入的文本 |
+| `[x] [y]` | 可选，目标坐标 |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+| --id \<id> | 节点 ID，自动解析为中心坐标。不可与 `[x] [y]`同时使用 |
+| --window \<windowId> | 目标窗口 ID，需与 `--id` 配合使用 |
+
+**示例：**
+
+```bash
+devecocli ui text "Hello World"
+devecocli ui text "Hello World" --device Phone
+devecocli ui text "Hello World" 100 200
+devecocli ui text "Hello World" --id search_box
+devecocli ui text "Hello World" --id search_box --window main_window
 ```
 
 ### `run`

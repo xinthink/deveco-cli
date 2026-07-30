@@ -399,7 +399,9 @@ export class Project {
     const result: string[] = [];
     const seen = new Set<string>();
     for (const { hspPath } of metadata.dependRemoteHsps) {
-      if (seen.has(hspPath)) {continue}
+      if (seen.has(hspPath)) {
+        continue;
+      }
       seen.add(hspPath);
 
       const resolvedPath = path.isAbsolute(hspPath)

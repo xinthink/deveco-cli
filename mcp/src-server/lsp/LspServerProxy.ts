@@ -16,6 +16,7 @@ import { Capabilities } from './model/Capabilities/Capabilities.js';
 import { Params } from './model/Params.js';
 import { ModuleDependencyInfo } from './model/ModuleDependencyInfo.js';
 import { computeLspServerMaxSize, normalizePath, toFileUri } from './utils.js';
+import { resolveArktsServerEntry } from '../utils/common.js';
 import { ReloadEvent } from './watcher/DependencyMapWatcher.js';
 import { JSONRPC_VERSION, LSP_INIT_TIMEOUT_MS, LSP_METHOD } from './constant.js';
 import { isRecord } from './common/typeGuards.js';
@@ -73,9 +74,7 @@ export class LspServerProxy {
         private nodeMaxOldSpaceSize?: number,
         private readonly useStandardProtocol: boolean = true,
     ) {
-        this.serverPath = this.useStandardProtocol
-            ? path.resolve(arktsLangServer, 'ace-server', 'out', 'standardIndex', 'index.js')
-            : path.resolve(arktsLangServer, 'ace-server', 'out', 'index.js');
+        this.serverPath = resolveArktsServerEntry(arktsLangServer, this.useStandardProtocol);
         this.logPath = getLogPath();
         this.indexLogPath = indexLogPath || this.logPath;
         const handleConfig = {

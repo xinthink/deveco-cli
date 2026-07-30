@@ -725,7 +725,10 @@ export class ToolProvider {
     );
     ToolProvider.powerShellPath = fs.existsSync(candidate) ? candidate : '';
     if (ToolProvider.powerShellPath) {
-      ToolProvider.powerShellModulesPath = path.join(path.dirname(ToolProvider.powerShellPath), 'Modules');
+      ToolProvider.powerShellModulesPath = path.join(
+        path.dirname(ToolProvider.powerShellPath),
+        'Modules'
+      );
     }
     return ToolProvider.powerShellPath;
   }
@@ -758,11 +761,15 @@ export class ToolProvider {
           scriptPath,
           file,
         ],
-        { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'],
+        {
+          encoding: 'utf8',
+          timeout: 5000,
+          stdio: ['ignore', 'pipe', 'ignore'],
           env: {
             ...process.env,
-            PSModulePath: ToolProvider.powerShellModulesPath
-          } }
+            PSModulePath: ToolProvider.powerShellModulesPath,
+          },
+        }
       );
       const result = JSON.parse(output) as { Status?: unknown };
       return { signed: Number(result.Status) === 0 };

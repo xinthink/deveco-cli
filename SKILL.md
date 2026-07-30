@@ -8,7 +8,7 @@ description: >-
 
 `devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc`, emulator toolchain, and bundled skills installer. **Prefer `devecocli` over invoking underlying tools directly.**
 
-Available commands: `build`, `check`, `run`, `update`, `device`, `emulator`, `ui`, `skills`, `log`, `create`, `init`, `serve`, `docs`.
+Available commands: `build`, `check`, `run`, `update`, `device`, `emulator`, `ui`, `skills`, `log`, `create`, `init`, `serve`, `docs`, `signature`, `auth`.
 
 **Sandbox Rule**: Commands tagged `[Outside sandbox]` must be run outside the sandbox.
 
@@ -86,6 +86,18 @@ Build, install, and launch.
   - **If changes don't take effect**: check `<module>/build/config/buildConfig.json` has content — empty/missing means `devecocli run` wasn't run; on any apply failure, fall back to a full `devecocli run`.
 *Ex*: `devecocli run` → edit code → write `.hvigor/changes.txt` → `devecocli run --apply changes.txt`
 
+### `devecocli signature generate` `[Outside sandbox]`
+Auto-generate HarmonyOS signing materials (local p12/csr + cloud cert + test profile) and write signing config to `build-profile.json5`.
+- **Prereq**: `devecocli auth login` first; run from a project directory (with `build-profile.json5`); a connected device or emulator is required for device registration.
+- `--product <name>`: Product name for local p12/csr file naming (default: `default`).
+- `--team-id <id>`: Specify the team-id (default: current user's id).
+- `--force`: Force regenerate even if existing materials are valid.
+- Generates under `~/.ohos/config/`: `.p12` keystore, `.csr`, downloaded `.cer` certificate, `.p7b` profile.
+- Writes `signingConfigs` + `products` entries to `build-profile.json5` with encrypted key/store passwords (AES-128-GCM).
+- Cloud cert name: `auto_debug_<teamId>.cer`. Local files: `<product>_<project>_<hash>=.{p12,csr,cer,p7b}`.
+- Error handling (aligned with DevEco Studio JAR): 401→re-login, 403→no AGC permission, `205389872`→cert limit, `205389904`→not Harmony user, `205389938`→provision limit, invalid `.cer`→retry.
+*Ex*: `devecocli signature generate --product default`
+
 
 ### `devecocli log`
 Fetch hilog or crash logs. Req `--device <name|serial>` on multi-device hosts.
@@ -107,15 +119,16 @@ Inspect UI on a connected device. All subcommands accept `--device <name|serial>
 | `click [x] [y]` | Tap at the specified coordinates or node | `--id <id>` (auto-resolves to center), `--window <windowId>` (used with `--id`) |
 | `doubleclick [x] [y]` | Double-tap at the specified coordinates or node | `--id <id>`, `--window <windowId>` |
 | `longclick [x] [y]` | Long-press at the specified coordinates or node | `--id <id>`, `--window <windowId>` |
-| `swipe <x1> <y1> <x2> <y2>` | Swipe from one point to another | `--speed <n>` (200–40000, px/s) |
+| `swipe <x1> <y1> <x2> <y2>` | Swipe from one point to another (precise coordinates, custom speed) | `--speed <n>` (200–40000, px/s) |
 | `fling <x1> <y1> <x2> <y2>` | Fling from one point to another | `--speed <n>` (200–40000, px/s) |
 | `drag <x1> <y1> <x2> <y2>` | Drag from one point to another | `--speed <n>` (200–40000, px/s) |
-| `dircfling <direction>` | Fling in a fixed direction | `direction`: `up`, `down`, `left`, `right` |
+| `dircfling <direction>` | Quick directional fling (system default speed, ideal for scrolling) | `direction`: `up`, `down`, `left`, `right` |
 | `text <text> [x] [y]` | Input text at a target location or the currently focused field | `--id <id>` (auto-resolves to center), `--window <windowId>` (used with `--id`) |
 
-- Coordinates and `--id` are mutually exclusive. Provide either `x y` or `--id <id>`; for `text`, if neither is given the text goes to the currently focused field.
-- `--window <windowId>` may only be used together with `--id`.
-- Default: focused window only. Use `--window <id>` or `--all-windows` to target specific/all windows (mutually exclusive).
+- **Coordinates vs `--id`**: Mutually exclusive. Provide either `x y` or `--id <id>`. For `text`, if neither is given, text goes to the currently focused field.
+- **`--window`**: May only be used together with `--id`. Default is focused window. Secondary display operations via `--id` + `--window` are not supported.
+- **`swipe` vs `dircfling`**: `swipe` requires exact start/end coordinates and supports `--speed`; `dircfling` only needs a direction (`up/down/left/right`) and uses system default speed (ideal for page/list scrolling).
+- **Text encoding**: Special characters in `text` are Base64-encoded internally to safely pass through device shell.
 - `--format json` pairs well with `jq`.
 - `--mode raw`: full layout tree, no filtering.
 - `--mode simplified` (default): folds meaningless wrapper containers (non-root, no `id`, no text, not interactive) by lifting their surviving children up. `--depth` truncates after folding.
@@ -133,6 +146,19 @@ MUTUALLY EXCLUSIVE modes for setup:
 - `--path <path>`: Direct skill install path.
 - `-f, --force`: Overwrite existing config.
 *MCP Rules*: Global MCP (no `--project`) only supports `opencode` and `cursor`. Others require `--project`.
+
+### `devecocli auth login`
+Sign in to your Huawei Developer account. Opens a browser for OAuth authentication. Required before `signature generate`.
+*Ex*: `devecocli auth login`
+
+### `devecocli auth logout`
+Sign out and clear locally stored credentials.
+
+### `devecocli auth status`
+Show the current logged-in user.
+
+### `devecocli auth team list`
+List team accounts the current user has joined.
 
 ### `devecocli skills`
 Manage HarmonyOS skills in AI agents/projects.
@@ -168,13 +194,18 @@ Validation order: `files` + `--modules` mutually exclusive → `--source-version
   `devecocli log --crash --bundle-name <bundle>`
 - **Release build**:
   `devecocli build --product oversea --build-mode release`
+- **First-time signing setup**:
+  `devecocli auth login` -> `devecocli signature generate --product default` -> `devecocli build` -> `devecocli run`
 
 ## Troubleshooting
 
 - **"Product / Build mode `<x>` not found"**: Check `build-profile.json5`.
 - **"Multiple entry modules" / "No entry module"**: Pass `--modules` (build) or `--module` (run).
 - **"No active devices" / "Multiple devices connected"**: Connect/start emulator. Pass `-t <serial>` (device view) or `--device <name|serial>` (run/log).
-- **`error:install sign info inconsistent`**: Signing key changed. Run `devecocli run --uninstall`.
+- **`error:install sign info inconsistent`**: Signing key changed. Run `devecocli run --uninstall` or `devecocli signature generate --force`.
+- **`Not logged in. Run devecocli auth login first`**: Run `devecocli auth login` to authenticate.
+- **`Provision number exceeds limit`**: Test provision quota is full. Delete old test provisions in DevEco Studio (Signing Configs) or AGC console, then retry `devecocli signature generate`.
+- **`Invalid AccessToken. Sign in and try again`**: Token expired. Run `devecocli auth login` again.
 - **`skills add` agent not found**: Valid: `codebuddy`, `cursor`, `opencode`, `qoder`, `trae-cn`.
 - **`emulator start` / `image download` blocked on agreement**: User MUST accept agreements. Interactive: `devecocli emulator license` (requires TTY). Non-interactive (CI/scripts): `devecocli emulator license accept`. Agents cannot run the interactive form; suggest the user run it, or use `license accept` if a non-TTY flow is acceptable. Do not retry until accepted.
 - **`image download` failure / timeout**: Do NOT auto-retry. Give the command to the user to run manually in their terminal.

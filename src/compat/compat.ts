@@ -825,5 +825,5 @@ async function handleCheckCommand(
 export {
   handleCheckCommand,
   handleVersionsCommand,
-  CheckOptions,
-}
+};
+export type { CheckOptions };

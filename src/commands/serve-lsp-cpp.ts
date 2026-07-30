@@ -7,10 +7,11 @@ import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { ToolProvider } from '../toolchain/index.js';
 import {
-  findClangdPath,
+  clangdPathFromSdk,
   findDevEcoPath,
   findHarmonyProjectInDir,
   normalizePath,
+  resolveSdkPath,
   compileCommandsPath,
 } from '../../mcp/src-server/utils/common.js';
 import { toUnixPath } from '../../mcp/src-server/lsp/utils.js';
@@ -78,11 +79,13 @@ async function resolvePaths(options: CppLspOptions): Promise<{
     projectPath = normalizePath(path.resolve(process.cwd()));
     mcpLog.info(`projectPath=cwd ('${projectPath}'), no search (pass --auto-detect to search subdirs)`);
   }
-  const clangdPath = findClangdPath(devecoPath);
+  // 启动期固定 sdkPath（env 优先，否则按 CLT|Studio 布局派生），clangd 从 sdkPath 派生。
+  const sdkPath = resolveSdkPath(devecoPath);
+  const clangdPath = clangdPathFromSdk(sdkPath);
   if (!clangdPath) {
     mcpLog.error(
-      'clangd not found in DevEco Studio SDK. ' +
-        'Expected at <deveco>/sdk/default/openharmony/native/llvm/bin/clangd',
+      `clangd not found under sdk '${sdkPath}'. ` +
+        'Expected at <sdkPath>/default/openharmony/native/llvm/bin/clangd',
     );
     process.exit(1);
   }
@@ -92,7 +95,7 @@ async function resolvePaths(options: CppLspOptions): Promise<{
   const compileCommandsDir = path.dirname(ccPath);
 
   mcpLog.info(
-    `projectPath=${projectPath}, clangdPath=${clangdPath}, compileCommandsDir=${compileCommandsDir}`,
+    `projectPath=${projectPath}, sdkPath=${sdkPath}, clangdPath=${clangdPath}, compileCommandsDir=${compileCommandsDir}`,
   );
   return { projectPath, clangdPath, compileCommandsDir };
 }

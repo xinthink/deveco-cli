@@ -6,8 +6,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import * as os from 'os';
 import { homedir } from 'os';
 import { AppConfig, CryptoConstants } from '../auth-config.js';
+import { DefinedError } from './errors.js';
 
 interface WrappedDekData {
   version: number;
@@ -47,16 +49,38 @@ const keyDirPath = path.join(
 );
 const wrappedDekPath = path.join(configPath, AppConfig.KEY_FILE_NAME);
 
+function getPermissionHint(dirPath: string): string {
+  const platform = os.platform();
+  if (platform === 'win32') {
+    return `Permission denied. Please run as administrator or grant write permission to ${dirPath}.`;
+  }
+  return `Permission denied. You can try: sudo chown -R $(whoami) ${dirPath}`;
+}
+
 function getRootKeyPath(keyId: string): string {
   return path.join(keyDirPath, `${keyId}.bin`);
 }
 
 function ensureDirectories(): void {
   if (!fs.existsSync(configPath)) {
-    fs.mkdirSync(configPath, { recursive: true, mode: 0o700 });
+    try {
+      fs.mkdirSync(configPath, { recursive: true, mode: 0o700 });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EACCES') {
+        throw new DefinedError(getPermissionHint(configPath));
+      }
+      throw err;
+    }
   }
   if (!fs.existsSync(keyDirPath)) {
-    fs.mkdirSync(keyDirPath, { recursive: true, mode: 0o700 });
+    try {
+      fs.mkdirSync(keyDirPath, { recursive: true, mode: 0o700 });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EACCES') {
+        throw new DefinedError(getPermissionHint(path.dirname(keyDirPath)));
+      }
+      throw err;
+    }
   }
 }
 
@@ -64,10 +88,9 @@ function ensureRootKeys(): void {
   ensureDirectories();
   for (const keyId of rootKeyIds) {
     const filePath = getRootKeyPath(keyId);
-    if (fs.existsSync(filePath)) {
-      continue;
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, crypto.randomBytes(kekLength), { mode: 0o600 });
     }
-    fs.writeFileSync(filePath, crypto.randomBytes(kekLength), { mode: 0o600 });
   }
 }
 
@@ -100,18 +123,37 @@ function wrapDekWithKek(dek: Buffer, kekId: string): WrappedDekData {
   };
 }
 
-function unwrapDek(wrapped: WrappedDekData): Buffer {
-  const kek = loadRootKey(wrapped.kekId);
-  const iv = Buffer.from(wrapped.iv, 'base64');
-  const authTag = Buffer.from(wrapped.authTag, 'base64');
-  const encryptedDek = Buffer.from(wrapped.encryptedDek, 'base64');
+function unwrapDek(wrapped: WrappedDekData, kek: Buffer): Buffer {
+  return decryptAesGcm(
+    Buffer.from(wrapped.encryptedDek, 'base64'),
+    kek,
+    wrapped.iv,
+    wrapped.authTag
+  );
+}
+
+function decryptAesGcm(
+  ciphertext: Buffer,
+  key: Buffer,
+  iv: string,
+  authTag: string
+): Buffer {
   const decipher = crypto.createDecipheriv(
     algorithm,
-    kek,
-    iv
+    key,
+    Buffer.from(iv, 'base64')
   ) as crypto.DecipherGCM;
-  decipher.setAuthTag(authTag);
-  return Buffer.concat([decipher.update(encryptedDek), decipher.final()]);
+  decipher.setAuthTag(Buffer.from(authTag, 'base64'));
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+}
+
+function decryptBlobWithDek(blob: EncryptedBlob, dek: Buffer): string {
+  return decryptAesGcm(
+    Buffer.from(blob.ciphertext, 'base64'),
+    dek,
+    blob.iv,
+    blob.authTag
+  ).toString('utf8');
 }
 
 function ensureWrappedDek(): void {
@@ -131,7 +173,7 @@ function loadDek(): Buffer {
   const wrapped = JSON.parse(
     fs.readFileSync(wrappedDekPath, 'utf8')
   ) as WrappedDekData;
-  const dek = unwrapDek(wrapped);
+  const dek = unwrapDek(wrapped, loadRootKey(wrapped.kekId));
   if (dek.length === dekLength) {
     return dek;
   }
@@ -184,24 +226,43 @@ export function encryptForLocalStorage(plaintext: string): EncryptedBlob {
 
 export function decryptForLocalStorage(blob: EncryptedBlob): string {
   try {
-    const dek = loadDek();
-    const iv = Buffer.from(blob.iv, 'base64');
-    const authTag = Buffer.from(blob.authTag, 'base64');
-    const ciphertext = Buffer.from(blob.ciphertext, 'base64');
-    const decipher = crypto.createDecipheriv(
-      algorithm,
-      dek,
-      iv
-    ) as crypto.DecipherGCM;
-    decipher.setAuthTag(authTag);
-    return Buffer.concat([
-      decipher.update(ciphertext),
-      decipher.final(),
-    ]).toString('utf8');
+    return decryptBlobWithDek(blob, loadDek());
   } catch {
     rebuildKeyMaterials();
     throw new Error('Failed to decrypt local ciphertext');
   }
+}
+
+/**
+ * 解密另一个 DevEco 进程配置目录中的凭据。
+ * 此方法严格只读，不会创建或修复外部进程的密钥材料。
+ */
+export function decryptForLocalStorageFromDirectory(
+  blob: EncryptedBlob,
+  externalConfigPath: string
+): string {
+  const externalWrappedDekPath = path.join(
+    externalConfigPath,
+    AppConfig.KEY_FILE_NAME
+  );
+  const wrapped = JSON.parse(
+    fs.readFileSync(externalWrappedDekPath, 'utf8')
+  ) as WrappedDekData;
+  const rootKeyPath = path.join(
+    externalConfigPath,
+    'keys',
+    `${wrapped.kekId}.bin`
+  );
+  const kek = fs.readFileSync(rootKeyPath);
+  if (kek.length !== kekLength) {
+    throw new Error('Invalid external root key');
+  }
+
+  const dek = unwrapDek(wrapped, kek);
+  if (dek.length !== dekLength) {
+    throw new Error('Invalid external data encryption key');
+  }
+  return decryptBlobWithDek(blob, dek);
 }
 
 export function isEncryptedBlob(value: unknown): value is EncryptedBlob {

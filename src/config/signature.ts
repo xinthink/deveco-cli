@@ -189,12 +189,6 @@ export const EnvCheckMessages = {
   DEVICE_DETECT_FAILED:
     'Unable to detect devices. Please check hdc status. If installing HAP on an emulator, signature step can be skipped.',
 
-  // ── toolchain-checker.ts ──
-  JAVA_PLATFORM_UNSUPPORTED:
-    'Java environment not found (Windows/macOS/Linux only).',
-  JAVA_REQUIRED:
-    'Java runtime is required to run hvigor.Set JAVA_HOME or add Java to PATH.',
-
   // ── project-checker.ts ──
   PROJECT_DIR_MISSING:
     'Not in a valid project directory (project-level build-profile.json5 not found).',

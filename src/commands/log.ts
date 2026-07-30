@@ -44,8 +44,6 @@ function validateLogTimeRange(options: LogOptions): void {
   if (options.to && options.follow) {
     throw new Error('`--to` cannot be used with `--follow`.');
   }
-
-  CommonUtils.assertRelativeTimeRange(options.from, options.to);
 }
 
 async function fetchLogsByOptions(

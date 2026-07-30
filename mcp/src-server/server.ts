@@ -6,11 +6,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import * as path from 'path';
-import * as fs from 'fs';
 import { z } from 'zod';
 import { ToolRouter, createToolRouter } from './router.js';
 import { ArktsCheckTool, CppCheckTool, ClangdLspTool } from './tools/index.js';
-import { findArktsLangServerPath, findDevEcoPath, findHarmonyProject, isSupportedCppFile, smartFindToolPath, devecoStudioContentRoot } from './utils/common.js';
+import { detectStandardProtocol, findHarmonyProject, isSupportedCppFile, resolveToolchainPaths } from './utils/common.js';
 import { CommonUtils } from '../../src/utils/common-utils.js';
 import { initMcpLogger, disposeMcpLogger, flushMcpLogger, getMcpLogFilePath, mcpLog } from './utils/mcp-logger.js';
 import { ArktsLspManager } from './lsp/ArktsLspManager.js';
@@ -34,12 +33,12 @@ enum ProjectLifecycle {
  * C++ 项目生命周期状态枚举（与 ArkTS 状态机并行，独立运转）
  */
 enum CppLifecycle {
-  IDLE_CPP,          // 无项目 / 未启动 C++ 初始化
-  DISCOVERING_CPP,   // 检测 C++ 模块
-  SYNCING_CPP,       // 执行 compileNative + 合并 compile_commands.json
-  INITIALIZING_CPP,  // clangd spawn + initialize
-  READY_CPP,         // C++ 工具可用（含"无 C++ 代码"提前就绪）
-  ERROR_CPP,         // sync 或 init 失败，可重试
+  IDLE_CPP, // 无项目 / 未启动 C++ 初始化
+  DISCOVERING_CPP, // 检测 C++ 模块
+  SYNCING_CPP, // 执行 compileNative + 合并 compile_commands.json
+  INITIALIZING_CPP, // clangd spawn + initialize
+  READY_CPP, // C++ 工具可用（含"无 C++ 代码"提前就绪）
+  ERROR_CPP, // sync 或 init 失败，可重试
 }
 
 const MAX_INIT_RETRY = 3;
@@ -74,10 +73,11 @@ export class DevecoCliMcpServer {
   // 项目生命周期状态
   private projectState: ProjectLifecycle = ProjectLifecycle.IDLE;
   private workspaceRoot: string = ''; // MCP 客户端提供的 workspace root，供重新扫描
-  private sdkPath: string = ''; // 缓存 sdkPath，避免重复计算
+  private sdkPath: string = ''; // 启动期固定 sdkPath（env / CLT|Studio 布局）
+  private arktsLangServerPath: string | null = null; // 启动期固定 arkts-lang-server 路径
   private initPromise: Promise<void> | null = null; // 互斥锁：保证同一时刻只有一个初始化流程在执行
   private needsReinit: boolean = false; // 路径变更标记：初始化运行期间 setProjectPath() 被调用时设置
-  private initRetryCount: number = 0; // 连续初始化失败计数，超过 MAX_INIT_RETRY 后不再自动重试
+  private initRetryCount: number = 0; // 连续初始化失败时计数，超过 MAX_INIT_RETRY 后不再自动重试
   private originalProjectPath: string = ''; // 用户原始配置的路径（findHarmonyProject 解析前），用于区分"未设置"与"设置了但未找到鸿蒙工程"
   private configChangedTriggeredResync: boolean = false; // 配置文件变化触发的重新同步标记，用于区分提示消息
   private syncSkippedDueToLock: boolean = false; // sync 因锁被占用而跳过，用于返回更精确的提示消息
@@ -87,12 +87,12 @@ export class DevecoCliMcpServer {
 
   // C++ 项目生命周期状态（与 ArkTS 状态机并行，独立运转）
   private cppProjectState: CppLifecycle = CppLifecycle.IDLE_CPP;
-  private cppInitPromise: Promise<void> | null = null;  // 互斥锁：保证同一时刻只有一个 C++ 初始化流程在执行
-  private cppNeedsReinit: boolean = false;              // 路径变更标记
-  private cppInitRetryCount: number = 0;                // 连续初始化失败计数
-  private cppSyncSkippedDueToLock: boolean = false;     // C++ sync 因锁被占用而跳过
-  private cppSyncSkipStartedAt: number = 0;             // 首次因锁竞争跳过 C++ sync 的时间戳
-  private cppHasNoCppCode: boolean = false;              // 工程无 C++ 代码，C++ 工具应返回 "no C++ code"
+  private cppInitPromise: Promise<void> | null = null; // 互斥锁：保证同一时刻只有一个 C++ 初始化流程在执行
+  private cppNeedsReinit: boolean = false; // 路径变更标记
+  private cppInitRetryCount: number = 0; // 连续初始化失败计数
+  private cppSyncSkippedDueToLock: boolean = false; // C++ sync 因锁被占用而跳过
+  private cppSyncSkipStartedAt: number = 0; // 首次因锁竞争跳过 C++ sync 的时间戳
+  private cppHasNoCppCode: boolean = false; // 工程无 C++ 代码，C++ 工具应返回 "no C++ code"
 
   constructor(config: McpServerConfig = {}) {
     this.config = config;
@@ -117,7 +117,14 @@ export class DevecoCliMcpServer {
     const foundProject = findHarmonyProject(startPath);
     mcpLog.info(`Constructor: findHarmonyProject('${startPath}') => ${foundProject ?? 'null'}`);
     this.config.projectPath = foundProject ?? undefined;
-    
+
+    // 启动期一次性固定 sdkPath / arktsLangServerPath（环境变量优先，否则按 CLT|Studio 布局派生）。
+    // 后续 ArkTS / C++ 全流程（ace-server、ohpm/hvigor sync、compileNative、clangd）均从此派生，不再重复解析。
+    const toolchainPaths = resolveToolchainPaths(this.config.devecoPath);
+    this.sdkPath = toolchainPaths.sdkPath;
+    this.arktsLangServerPath = toolchainPaths.arktsLangServerPath;
+    mcpLog.info(`Constructor: sdkPath='${this.sdkPath}', arktsLangServerPath='${this.arktsLangServerPath ?? '(null)'}'`);
+
     // Create MCP server instance
     this.server = new McpServer({
       name: 'devecocli-mcp-server',
@@ -266,31 +273,20 @@ export class DevecoCliMcpServer {
   }
 
   /**
-   * 检测当前 DevEco Studio 是否支持标准 LSP 协议。
-   * 判据：`<arktsLangServer>/ace-server/out/standardIndex/index.js` 是否存在。
+   * 检测当前安装是否支持标准 LSP 协议。
+   * 判据：`<arktsLangServer>/(ace-server/)?out/standardIndex/index.js` 是否存在。
    * 与 ArktsCheckTool.resolveProjectAndDeveco 的检测逻辑保持一致。
    * false=legacy ace-server 私有协议（仅 check 可用，位置类语言特性不可用）。
    */
   private detectStandardProtocolAvailable(): boolean {
     try {
-      const devecoPath = this.config.devecoPath ?? findDevEcoPath();
-      if (!devecoPath) {
-        mcpLog.info('Standard LSP protocol unavailable: DevEco Studio installation path not found');
-        return false;
-      }
-      const arktsLangServerPath = findArktsLangServerPath(devecoPath);
+      // arktsLangServerPath 已在构造期固定（env / CLT|Studio 布局），此处直接复用。
+      const arktsLangServerPath = this.arktsLangServerPath;
       if (!arktsLangServerPath) {
         mcpLog.info('Standard LSP protocol unavailable: arkts-lang-server path not found');
         return false;
       }
-      const standardIndexServerPath = path.join(
-        arktsLangServerPath,
-        'ace-server',
-        'out',
-        'standardIndex',
-        'index.js',
-      );
-      const available = fs.existsSync(standardIndexServerPath);
+      const available = detectStandardProtocol(arktsLangServerPath);
       mcpLog.info(
         `ArktsCheck protocol: ${available ? 'standard LSP' : 'legacy ace-server'} ` +
           `(standardIndex/index.js exists=${available})`,
@@ -648,7 +644,9 @@ export class DevecoCliMcpServer {
       return { content: [{ type: 'text', text: 'Missing or invalid parameters. Required: file (string), line (number), character (number).' }], isError: true };
     }
     const containmentResult = this.validateContainment([file]);
-    if (containmentResult) { return containmentResult; }
+    if (containmentResult) { 
+      return containmentResult; 
+    }
     return this.routeArktsRequest('codeAction', () => this.arktsCheckTool!.handleCodeAction({ file, line, character }));
   }
 
@@ -662,7 +660,9 @@ export class DevecoCliMcpServer {
       return { content: [{ type: 'text', text: 'Missing or invalid parameters. Required: file (string), line (number), character (number), newName (non-empty string).' }], isError: true };
     }
     const containmentResult = this.validateContainment([file]);
-    if (containmentResult) { return containmentResult; }
+    if (containmentResult) { 
+      return containmentResult; 
+    }
     return this.routeArktsRequest('rename', () => this.arktsCheckTool!.handleRename({ file, line, character, newName }));
   }
 
@@ -679,7 +679,9 @@ export class DevecoCliMcpServer {
       return { content: [{ type: 'text', text: 'Parameter direction must be "supertypes" or "subtypes".' }], isError: true };
     }
     const containmentResult = this.validateContainment([file]);
-    if (containmentResult) { return containmentResult; }
+    if (containmentResult) { 
+      return containmentResult; 
+    }
     return this.routeArktsRequest(`typeHierarchy(${direction})`, () => this.arktsCheckTool!.handleTypeHierarchy({ file, line, character, direction }));
   }
 
@@ -727,6 +729,9 @@ export class DevecoCliMcpServer {
         return this.handleErrorCheck();
       case ProjectLifecycle.READY:
         return readyAction();
+      default:
+        mcpLog.warn(`ArkTS ${logLabel} rejected: unknown project state ${this.projectState}`);
+        return { content: [{ type: 'text', text: 'Unknown project state, please retry' }], isError: true };
     }
   }
 
@@ -828,6 +833,9 @@ export class DevecoCliMcpServer {
           return { content: [{ type: 'text', text: 'C++ LSP is not ready, please retry later' }], isError: true };
         }
         return readyAction();
+      default:
+        mcpLog.warn(`C++ ${logLabel} rejected: unknown C++ project state ${this.cppProjectState}`);
+        return { content: [{ type: 'text', text: 'Unknown C++ project state, please retry' }], isError: true };
     }
   }
 
@@ -1005,7 +1013,6 @@ export class DevecoCliMcpServer {
         if (harmonyRoot) {
           mcpLog.info(`Detected project path from client root: ${harmonyRoot}`);
           this.config.projectPath = harmonyRoot;
-          this.sdkPath = this.computeSdkPath();
         } else {
           mcpLog.warn(`Client root '${clientRoot}' is not a HarmonyOS project`);
         }
@@ -1171,7 +1178,6 @@ export class DevecoCliMcpServer {
       return false;
     }
     this.config.projectPath = found;
-    this.sdkPath = this.computeSdkPath();
     this.initRetryCount = 0;
     return true;
   }
@@ -1179,10 +1185,6 @@ export class DevecoCliMcpServer {
   private async doEnsureProjectReady(): Promise<void> {
     if (!this.discoverProject()) {
       return;
-    }
-
-    if (!this.sdkPath) {
-      this.sdkPath = this.computeSdkPath();
     }
 
     if (!(await this.ensureProjectSynced())) {
@@ -1198,7 +1200,8 @@ export class DevecoCliMcpServer {
     this.projectState = ProjectLifecycle.INITIALIZING;
     this.arktsCheckTool = new ArktsCheckTool(
       this.config.projectPath!,
-      this.config.devecoPath ?? null,
+      this.sdkPath,
+      this.arktsLangServerPath,
       this.config.nodeMaxOldSpaceSize
     );
     // 注册配置文件变化回调：ConfigFileWatcher 检测到变化时切换状态到 IDLE 并触发重新初始化
@@ -1332,7 +1335,7 @@ export class DevecoCliMcpServer {
     this.cppProjectState = CppLifecycle.INITIALIZING_CPP;
     this.cppLspManager = new ClangdLspManager({
       workspaceRoot: projectPath,
-      devecoPath: this.config.devecoPath ?? null,
+      sdkPath: this.sdkPath,
     });
     try {
       await this.cppLspManager.start();
@@ -1361,14 +1364,8 @@ export class DevecoCliMcpServer {
   private async runSyncCpp(projectPath: string): Promise<boolean> {
     this.cppProjectState = CppLifecycle.SYNCING_CPP;
     mcpLog.info('[Cpp] Starting C++ project sync (compileNative)...');
-    const devecoPath = this.config.devecoPath ?? findDevEcoPath();
-    if (!devecoPath) {
-      mcpLog.error('[Cpp] DevEco Studio installation path not found, cannot sync C++ project');
-      this.cppInitRetryCount++;
-      this.cppProjectState = CppLifecycle.ERROR_CPP;
-      return false;
-    }
-    const result = await ClangdLspManager.handleSyncCppProject(projectPath, devecoPath);
+    // sdkPath 已在启动期固定（env / CLT|Studio 布局），C++ compileNative 从其 dirname 派生 tools/hvigor。
+    const result = await ClangdLspManager.handleSyncCppProject(projectPath, this.sdkPath);
     switch (result.status) {
       case 'success':
         this.cppSyncSkippedDueToLock = false;
@@ -1401,15 +1398,6 @@ export class DevecoCliMcpServer {
         return false;
     }
     return false;
-  }
-
-  /** 纯计算函数：从 devecoPath 计算 sdkPath，不修改 config */
-  private computeSdkPath(): string {
-    // smartFindToolPath 只在 devecoPath 为空时才执行搜索，
-    // 已有值时直接返回，不会覆盖用户显式设置的路径
-    const resolvedDevecoPath = smartFindToolPath(this.config.devecoPath ?? '');
-    const contentRoot = devecoStudioContentRoot(resolvedDevecoPath);
-    return path.join(contentRoot, 'sdk');
   }
 
   /**

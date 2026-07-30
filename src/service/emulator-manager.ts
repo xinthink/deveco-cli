@@ -330,6 +330,8 @@ export class EmulatorManager {
         return [...base, '-drivingNavigation'];
       case 'sensor':
         return [...base, '-sensor', `-${action.key}`, String(action.value)];
+      default:
+        throw new Error(`Unknown emulator control action type: ${(action as { type: string }).type}`);
     }
   }
 

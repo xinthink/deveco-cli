@@ -8,22 +8,23 @@ import { homedir } from 'os';
 import { LocalCrypto } from '../utils/local-crypto.js';
 import { AppConfig } from '../auth-config';
 
-export class TokenStorage {
-  private tokenFilePath: string;
+export function isDevecoCodeAuth(): boolean {
+  return process.env.DEVECO_CLI_AUTH_SOURCE === AppConfig.AUTH_SOURCE_DEVECO_CODE;
+}
 
-  constructor(configDir?: string) {
+export class TokenStorage {
+  private getLocalTokenFilePath(): string {
     const configPath =
-      configDir ||
       process.env.DEVECO_CLI_DATA_DIR ||
       path.join(homedir(), AppConfig.CONFIG_DIR_NAME, AppConfig.APP_NAME);
-    this.tokenFilePath = path.join(configPath, AppConfig.TOKEN_FILE_NAME);
+    return path.join(configPath, AppConfig.TOKEN_FILE_NAME);
   }
 
   /**
    * 确保配置目录存在
    */
   private ensureConfigDir(): void {
-    const dir = path.dirname(this.tokenFilePath);
+    const dir = path.dirname(this.getLocalTokenFilePath());
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
@@ -40,22 +41,61 @@ export class TokenStorage {
 
     const tokenData = LocalCrypto.encryptForLocalStorage(token);
     this.ensureConfigDir();
-    fs.writeFileSync(this.tokenFilePath, JSON.stringify(tokenData, null, 2), {
+    const tokenFilePath = this.getLocalTokenFilePath();
+    fs.writeFileSync(tokenFilePath, JSON.stringify(tokenData, null, 2), {
       mode: 0o600,
     });
   }
 
   /**
    * 从磁盘加载 JWT Token
-   * 使用 LocalCrypto 解密
+   * 如果设置了 DEVECO_CLI_AUTH_SOURCE=deveco-code，从DEVECO_CODE_AUTH_DIR读取
+   * 否则读取 CLI 本地存储的 token。
    */
   public async loadJwtToken(): Promise<string | null> {
+    if (isDevecoCodeAuth()) {
+      return this.loadDevecoCodeToken();
+    }
+    return this.loadLocalJwtToken();
+  }
+
+  private loadDevecoCodeToken(): string | null {
+    if (!isDevecoCodeAuth()) {
+      return null;
+    }
+    const configDir = process.env.DEVECO_CODE_AUTH_DIR?.trim();
+    if (!configDir) {
+      return null;
+    }
+
     try {
-      if (!fs.existsSync(this.tokenFilePath)) {
+      const tokenFilePath = path.join(configDir, AppConfig.TOKEN_FILE_NAME);
+      if (!fs.existsSync(tokenFilePath)) {
+        return null;
+      }
+      const tokenData: unknown = JSON.parse(
+        fs.readFileSync(tokenFilePath, 'utf8')
+      );
+      if (!LocalCrypto.isEncryptedBlob(tokenData)) {
+        return null;
+      }
+      return LocalCrypto.decryptForLocalStorageFromDirectory(
+        tokenData,
+        configDir
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  private async loadLocalJwtToken(): Promise<string | null> {
+    const tokenFilePath = this.getLocalTokenFilePath();
+    try {
+      if (!fs.existsSync(tokenFilePath)) {
         return null;
       }
 
-      const tokenData = JSON.parse(fs.readFileSync(this.tokenFilePath, 'utf8'));
+      const tokenData = JSON.parse(fs.readFileSync(tokenFilePath, 'utf8'));
       if (!LocalCrypto.isEncryptedBlob(tokenData)) {
         return null;
       }
@@ -70,9 +110,13 @@ export class TokenStorage {
    * 清除存储的 Token
    */
   public async clearToken(): Promise<void> {
+    if (isDevecoCodeAuth()) {
+      throw new Error('Current session is managed by DevEco Code. Cannot modify via CLI.');
+    }
+    const tokenFilePath = this.getLocalTokenFilePath();
     try {
-      if (fs.existsSync(this.tokenFilePath)) {
-        fs.unlinkSync(this.tokenFilePath);
+      if (fs.existsSync(tokenFilePath)) {
+        fs.unlinkSync(tokenFilePath);
       }
     } catch (err) {
       throw new Error('Failed to clear token', { cause: err });

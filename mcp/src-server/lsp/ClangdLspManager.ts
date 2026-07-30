@@ -7,8 +7,7 @@ import { ClangdLspProxy } from './ClangdLspProxy.js';
 import { tryWithBuildLock } from '../../../src/utils/build-lock.js';
 import { initializeCppProject, findCppModules } from './sync/cpp-compile.js';
 import {
-    findClangdPath,
-    findDevEcoPath,
+    clangdPathFromSdk,
     findHarmonyProject,
     compileCommandsPath,
     getMcpLogDirectory,
@@ -23,8 +22,8 @@ import * as fs from 'fs';
 export interface ClangdLspManagerConfig {
     /** 工程根路径（可为原始配置路径，start() 内部会解析为真实 harmony root）。 */
     workspaceRoot: string;
-    /** DevEco Studio 安装路径（用于查找 clangd 与 SDK）；缺省时由 start() 自行探测。 */
-    devecoPath?: string | null;
+    /** 启动期固定 sdkPath（env / CLT|Studio 布局）；clangd 与 compileNative 均从此派生。 */
+    sdkPath: string;
     /** 日志根目录；缺省时由 start() 在 mcp 日志目录下生成。 */
     logPath?: string;
 }
@@ -134,11 +133,11 @@ export class ClangdLspManager {
      * - 原子性尝试获取锁（无重试），若其他进程已持有构建锁则返回 skipped
      * - 消除 isBuildLocked + withBuildLock 之间的 TOCTOU 竞态
      */
-    static async handleSyncCppProject(workspaceRoot: string, devecoPath: string): Promise<CppSyncResult> {
+    static async handleSyncCppProject(workspaceRoot: string, sdkPath: string): Promise<CppSyncResult> {
         logger.info('[ClangdLspManager] Received cpp/syncProject');
-        if (!workspaceRoot || !devecoPath) {
-            logger.error('[ClangdLspManager] handleSyncCppProject: workspaceRoot or devecoPath is empty');
-            return { status: 'failed', reason: 'workspaceRoot or devecoPath is empty' };
+        if (!workspaceRoot || !sdkPath) {
+            logger.error('[ClangdLspManager] handleSyncCppProject: workspaceRoot or sdkPath is empty');
+            return { status: 'failed', reason: 'workspaceRoot or sdkPath is empty' };
         }
 
         // 快速检测：无 C++ 模块时直接 success（不获取锁，不执行 compileNative）
@@ -152,7 +151,7 @@ export class ClangdLspManager {
             workspaceRoot,
             async () => {
                 try {
-                    await initializeCppProject(workspaceRoot, devecoPath);
+                    await initializeCppProject(workspaceRoot, sdkPath);
                     logger.info('[ClangdLspManager] compileNative + merge compile_commands completed');
                     return { status: 'success' as const };
                 } catch (e) {
@@ -201,21 +200,14 @@ export class ClangdLspManager {
         const harmonyRoot = findHarmonyProject(this.config.workspaceRoot);
         this.resolvedRoot = harmonyRoot ? normalizePath(harmonyRoot) : normalizePath(this.config.workspaceRoot);
 
-        // 2. 解析 devecoPath
-        const devecoPath = this.config.devecoPath ?? findDevEcoPath();
-        if (!devecoPath) {
-            this.failInit(new Error('DevEco Studio installation path not found'));
-            return;
-        }
-
-        // 3. 日志路径 + 初始化 logger
+        // 2. 日志路径 + 初始化 logger
         const logPath = this.config.logPath ?? this.getLogPath();
         initializeLogger(logPath);
 
-        // 4. 解析 clangd 路径
-        const clangdPath = findClangdPath(devecoPath);
+        // 3. 由启动期固定的 sdkPath 派生 clangd 路径
+        const clangdPath = clangdPathFromSdk(this.config.sdkPath);
         if (!clangdPath) {
-            const errMsg = 'clangd executable not found inside DevEco Studio SDK';
+            const errMsg = `clangd executable not found under sdk: ${this.config.sdkPath}`;
             logger.error(`[ClangdLspManager] ${errMsg}`);
             this.failInit(new Error(errMsg));
             return;

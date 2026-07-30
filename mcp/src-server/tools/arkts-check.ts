@@ -8,15 +8,13 @@ import * as path from 'path';
 import { z } from 'zod';
 import {
   cleanupOldSiblingDirs,
-  findArktsLangServerPath,
-  findDevEcoPath,
+  detectStandardProtocol,
   findHarmonyProject,
   getMcpLogDirectory,
   getRequestId,
   normalizePath,
   sleep,
   toFileUri,
-  devecoStudioContentRoot,
 } from '../utils/common.js';
 import { mcpLog } from '../utils/mcp-logger.js';
 import { ArktsLspManager } from '../lsp/ArktsLspManager.js';
@@ -47,8 +45,10 @@ export class ArktsCheckTool {
   private initReject: ((err: Error) => void) | null = null;
 
   private projectPath: string;
-  /** DevEco Studio 安装路径；构造时可选，initialize 时若为空将自动查找 */
-  private devecoPath: string | null;
+  /** 启动期固定 sdkPath（env / CLT|Studio 布局），全流程共用 */
+  private sdkPath: string;
+  /** 启动期固定 arkts-lang-server 路径（env / CLT|Studio 布局），ace-server 入口由其派生 */
+  private arktsLangServerPath: string | null;
   private nodeMaxOldSpaceSize?: string;
   /** 配置文件变化回调，透传给 ArktsLspManager，由 server 层设置 needsResync 标志位 */
   private onConfigChangedCallback: (() => void) | null = null;
@@ -71,11 +71,13 @@ export class ArktsCheckTool {
 
   constructor(
     projectPath: string,
-    devecoPath?: string | null,
+    sdkPath: string,
+    arktsLangServerPath: string | null,
     nodeMaxOldSpaceSize?: string
   ) {
     this.projectPath = projectPath;
-    this.devecoPath = devecoPath ?? '';
+    this.sdkPath = sdkPath;
+    this.arktsLangServerPath = arktsLangServerPath;
     this.nodeMaxOldSpaceSize = nodeMaxOldSpaceSize;
   }
 
@@ -127,7 +129,7 @@ export class ArktsCheckTool {
   }
 
   private async doInitialize(): Promise<void> {
-    const { harmonyRoot, devecoPath, arktsLangServerPath, useStandardProtocol } =
+    const { harmonyRoot, arktsLangServerPath, useStandardProtocol } =
       this.resolveProjectAndDeveco();
     this.useStandardProtocol = useStandardProtocol;
 
@@ -149,8 +151,9 @@ export class ArktsCheckTool {
     const nodeMaxOldSpaceSize = Number.isNaN(parsedMaxSize) ? undefined : parsedMaxSize;
     mcpLog.info(`ArktsCheck nodeMaxOldSpaceSize: incoming='${this.nodeMaxOldSpaceSize ?? '(unset)'}', parsed=${nodeMaxOldSpaceSize ?? 'undefined → dynamic formula applies'}`);
 
-    const sdkPath = path.join(devecoStudioContentRoot(devecoPath), 'sdk');
-    mcpLog.info(`ArktsCheck devecoPath: ${devecoPath}, contentRoot: ${devecoStudioContentRoot(devecoPath)}, sdkPath: ${sdkPath}`);
+    // sdkPath 与 arktsLangServerPath 均在启动期固定，此处直接复用，不再派生。
+    const sdkPath = this.sdkPath;
+    mcpLog.info(`[ArktsCheck] sdkPath=${sdkPath}, arktsLangServerPath=${arktsLangServerPath}, useStandardProtocol=${useStandardProtocol}`);
     this.manager = new ArktsLspManager({
       sdkPath,
       arktsLangServerPath,
@@ -176,10 +179,9 @@ export class ArktsCheckTool {
     });
   }
 
-  /** 校验 / 规范化 projectPath、devecoPath、arktsLangServerPath。 */
+  /** 校验 / 规范化 projectPath；arktsLangServerPath 由启动期固定值提供。 */
   private resolveProjectAndDeveco(): {
     harmonyRoot: string;
-    devecoPath: string;
     arktsLangServerPath: string;
     useStandardProtocol: boolean;
   } {
@@ -191,32 +193,18 @@ export class ArktsCheckTool {
     }
     this.projectPath = harmonyRoot;
 
-    const devecoPath = this.devecoPath ?? findDevEcoPath();
-    mcpLog.debug(`DevEco Studio installation path: ${devecoPath}, this.devecoPath: ${this.devecoPath}`);
-    if (!devecoPath) {
-      throw new Error('DevEco Studio installation path not found');
-    }
-    this.devecoPath = devecoPath;
-
-    const arktsLangServerPath = findArktsLangServerPath(devecoPath);
+    const arktsLangServerPath = this.arktsLangServerPath;
     if (!arktsLangServerPath) {
       throw new Error('arkts-lang-server path not found');
     }
 
-    const standardIndexServerPath = path.resolve(
-      arktsLangServerPath,
-      'ace-server',
-      'out',
-      'standardIndex',
-      'index.js',
-    );
-    const useStandardProtocol = fs.existsSync(standardIndexServerPath);
+    const useStandardProtocol = detectStandardProtocol(arktsLangServerPath);
     mcpLog.info(
       `ArktsCheck protocol: ${useStandardProtocol ? 'standard LSP' : 'legacy ace-server'} ` +
         `(standardIndex/index.js exists=${useStandardProtocol})`,
     );
 
-    return { harmonyRoot, devecoPath, arktsLangServerPath, useStandardProtocol };
+    return { harmonyRoot, arktsLangServerPath, useStandardProtocol };
   }
 
   private armInitTimer(ms: number): void {
@@ -649,22 +637,7 @@ export class ArktsCheckTool {
 
     mcpLog.info(`handleTypeHierarchy: file=${resolved} line=${args.line} char=${args.character} direction=${args.direction}`);
     try {
-      const result = await this.withOpenFile(resolved, async (uri) => {
-        const prepareResult = await this.manager!.sendFeatureRequest(LSP_METHOD.PREPARE_TYPE_HIERARCHY, {
-          textDocument: { uri }, position: { line: args.line, character: args.character },
-        });
-        const items = Array.isArray(prepareResult) ? prepareResult : (prepareResult ? [prepareResult] : []);
-        if (items.length === 0) {
-          return { items: [], results: [] };
-        }
-        const method = args.direction === 'supertypes' ? LSP_METHOD.SUPERTYPES : LSP_METHOD.SUBTYPES;
-        const allResults: unknown[] = [];
-        for (const item of items) {
-          const res = await this.manager!.sendFeatureRequest(method, { item });
-          if (Array.isArray(res)) { allResults.push(...res); } else if (res) { allResults.push(res); }
-        }
-        return { items, results: allResults };
-      });
+      const result = await this.fetchTypeHierarchy(resolved, args.line, args.character, args.direction);
       const text = `typeHierarchy (${args.direction}): ${JSON.stringify(result, null, 2)}`;
       return { content: [{ type: 'text', text }] };
     } catch (err) {
@@ -690,6 +663,47 @@ export class ArktsCheckTool {
     } catch (err) {
       return this.buildErrorResponse('completionItemResolve', err);
     }
+  }
+
+  /**
+   * typeHierarchy 内部方法：两步请求 prepareTypeHierarchy → supertypes/subtypes。
+   * 返回准备项列表及展平后的层级结果。
+   */
+  private async fetchTypeHierarchy(
+    file: string,
+    line: number,
+    character: number,
+    direction: 'supertypes' | 'subtypes'
+  ): Promise<{ items: unknown[]; results: unknown[] }> {
+    return this.withOpenFile(file, async (uri) => {
+      const prepareResult = await this.manager!.sendFeatureRequest(LSP_METHOD.PREPARE_TYPE_HIERARCHY, {
+        textDocument: { uri }, position: { line, character },
+      });
+      const items = Array.isArray(prepareResult) ? prepareResult : (prepareResult ? [prepareResult] : []);
+      if (items.length === 0) {
+        return { items: [], results: [] };
+      }
+      
+      const method = direction === 'supertypes' ? LSP_METHOD.SUPERTYPES : LSP_METHOD.SUBTYPES;
+      const results = await this.collectHierarchyItems(method, items);
+      return { items, results };
+    });
+  }
+
+  /**
+   * 遍历准备项，向 LSP 发送 supertypes/subtypes 请求并展平结果。
+   */
+  private async collectHierarchyItems(method: string, items: unknown[]): Promise<unknown[]> {
+    const allResults: unknown[] = [];
+    for (const item of items) {
+      const res = await this.manager!.sendFeatureRequest(method, { item });
+      if (Array.isArray(res)) {
+        allResults.push(...res);
+      } else if (res) {
+        allResults.push(res);
+      }
+    }
+    return allResults;
   }
 
   // ---------- 低价值方法（实现但不暴露为 tool） ----------

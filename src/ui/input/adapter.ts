@@ -11,6 +11,7 @@ import type { WindowInfo } from '../window/types.js';
 import { findNodesInTree } from '../layout/parsers.js';
 import type { ArkUiNode } from '../layout/types.js';
 import { runHdcWithRetry } from '../../utils/hdc-param.js';
+import { debugLog } from '../../utils/logger.js';
 
 export async function initDevice(deviceArg?: string) {
   const toolProvider = await ToolProvider.new();
@@ -125,7 +126,8 @@ export async function runHdcShell(
   deviceId: string,
   shellArgs: string[]
 ): Promise<void> {
-  const args = ['-t', deviceId, 'shell', ...shellArgs];
+  const args = ['-t', deviceId, 'shell', shellArgs.join(' ')];
+  debugLog(`Executing: ${hdcPath} ${args.join(' ')}`);
   const result = await runHdcWithRetry(hdcPath, args);
 
   if (result.exitCode !== 0) {
