@@ -1367,6 +1367,12 @@ devecocli check compat [files...] --source-version <ver> --target-version <ver> 
 - 可用版本可通过 `devecocli check compat versions` 查看
 - `zsh` 环境下版本号需用引号包裹（包含括号），例如 `"<source_version>"`、`"<target_version>"`
 
+**`compat versions` 参数：**
+
+| 参数名 | 说明 |
+| --- | --- |
+| `--format` | 可选，输出格式。`default` 或 `json`。默认 `default`（文本输出，每行一个版本号） |
+
 **格式与输出组合：**
 
 | 场景 | 允许的 `--format` | 行为 |

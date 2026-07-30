@@ -23,10 +23,6 @@ const CLT_VERSION = /^#\s*Version:\s*(\S+)/;
  */
 const COMPAT_MIN_STUDIO_VERSION = '26.0.0.810';
 
-export function getDownloadUrl(): string {
-  return IDE_DOWNLOAD_URL;
-}
-
 type InstallSourceType = 'clt' | 'studio';
 
 type SignatureVerificationResult = {
