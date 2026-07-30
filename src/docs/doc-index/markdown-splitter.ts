@@ -38,8 +38,7 @@ import {
 } from './api-identifiers.js';
 import { truncateAtWordBoundary } from './sqlite-snippet.js';
 
-const API_SYMBOL_RE =
-  /[A-Z][a-zA-Z0-9]+(?:\.[a-zA-Z][a-zA-Z0-9]+)*/g;
+const API_SYMBOL_RE = /[A-Z][a-zA-Z0-9]+(?:\.[a-zA-Z][a-zA-Z0-9]+)*/g;
 const DECORATOR_RE = /@[A-Z][a-zA-Z]+/g;
 const API_METHOD_HEADING_RE = /^[A-Z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9]+/;
 /** Standalone PascalCase type/interface headings (FocusDirection, Rect, …). */
@@ -47,16 +46,56 @@ const STANDALONE_API_TYPE_HEADING_RE = /^[A-Z][A-Za-z0-9]+(?:\([^)]*\))?$/;
 /** Kebab/snake slug file names (is-inner-application-…). */
 const FILENAME_LIKE_TITLE_RE = /^[a-z0-9]+(?:[-_][a-z0-9]+)+$/;
 const GENERIC_STANDALONE_SYMBOLS = new Set([
-  'API', 'Action', 'Code', 'Connect', 'Connection', 'Context', 'Direction',
-  'Element', 'Elements', 'Entry', 'Focused', 'Module', 'Modules', 'Name',
-  'Names', 'Stage', 'Type', 'Types', 'Value', 'Values', 'Rect', 'Error',
+  'API',
+  'Action',
+  'Code',
+  'Connect',
+  'Connection',
+  'Context',
+  'Direction',
+  'Element',
+  'Elements',
+  'Entry',
+  'Focused',
+  'Module',
+  'Modules',
+  'Name',
+  'Names',
+  'Stage',
+  'Type',
+  'Types',
+  'Value',
+  'Values',
+  'Rect',
+  'Error',
 ]);
 const ALLOWED_ACRONYMS = new Set([
-  'HAP', 'HSP', 'HAR', 'NAPI', 'CAPI', 'NDK', 'ArkTS', 'ArkUI', 'OHPM',
+  'HAP',
+  'HSP',
+  'HAR',
+  'NAPI',
+  'CAPI',
+  'NDK',
+  'ArkTS',
+  'ArkUI',
+  'OHPM',
 ]);
 const GENERIC_QUALIFIED_ROOTS = new Set([
-  'JSON', 'Object', 'Array', 'Promise', 'console', 'Math', 'Date', 'String',
-  'Number', 'Boolean', 'Error', 'Function', 'Map', 'Set', 'RegExp',
+  'JSON',
+  'Object',
+  'Array',
+  'Promise',
+  'console',
+  'Math',
+  'Date',
+  'String',
+  'Number',
+  'Boolean',
+  'Error',
+  'Function',
+  'Map',
+  'Set',
+  'RegExp',
 ]);
 
 interface ParsedDocument {
@@ -244,11 +283,17 @@ function compareApiSymbols(a: string, b: string): number {
   return a.localeCompare(b);
 }
 
-function prepareApiSymbols(symbols: string[], priority: string[] = []): string[] {
-  const priorityUnique = [...new Set(priority.map((symbol) => symbol.trim()).filter(Boolean))];
+function prepareApiSymbols(
+  symbols: string[],
+  priority: string[] = []
+): string[] {
+  const priorityUnique = [
+    ...new Set(priority.map((symbol) => symbol.trim()).filter(Boolean)),
+  ];
   const prioritySet = new Set(priorityUnique);
-  const rest = [...new Set(symbols.map((symbol) => symbol.trim()).filter(Boolean))]
-    .filter((symbol) => !prioritySet.has(symbol));
+  const rest = [
+    ...new Set(symbols.map((symbol) => symbol.trim()).filter(Boolean)),
+  ].filter((symbol) => !prioritySet.has(symbol));
   rest.sort(compareApiSymbols);
   return [...priorityUnique, ...rest].slice(0, DOC_API_SYMBOLS_MAX_COUNT);
 }
@@ -313,9 +358,15 @@ function capHeadings(headings: string[]): string {
   return joined.slice(0, DOC_HEADINGS_MAX_CHARS);
 }
 
-function buildLeadText(bodySample: string): { leadText: string; excerptTruncated: boolean } {
+function buildLeadText(bodySample: string): {
+  leadText: string;
+  excerptTruncated: boolean;
+} {
   const text = normalizeWhitespace(bodySample);
-  const { text: leadText, excerptTruncated } = truncateAtWordBoundary(text, DOC_LEAD_TEXT_CHARS);
+  const { text: leadText, excerptTruncated } = truncateAtWordBoundary(
+    text,
+    DOC_LEAD_TEXT_CHARS
+  );
   return { leadText, excerptTruncated };
 }
 
@@ -348,7 +399,10 @@ function appendNodeToSection(node: Content, section: MarkdownSection): void {
 }
 
 function splitMarkdownIntoSections(markdown: string): MarkdownSection[] {
-  const tree = unified().use(remarkParse).use(remarkGfm).parse(markdown) as Root;
+  const tree = unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .parse(markdown) as Root;
   const sections: MarkdownSection[] = [];
   let current: MarkdownSection | null = null;
 
@@ -356,7 +410,11 @@ function splitMarkdownIntoSections(markdown: string): MarkdownSection[] {
     if (!current) {
       return;
     }
-    if (current.sectionTitle || current.bodyParts.length || current.codeBlocks.length) {
+    if (
+      current.sectionTitle ||
+      current.bodyParts.length ||
+      current.codeBlocks.length
+    ) {
       sections.push(current);
     }
     current = null;
@@ -400,13 +458,16 @@ function isApiReferenceDocument(documentId: string): boolean {
 
 function countApiIndexSections(sections: MarkdownSection[]): number {
   return sections.filter(
-    (section) => section.sectionTitle && isApiSectionHeading(section.sectionTitle)
+    (section) =>
+      section.sectionTitle && isApiSectionHeading(section.sectionTitle)
   ).length;
 }
 
 function mergeApiSectionBatch(group: MarkdownSection[]): MarkdownSection {
   return {
-    sectionTitle: group.map((section) => section.sectionTitle.trim()).join(' | '),
+    sectionTitle: group
+      .map((section) => section.sectionTitle.trim())
+      .join(' | '),
     bodyParts: group.flatMap((section) => section.bodyParts).slice(0, 40),
     codeBlocks: group.flatMap((section) => section.codeBlocks).slice(0, 8),
   };
@@ -425,10 +486,12 @@ function isTypeOrObjectApiSection(title: string): boolean {
 
 function limitApiSections(sections: MarkdownSection[]): MarkdownSection[] {
   const preamble = sections.filter(
-    (section) => !section.sectionTitle || !isApiSectionHeading(section.sectionTitle)
+    (section) =>
+      !section.sectionTitle || !isApiSectionHeading(section.sectionTitle)
   );
   const apiSections = sections.filter(
-    (section) => section.sectionTitle && isApiSectionHeading(section.sectionTitle)
+    (section) =>
+      section.sectionTitle && isApiSectionHeading(section.sectionTitle)
   );
   const typeSections = apiSections.filter((section) =>
     isTypeOrObjectApiSection(section.sectionTitle)
@@ -437,7 +500,10 @@ function limitApiSections(sections: MarkdownSection[]): MarkdownSection[] {
     (section) => !isTypeOrObjectApiSection(section.sectionTitle)
   );
 
-  const methodBudget = Math.max(0, DOC_MAX_INDEX_SECTIONS_PER_DOC - typeSections.length);
+  const methodBudget = Math.max(
+    0,
+    DOC_MAX_INDEX_SECTIONS_PER_DOC - typeSections.length
+  );
   const keptMethods = methodSections.slice(0, methodBudget);
   const overflowMethods = methodSections.slice(methodBudget);
   const overflowH2 = overflowMethods.filter((section) =>
@@ -447,10 +513,24 @@ function limitApiSections(sections: MarkdownSection[]): MarkdownSection[] {
     (section) => !isH2MethodSection(section.sectionTitle)
   );
   const batched: MarkdownSection[] = [];
-  for (let i = 0; i < overflowBatchable.length; i += DOC_API_SECTION_BATCH_SIZE) {
-    batched.push(mergeApiSectionBatch(overflowBatchable.slice(i, i + DOC_API_SECTION_BATCH_SIZE)));
+  for (
+    let i = 0;
+    i < overflowBatchable.length;
+    i += DOC_API_SECTION_BATCH_SIZE
+  ) {
+    batched.push(
+      mergeApiSectionBatch(
+        overflowBatchable.slice(i, i + DOC_API_SECTION_BATCH_SIZE)
+      )
+    );
   }
-  return [...preamble, ...typeSections, ...keptMethods, ...overflowH2, ...batched];
+  return [
+    ...preamble,
+    ...typeSections,
+    ...keptMethods,
+    ...overflowH2,
+    ...batched,
+  ];
 }
 
 function shouldChunkIntoSections(
@@ -469,7 +549,10 @@ function shouldChunkIntoSections(
       apiSectionCount >= DOC_CHUNK_MIN_H4_SECTIONS_RELAXED
     );
   }
-  return lineCount >= DOC_CHUNK_MIN_LINES && apiSectionCount >= DOC_CHUNK_MIN_H4_SECTIONS;
+  return (
+    lineCount >= DOC_CHUNK_MIN_LINES &&
+    apiSectionCount >= DOC_CHUNK_MIN_H4_SECTIONS
+  );
 }
 
 const H2_METHOD_SECTION_RE = /^\[h2\][A-Za-z]/;
@@ -528,7 +611,10 @@ function buildSegmentIndexSource(
       : `${meta.docTitle} ${normalized.symbolName ?? sectionTitle}`
     : meta.docTitle;
   const allText = [meta.docTitle, headingsText, ...section.bodyParts].join(' ');
-  const { leadText, excerptTruncated } = resolveSectionExcerptTruncated(bodySample, sectionTitle);
+  const { leadText, excerptTruncated } = resolveSectionExcerptTruncated(
+    bodySample,
+    sectionTitle
+  );
 
   return {
     documentId: meta.documentId,
@@ -576,8 +662,15 @@ function walkDocumentNodes(nodes: Content[], parsed: ParsedDocument): void {
 }
 
 function parseMarkdownDocument(markdown: string): ParsedDocument {
-  const tree = unified().use(remarkParse).use(remarkGfm).parse(markdown) as Root;
-  const parsed: ParsedDocument = { headings: [], bodyParts: [], codeBlocks: [] };
+  const tree = unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .parse(markdown) as Root;
+  const parsed: ParsedDocument = {
+    headings: [],
+    bodyParts: [],
+    codeBlocks: [],
+  };
   walkDocumentNodes(tree.children, parsed);
   return parsed;
 }
@@ -599,7 +692,9 @@ export function buildDocumentIndexSource(
     sectionTitle: '',
     titleTokens: docTitle,
     headingsText: capHeadings(parsed.headings),
-    apiSymbols: prepareApiSymbols(extractApiSymbols(allText, parsed.codeBlocks)),
+    apiSymbols: prepareApiSymbols(
+      extractApiSymbols(allText, parsed.codeBlocks)
+    ),
     bodySample,
     leadText,
     excerptTruncated,
@@ -618,7 +713,9 @@ export function buildDocumentIndexSources(
   return limitApiSections(sections)
     .filter(
       (section) =>
-        section.sectionTitle || section.bodyParts.length > 0 || section.codeBlocks.length > 0
+        section.sectionTitle ||
+        section.bodyParts.length > 0 ||
+        section.codeBlocks.length > 0
     )
     .map((section) => buildSegmentIndexSource(section, { ...meta, docTitle }));
 }

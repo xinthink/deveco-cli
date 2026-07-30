@@ -31,7 +31,6 @@ let stopWords: Set<string> | null = null;
 let jiebaInstance: Jieba | null = null;
 let initPromise: Promise<Jieba> | null = null;
 
-
 function loadStopWords(): Set<string> {
   if (stopWords) {
     return stopWords;
@@ -85,7 +84,8 @@ function normalizeTokens(tokens: string[]): string[] {
 }
 
 async function createJieba(): Promise<Jieba> {
-  const { cut, cut_for_search, with_dict } = require('jieba-wasm') as typeof import('jieba-wasm');
+  const { cut, cut_for_search, with_dict } =
+    require('jieba-wasm') as typeof import('jieba-wasm');
   const userDict = readIndexLexiconFile('harmonyos-terms.txt');
   with_dict(userDict);
   debugLog('doc-index: using jieba-wasm backend');

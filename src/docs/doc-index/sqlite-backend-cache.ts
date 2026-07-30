@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { createSqliteWasmBackend } from './sqlite-wasm-backend.js';
+import { createSqliteBackend } from './sqlite-backend.js';
 import type { SqliteBackend } from './sqlite-types.js';
 
 let backendPromise: Promise<SqliteBackend> | null = null;
@@ -11,7 +11,7 @@ let activeBackend: SqliteBackend | null = null;
 
 export async function getSqliteBackend(): Promise<SqliteBackend> {
   if (!backendPromise) {
-    backendPromise = createSqliteWasmBackend().then((backend) => {
+    backendPromise = createSqliteBackend().then((backend) => {
       activeBackend = backend;
       return backend;
     });

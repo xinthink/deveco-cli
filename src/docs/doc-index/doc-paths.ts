@@ -47,7 +47,10 @@ function getDistDir(currentFilePath: string, currentDir: string): string {
   return dir;
 }
 
-function getPackageRootFromDist(currentFilePath: string, currentDir: string): string {
+function getPackageRootFromDist(
+  currentFilePath: string,
+  currentDir: string
+): string {
   return path.dirname(getDistDir(currentFilePath, currentDir));
 }
 
@@ -67,7 +70,12 @@ function resolvePackageRelativePath(...segments: string[]): string[] {
   const currentDir = path.dirname(currentFilePath);
 
   if (currentFilePath.includes(`${path.sep}dist${path.sep}`)) {
-    return [path.join(getPackageRootFromDist(currentFilePath, currentDir), ...segments)];
+    return [
+      path.join(
+        getPackageRootFromDist(currentFilePath, currentDir),
+        ...segments
+      ),
+    ];
   }
 
   return [path.join(currentDir, '..', '..', '..', ...segments)];

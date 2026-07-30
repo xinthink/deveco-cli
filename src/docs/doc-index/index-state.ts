@@ -49,9 +49,9 @@ export async function writeBuildStatus(status: BuildStatus): Promise<void> {
 export function createInitialStatus(message: string): BuildStatus {
   const now = Date.now();
   return {
-    state: 'extracting',
+    state: 'installing',
     phase: 1,
-    phaseLabel: 'Extracting documentation',
+    phaseLabel: 'Preparing documentation index',
     current: 0,
     total: 0,
     message,
@@ -91,7 +91,9 @@ export async function readBuildMeta(): Promise<BuildMeta | null> {
   }
 }
 
-export async function needsRebuildIndex(force = false): Promise<RebuildReason | null> {
+export async function needsRebuildIndex(
+  force = false
+): Promise<RebuildReason | null> {
   if (force) {
     return 'no-index';
   }
@@ -126,7 +128,11 @@ export function isIndexReady(): boolean {
     return false;
   }
   const indexDir = path.dirname(getSearchDbFile());
-  if (!INDEX_LEXICON_FILES.every((name) => fs.existsSync(path.join(indexDir, name)))) {
+  if (
+    !INDEX_LEXICON_FILES.every((name) =>
+      fs.existsSync(path.join(indexDir, name))
+    )
+  ) {
     return false;
   }
   try {

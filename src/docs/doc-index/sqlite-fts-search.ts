@@ -3,12 +3,9 @@
  * SPDX-License-Identifier: MIT
  */
 
-import type { CatalogName } from '../doc-portal-types.js';
-import type { LocalSearchResult } from '../local-doc-service.js';
-import {
-  CATALOG_NAME_TO_ID,
-  CATALOG_RERANK_POOL_FACTOR,
-} from './constants.js';
+import type { CatalogName } from '../portal/catalog.js';
+import type { LocalSearchResult } from '../service/local-doc-service.js';
+import { CATALOG_NAME_TO_ID, CATALOG_RERANK_POOL_FACTOR } from './constants.js';
 import {
   extractQueryApiSymbolTokens,
   getManagerSplitApiCompound,
@@ -67,9 +64,7 @@ const MIN_RERANK_FETCH_LIMIT = 120;
 const TITLE_PREFIX_MIN_CHARS = 6;
 
 function normalizeForRerank(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}@.]+/gu, '');
+  return text.toLowerCase().replace(/[^\p{L}\p{N}@.]+/gu, '');
 }
 
 function splitRerankTerms(rawQuery: string): string[] {
@@ -142,7 +137,11 @@ function effectiveBm25Score(
   score = applyTitleBoost(score, titleMatchBoost(row, titleQuery));
   if (
     managerCompound &&
-    rowMatchesManagerApiModule(row.doc_title, row.section_title, managerCompound)
+    rowMatchesManagerApiModule(
+      row.doc_title,
+      row.section_title,
+      managerCompound
+    )
   ) {
     score /= MANAGER_API_RERANK_BOOST;
     if (row.catalog_id === CATALOG_NAME_TO_ID['harmonyos-references']) {
@@ -166,9 +165,13 @@ function minScoreRow(
   );
 }
 
-function segmentMatchesApiSymbols(row: FtsSearchRow, apiSymbols: string[]): boolean {
+function segmentMatchesApiSymbols(
+  row: FtsSearchRow,
+  apiSymbols: string[]
+): boolean {
   return apiSymbols.some(
-    (symbol) => row.section_title.includes(symbol) || row.doc_title.includes(symbol)
+    (symbol) =>
+      row.section_title.includes(symbol) || row.doc_title.includes(symbol)
   );
 }
 
@@ -181,14 +184,20 @@ function pickBestSegmentForDocument(
 ): FtsSearchRow {
   if (managerCompound) {
     const managerMatches = segments.filter((row) =>
-      rowMatchesManagerApiModule(row.doc_title, row.section_title, managerCompound)
+      rowMatchesManagerApiModule(
+        row.doc_title,
+        row.section_title,
+        managerCompound
+      )
     );
     if (managerMatches.length > 0) {
       return minScoreRow(managerMatches, boosts, titleQuery, managerCompound);
     }
   }
   if (apiSymbols.length > 0) {
-    const titleMatches = segments.filter((row) => segmentMatchesApiSymbols(row, apiSymbols));
+    const titleMatches = segments.filter((row) =>
+      segmentMatchesApiSymbols(row, apiSymbols)
+    );
     if (titleMatches.length > 0) {
       return minScoreRow(titleMatches, boosts, titleQuery, managerCompound);
     }
@@ -218,7 +227,13 @@ function finalizeSearchRows(
   const representatives: FtsSearchRow[] = [];
   for (const segments of byDocument.values()) {
     representatives.push(
-      pickBestSegmentForDocument(segments, apiSymbols, boosts, titleQuery, managerCompound)
+      pickBestSegmentForDocument(
+        segments,
+        apiSymbols,
+        boosts,
+        titleQuery,
+        managerCompound
+      )
     );
   }
 
@@ -248,11 +263,15 @@ export function runFtsSearch(
     MIN_RERANK_FETCH_LIMIT
   );
 
-  const rows = (
+  const rows =
     catalogId === undefined
       ? reader.all<FtsSearchRow>(FTS_SEARCH_SQL, match, fetchLimit)
-      : reader.all<FtsSearchRow>(FTS_SEARCH_CATALOG_SQL, match, catalogId, fetchLimit)
-  );
+      : reader.all<FtsSearchRow>(
+          FTS_SEARCH_CATALOG_SQL,
+          match,
+          catalogId,
+          fetchLimit
+        );
 
   const ranked =
     catalogId === undefined

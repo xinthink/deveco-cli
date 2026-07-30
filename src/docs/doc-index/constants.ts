@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { CATALOG_NAMES, CATALOG_TITLES } from '../doc-portal-types.js';
+import { CATALOG_NAMES, CATALOG_TITLES } from '../portal/catalog.js';
 
 export const INDEX_VERSION = '1.9.1';
 export const INDEX_DB_MAX_BYTES = 48 * 1024 * 1024;

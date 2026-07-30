@@ -43,7 +43,9 @@ function normalizeEntryFileName(entry: yauzl.Entry): string {
   return fileName.replace(/\\/g, '/');
 }
 
-function loadEntryIndex(zipfile: yauzl.ZipFile): Promise<Map<string, yauzl.Entry>> {
+function loadEntryIndex(
+  zipfile: yauzl.ZipFile
+): Promise<Map<string, yauzl.Entry>> {
   const entries = new Map<string, yauzl.Entry>();
   return new Promise((resolve, reject) => {
     zipfile.readEntry();
@@ -100,7 +102,9 @@ function readEntryStream(
   return new Promise((resolve, reject) => {
     zipfile.openReadStream(entry, (error, stream) => {
       if (error || !stream) {
-        reject(error ?? new Error(`Failed to read zip entry: ${entry.fileName}`));
+        reject(
+          error ?? new Error(`Failed to read zip entry: ${entry.fileName}`)
+        );
         return;
       }
 
@@ -159,7 +163,9 @@ function lookupEntry(
   return null;
 }
 
-export async function readMarkdownFromDocsZip(documentId: string): Promise<string> {
+export async function readMarkdownFromDocsZip(
+  documentId: string
+): Promise<string> {
   const zipPath = findDocsZip();
   if (!zipPath) {
     throw new Error('docs.zip not found');

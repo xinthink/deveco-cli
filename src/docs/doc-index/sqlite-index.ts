@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-import type { CatalogName } from '../doc-portal-types.js';
-import type { LocalSearchResult } from '../local-doc-service.js';
+import type { CatalogName } from '../portal/catalog.js';
+import type { LocalSearchResult } from '../service/local-doc-service.js';
 import { getSearchDbFile } from './doc-paths.js';
 import { prepareSearchQuery, type PreparedQuery } from './query-normalizer.js';
 import {
@@ -14,7 +14,7 @@ import {
 import { buildFtsMatch } from './api-identifiers.js';
 import { shouldMergeReferencesWithGlobalFallback } from './query-named-rules.js';
 import type { DocumentIndexSource } from './segment-types.js';
-import { getSqliteBackend, resetSqliteBackendCache } from './sqlite-backend.js';
+import { getSqliteBackend, resetSqliteBackendCache } from './sqlite-backend-cache.js';
 
 async function runSearch(
   keywords: string[],
@@ -129,7 +129,14 @@ async function searchWithPrepared(
   dbPath?: string
 ): Promise<LocalSearchResult[]> {
   if (prepared.ftsMatch) {
-    return runPreparedMatch(keywords, catalog, limit, prepared, prepared.ftsMatch, dbPath);
+    return runPreparedMatch(
+      keywords,
+      catalog,
+      limit,
+      prepared,
+      prepared.ftsMatch,
+      dbPath
+    );
   }
   if (!prepared.preferAnd) {
     return runPreparedMatch(

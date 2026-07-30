@@ -17,25 +17,24 @@ import {
   updateBuildStatus,
   writeBuildStatus,
   createInitialStatus,
-} from './doc-index/index-state.js';
+} from '../doc-index/index-state.js';
 import {
   installBundledIndex,
   isBundledIndexUsable,
   resetBundledInstallScratch,
-} from './doc-index/index-bundle.js';
+} from '../doc-index/index-bundle.js';
 import {
   findDocsZip,
   getBuildLockFile,
   getIndexDir,
-} from './doc-index/doc-paths.js';
-import { sha256File } from './doc-index/hash-utils.js';
+} from '../doc-index/doc-paths.js';
+import { sha256File } from '../doc-index/hash-utils.js';
 import {
   assertDocStorageSafe,
   isDocStorageError,
-} from './doc-index/path-safety.js';
-import { resetSearchDbCache } from './doc-index/sqlite-index.js';
-import type { BuildMeta } from './doc-index/segment-types.js';
-import { assertDocNativeDeps } from '../utils/native-deps.js';
+} from '../doc-index/path-safety.js';
+import { resetSearchDbCache } from '../doc-index/sqlite-index.js';
+import type { BuildMeta } from '../doc-index/segment-types.js';
 
 export class DocNotReadyError extends Error {
   constructor(
@@ -179,7 +178,8 @@ async function runInitPipeline(
   spinner?: Ora
 ): Promise<void> {
   const docsZipSha256 = await resolveDocsZipSha256();
-  const shouldInstall = options.force || (await needsIndexInstall(options.force));
+  const shouldInstall =
+    options.force || (await needsIndexInstall(options.force));
   const rebuildReason = await needsRebuildIndex(options.force);
 
   if (!shouldInstall && !rebuildReason && isIndexReady()) {
@@ -187,7 +187,10 @@ async function runInitPipeline(
     return;
   }
 
-  if (isBundledIndexUsable(docsZipSha256) && (await runBundledInstallPath(docsZipSha256, spinner))) {
+  if (
+    isBundledIndexUsable(docsZipSha256) &&
+    (await runBundledInstallPath(docsZipSha256, spinner))
+  ) {
     return;
   }
 
@@ -210,7 +213,9 @@ export class DocInitializer {
         await assertDocStorageSafe({ mode: 'write' });
       }
       release = await acquireBuildLock();
-      await writeBuildStatus(createInitialStatus('Starting documentation setup…'));
+      await writeBuildStatus(
+        createInitialStatus('Starting documentation setup…')
+      );
       await runInitPipeline(options, spinner);
     } catch (error) {
       if (release) {
@@ -243,7 +248,10 @@ async function pollUntilReady(spinner: ReturnType<typeof ora>): Promise<void> {
   }
 }
 
-async function runSetup(spinner: ReturnType<typeof ora>, force = false): Promise<void> {
+async function runSetup(
+  spinner: ReturnType<typeof ora>,
+  force = false
+): Promise<void> {
   spinner.text = force
     ? 'Repairing documentation index…'
     : 'Starting documentation setup…';
@@ -285,5 +293,4 @@ async function ensureIndexReady(): Promise<void> {
 export async function awaitDocReady(): Promise<void> {
   await assertDocStorageSafe({ mode: 'read' });
   await ensureIndexReady();
-  await assertDocNativeDeps();
 }

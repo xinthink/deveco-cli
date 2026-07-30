@@ -4,8 +4,8 @@
  */
 
 import { readFile, stat, writeFile } from 'fs/promises';
-import type { CatalogName } from '../doc-portal-types.js';
-import type { LocalSearchResult } from '../local-doc-service.js';
+import type { CatalogName } from '../portal/catalog.js';
+import type { LocalSearchResult } from '../service/local-doc-service.js';
 import { INSERT_BATCH_SIZE } from './constants.js';
 import type { DocumentIndexSource } from './segment-types.js';
 import { buildDocumentSearchText, getJieba } from './tokenizer.js';
@@ -57,7 +57,11 @@ function createWasmReader(db: WasmDatabase): FtsDbReader {
 
 async function openReadonlyDb(dbPath: string): Promise<WasmDatabase> {
   const fileStat = await stat(dbPath);
-  if (cachedDb && cachedDb.dbPath === dbPath && cachedDb.mtimeMs === fileStat.mtimeMs) {
+  if (
+    cachedDb &&
+    cachedDb.dbPath === dbPath &&
+    cachedDb.mtimeMs === fileStat.mtimeMs
+  ) {
     return cachedDb.db;
   }
 
@@ -72,7 +76,14 @@ async function openReadonlyDb(dbPath: string): Promise<WasmDatabase> {
     capi.SQLITE_DESERIALIZE_READONLY |
     capi.SQLITE_DESERIALIZE_RESIZEABLE |
     capi.SQLITE_DESERIALIZE_FREEONCLOSE;
-  capi.sqlite3_deserialize(db.pointer, 'main', ptr, bytes.byteLength, bytes.byteLength, flags);
+  capi.sqlite3_deserialize(
+    db.pointer,
+    'main',
+    ptr,
+    bytes.byteLength,
+    bytes.byteLength,
+    flags
+  );
   cachedDb = { dbPath, mtimeMs: fileStat.mtimeMs, db };
   return db;
 }
@@ -183,10 +194,17 @@ async function searchWasmIndex(
   rawQuery: string
 ): Promise<LocalSearchResult[]> {
   const db = await openReadonlyDb(dbPath);
-  return runFtsSearch(createWasmReader(db), catalog, limit, match, query, rawQuery);
+  return runFtsSearch(
+    createWasmReader(db),
+    catalog,
+    limit,
+    match,
+    query,
+    rawQuery
+  );
 }
 
-export async function createSqliteWasmBackend(): Promise<SqliteBackend> {
+export async function createSqliteBackend(): Promise<SqliteBackend> {
   await getSqliteModule();
   return {
     resetCache: resetWasmCache,
