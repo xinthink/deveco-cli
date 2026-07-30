@@ -40,6 +40,15 @@ function parseDuration(value: string, fieldName: string): number {
   }
 }
 
+function parseHilogLevel(value: string): string {
+  try {
+    CommonUtils.assertHilogLevel(value);
+    return value;
+  } catch {
+    throw new InvalidArgumentError('`level` must be one of: D, I, W, E, F.');
+  }
+}
+
 function validateLogTimeRange(options: LogOptions): void {
   if (options.to && options.follow) {
     throw new Error('`--to` cannot be used with `--follow`.');
@@ -90,7 +99,7 @@ const logCommand = new Command('log')
   })
   .option('--device <device>', 'Target device (name or serial)')
   .option('--crash', 'Only obtain crash logs')
-  .option('--level <level>', 'Log level filter: D, I, W, E, F')
+  .option('--level <level>', 'Log level filter: D, I, W, E, F', parseHilogLevel)
   .option('--bundle-name <bundle-name>', 'Filter by application bundle name')
   .option('--keyword <keyword>', 'Keyword filter')
   .option('--tail <num>', 'Show only the latest N log lines', parsePositiveInt)
