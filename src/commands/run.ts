@@ -13,6 +13,15 @@ import { OhpmAdapter } from '../utils/ohpm-adapter.js';
 import { DeviceManager } from '../service/device-manager.js';
 import { ApplyManager } from '../apply/apply-manager.js';
 import { BuildConfigManager } from '../apply/build-config.js';
+import { HotReloadBuildConfigManager } from '../apply/hotreload/build-config-hotreload.js';
+import { HvigorDaemonClient } from '../apply/hotreload/hvigor-daemon-client.js';
+import {
+  executeHotReloadApply,
+  assertSingleHotReloadModule,
+  warnUnsupportedModules,
+  resolveHotReloadArtifacts,
+  stopHotReloadDaemon,
+} from '../apply/hotreload/hotreload-manager.js';
 import { withBuildLock } from '../utils/build-lock.js';
 import { executeBuildSteps, processModuleTasks } from './build.js';
 
@@ -25,6 +34,8 @@ interface RunOptions {
   uninstall?: boolean;
   skipBuild?: boolean;
   apply?: string;
+  hotreload?: string;
+  hotreloadApply?: string;
 }
 
 function parseModuleArg(moduleArg: string): { moduleName: string; targetName: string } {
@@ -159,6 +170,8 @@ const runCommand = new Command('run')
   .option('--uninstall', 'Uninstall existing app before installation')
   .option('--skip-build', 'Skip build step and deploy existing artifacts')
   .option('--apply <fileName>', 'Quick-apply changed files via quickfix (incremental hqf) and restart. <fileName> under project .hvigor/')
+  .option('--hotreload [action]', 'Start hot-reload mode (build+deploy with daemon, then exit). Use "stop" to shut down the hvigor daemon.')
+  .option('--hotreload-apply <fileName>', 'Hot-reload changed files (.hvigor/<fileName> list) via daemon hot compile + signed hqf + quickfix, without restarting the app.')
   .action(async (options: RunOptions) => {
     try {
       await runActionImpl(options);
@@ -211,12 +224,124 @@ async function runActionImpl(options: RunOptions): Promise<void> {
     toolProvider.assertJava();
   }
 
+  if (options.hotreloadApply) {
+    await runHotReloadApplyFlow(options, project, toolProvider);
+    return;
+  }
+
+  if (options.hotreload) {
+    await runHotReloadFlow(options, project, toolProvider);
+    return;
+  }
+
   if (options.apply) {
     await runApplyFlow(options, project, toolProvider);
     return;
   }
 
   await runNormalFlow(options, project, toolProvider);
+}
+
+async function runHotReloadFlow(
+  options: RunOptions, project: Project, toolProvider: ToolProvider
+): Promise<void> {
+  if (options.hotreload === 'stop') {
+    await stopHotReloadDaemon(toolProvider, project);
+    return;
+  }
+
+  const moduleArgs = identifyModules(project, options.module);
+  const parsedModules = moduleArgs.map(parseModuleArg);
+  const { moduleName, targetName } = parsedModules[0];
+
+  assertSingleHotReloadModule(options.module, moduleName);
+
+  const hdcAdapter = new HdcAdapter(toolProvider);
+  const deviceManager = DeviceManager.from(toolProvider);
+  const targetDeviceId = await selectDevice(deviceManager, options.device);
+  const isEmulator = targetDeviceId.includes('127.0.0.1') || targetDeviceId.includes('localhost');
+
+  const productName = options.product || 'default';
+  project.validateProduct(productName);
+  const bundleName = project.getBundleName();
+  const mainAbility = resolveMainAbility(project, parsedModules, options.ability);
+
+  HotReloadBuildConfigManager.generate(
+    project.rootDir, moduleName, productName, toolProvider
+  );
+
+  const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
+  console.log(green('Ensuring hvigor daemon is running (via --sync --daemon, no hap build)...'));
+  await hvigorAdapter.ensureDaemonRunning();
+
+  const moduleSpecs = [`${moduleName}@${productName}`];
+  for (const dep of project.collectNonHarDependentModuleList(moduleName)) {
+    if (!moduleSpecs.includes(`${dep}@${productName}`)) {
+      moduleSpecs.push(`${dep}@${productName}`);
+    }
+  }
+
+  console.log(green('Building hap + starting watch session (socket -> CommonBuild assembleHap --hot-reload-build --watch, kept open)...'));
+  const daemonClient = new HvigorDaemonClient(project.rootDir, toolProvider);
+  await daemonClient.startWatchSession({ moduleSpecs, productName });
+
+  const artifacts = resolveHotReloadArtifacts(
+    project, moduleName, targetName, isEmulator, productName
+  );
+
+  await performDeployment(
+    hdcAdapter, targetDeviceId, bundleName, artifacts, mainAbility, !!options.uninstall
+  );
+
+  console.log(
+    green('Hot-reload watch session active (socket persistent). Edit code, write .hvigor/<file>, then `devecocli run --hotreload-apply <file>` in another terminal. Ctrl+C here to stop.')
+  );
+
+  await new Promise<void>(() => {
+    // Never resolves: the CLI process stays alive holding the watch-session
+    // socket open so the daemon's watch worker stays (for --hotreload-apply).
+    // Ctrl+C exits (socket closes, watch worker released).
+  });
+}
+
+async function runHotReloadApplyFlow(
+  options: RunOptions, project: Project, toolProvider: ToolProvider
+): Promise<void> {
+  const applyFileName = options.hotreloadApply;
+  if (!applyFileName) {
+    throw new Error('hotreload-apply requires --hotreload-apply <fileName> (under .hvigor/)');
+  }
+
+  const moduleArgs = identifyModules(project, options.module);
+  const { moduleName } = parseModuleArg(moduleArgs[0]);
+
+  assertSingleHotReloadModule(options.module, moduleName);
+
+  const deviceManager = DeviceManager.from(toolProvider);
+  const targetDeviceId = await selectDevice(deviceManager, options.device);
+
+  const productName = options.product || 'default';
+  project.validateProduct(productName);
+  const bundleName = project.getBundleName();
+
+  warnUnsupportedModules(project, moduleName, applyFileName);
+
+  const moduleSpecs = [`${moduleName}@${productName}`];
+
+  const result = await executeHotReloadApply({
+    applyFileName,
+    projectPath: project.rootDir,
+    moduleName,
+    productName,
+    bundleName,
+    toolProvider,
+    targetDeviceId,
+    moduleSpecs,
+  });
+
+  if (!result.success) {
+    throw new Error(result.message);
+  }
 }
 
 function collectArtifacts(

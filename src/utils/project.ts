@@ -123,6 +123,18 @@ export class Project {
     }
   }
 
+  public findOwningModule(filePath: string): string | null {
+    const normalized = path.normalize(filePath);
+    for (const m of this.profile.modules) {
+      const moduleDir = path.normalize(path.join(this.rootDir, m.srcPath));
+      const prefix = moduleDir + path.sep;
+      if (normalized.startsWith(prefix) || normalized === moduleDir) {
+        return m.name;
+      }
+    }
+    return null;
+  }
+
   public getModuleProfile(moduleName: string): ModuleProfile {
     const moduleNode = this.profile.modules.find((m) => m.name === moduleName);
     if (!moduleNode) {
