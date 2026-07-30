@@ -21,9 +21,7 @@ import {
   getDocsDir,
   getIndexDir,
   getIndexTmpDir,
-  getJiebaBackendStateFile,
   getSearchDbFile,
-  getSqliteBackendStateFile,
 } from './doc-paths.js';
 import { INDEX_LEXICON_FILES } from './lexicon.js';
 
@@ -116,8 +114,6 @@ export async function assertDocStorageSafe(
     getBuildMetaFile(),
     getBuildStatusFile(),
     getBuildLockFile(),
-    getJiebaBackendStateFile(),
-    getSqliteBackendStateFile(),
     ...INDEX_LEXICON_FILES.map((name) => path.join(getIndexDir(), name)),
   ]) {
     assertSafeRegularFile(filePath);

@@ -4,7 +4,7 @@
  */
 
 import { buildCliDataDirHintLines } from './cli-data-dir.js';
-import { getDocInitLogPath, getIndexDir } from '../service/doc-index/doc-paths.js';
+import { getIndexDir } from '../service/doc-index/doc-paths.js';
 import {
   assertIndexLexiconReady,
   isLexiconNotFoundError,
@@ -20,40 +20,35 @@ export class NativeDepsError extends Error {
 }
 
 function buildLexiconMissingHint(): string {
-  const logPath = getDocInitLogPath();
   const indexDir = getIndexDir();
   return [
     'Documentation search index is not installed yet.',
     '',
-    ...buildCliDataDirHintLines(logPath),
+    ...buildCliDataDirHintLines(),
     `Index directory: ${indexDir}`,
     '',
     'Try:',
     '  1. Wait a moment and run the docs command again (postinstall may still be running)',
     '  2. Reinstall: npm uninstall -g @deveco/deveco-cli && npm install -g <package.tgz>',
-    '  3. Check the log file above for setup errors',
   ].join('\n');
 }
 
 function buildJiebaInstallHint(): string {
-  const logPath = getDocInitLogPath();
   return [
-    'Chinese tokenizer (@node-rs/jieba) failed to load.',
+    'Chinese tokenizer (jieba-wasm) failed to load.',
     '',
     `Node.js: ${process.version} (required: >=18)`,
     '',
-    ...buildCliDataDirHintLines(logPath),
+    ...buildCliDataDirHintLines(),
     '',
     'Try:',
     '  1. Reinstall: npm uninstall -g @deveco/deveco-cli && npm install -g <package.tgz>',
     '  2. Use Node.js 18 or newer',
-    '  3. Configure npm registry/proxy if your network blocks optional platform packages',
   ].join('\n');
 }
 
 function buildSqliteErrorMessage(detail: string): string {
-  const logPath = getDocInitLogPath();
-  return [detail, '', ...buildCliDataDirHintLines(logPath)].join('\n');
+  return [detail, '', ...buildCliDataDirHintLines()].join('\n');
 }
 
 export async function assertDocNativeDeps(): Promise<void> {

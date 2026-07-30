@@ -3,13 +3,9 @@
  * SPDX-License-Identifier: MIT
  */
 
-import type { Jieba } from '@node-rs/jieba';
-import * as fs from 'fs';
-import * as path from 'path';
+import { createRequire } from 'node:module';
 import { debugLog } from '../../utils/logger.js';
-import { getJiebaBackendStateFile } from './doc-paths.js';
 import { readIndexLexiconFile } from './lexicon.js';
-import { assertSafeRegularFile } from './path-safety.js';
 import {
   DOC_SEARCH_BUDGET_API_SYMBOLS,
   DOC_SEARCH_BUDGET_BODY,
@@ -24,26 +20,17 @@ import {
 } from './constants.js';
 import type { DocumentIndexSource } from './segment-types.js';
 
+interface Jieba {
+  cut(text: string, hmm: boolean): string[];
+  cutForSearch(text: string, hmm: boolean): string[];
+}
+
+const require = createRequire(import.meta.url);
+
 let stopWords: Set<string> | null = null;
 let jiebaInstance: Jieba | null = null;
 let initPromise: Promise<Jieba> | null = null;
 
-function hasPersistedJiebaWasmPreference(): boolean {
-  return fs.existsSync(getJiebaBackendStateFile());
-}
-
-function writeJiebaBackendState(message: string): void {
-  const filePath = getJiebaBackendStateFile();
-  const state = {
-    backend: 'jieba-wasm',
-    reason: 'native-jieba-load-failed',
-    message,
-    createdAt: new Date().toISOString(),
-  };
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  assertSafeRegularFile(filePath);
-  fs.writeFileSync(filePath, JSON.stringify(state, null, 2));
-}
 
 function loadStopWords(): Set<string> {
   if (stopWords) {
@@ -97,47 +84,15 @@ function normalizeTokens(tokens: string[]): string[] {
   return out;
 }
 
-type JiebaCtor = typeof import('@node-rs/jieba').Jieba;
-
-async function buildJiebaInstance(JiebaClass: JiebaCtor): Promise<Jieba> {
-  const { dict } = await import('@node-rs/jieba/dict.js');
-  const jieba = JiebaClass.withDict(dict);
-  const userDict = readIndexLexiconFile('harmonyos-terms.txt');
-  jieba.loadDict(Buffer.from(userDict, 'utf-8'));
-  return jieba;
-}
-
-async function createJiebaNative(): Promise<Jieba> {
-  const { Jieba } = await import('@node-rs/jieba');
-  return buildJiebaInstance(Jieba);
-}
-
-async function createJiebaWasm(): Promise<Jieba> {
-  const { Jieba } = await import('@node-rs/jieba-wasm32-wasi');
-  return buildJiebaInstance(Jieba);
-}
-
 async function createJieba(): Promise<Jieba> {
-  if (hasPersistedJiebaWasmPreference()) {
-    const instance = await createJiebaWasm();
-    return instance;
-  }
-
-  try {
-    const instance = await createJiebaNative();
-    debugLog('doc-index: using @node-rs/jieba backend');
-    return instance;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    writeJiebaBackendState(message);
-    debugLog(
-      `doc-index: @node-rs/jieba unavailable (${message}); falling back to wasm32-wasi`
-    );
-  }
-
-  const instance = await createJiebaWasm();
-  debugLog('doc-index: using @node-rs/jieba-wasm32-wasi backend');
-  return instance;
+  const { cut, cut_for_search, with_dict } = require('jieba-wasm') as typeof import('jieba-wasm');
+  const userDict = readIndexLexiconFile('harmonyos-terms.txt');
+  with_dict(userDict);
+  debugLog('doc-index: using jieba-wasm backend');
+  return {
+    cut: (text, hmm) => cut(text, hmm),
+    cutForSearch: (text, hmm) => cut_for_search(text, hmm),
+  };
 }
 
 export async function getJieba(): Promise<Jieba> {

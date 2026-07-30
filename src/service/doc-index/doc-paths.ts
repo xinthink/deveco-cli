@@ -35,24 +35,8 @@ export function getSearchDbFile(): string {
   return path.join(getIndexDir(), 'search.db');
 }
 
-export function getSqliteBackendStateFile(): string {
-  return path.join(getIndexDir(), 'sqlite-backend.json');
-}
-
-export function getJiebaBackendStateFile(): string {
-  return path.join(getIndexDir(), 'jieba-backend.json');
-}
-
 export function getIndexTmpDir(): string {
   return path.join(getIndexDir(), '.tmp');
-}
-
-export function getDocInitLogDir(): string {
-  return path.join(getCliDataDir(), 'logs');
-}
-
-export function getDocInitLogPath(): string {
-  return path.join(getDocInitLogDir(), 'doc-init.log');
 }
 
 function getDistDir(currentFilePath: string, currentDir: string): string {
