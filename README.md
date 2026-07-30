@@ -735,14 +735,13 @@ devecocli ui screenshot --device <name|serial> --display <displayId> --path <pat
 | ------------------------ | ------------------------ | ---------- |
 | --device \<name\|serial> | 真机或模拟器名称/序列号；多设备时必填     | 单设备自动选择 |
 | --display \<displayId>   | 目标屏幕 ID，可选                | 默认屏幕     |
-| --path \<path>           | 截图输出路径，可选；目录或父目录必须已存在 | `./screenshot-<timestamp>.png` |
+| --path \<path>           | 必填，文件夹路径或 PNG 文件路径；支持相对于当前目录的路径，目录必须存在且可写，目标文件不能已存在 | 无 |
 
 **示例：**
 
 ```bash
-devecocli ui screenshot --device Phone
 mkdir -p screenshots
-devecocli ui screenshot --device Phone --path ./screenshots/phone.png
+devecocli ui screenshot --device Phone --path ./screenshots
 devecocli ui screenshot --device Phone --display 0 --path ./screenshots/phone.png
 ```
 
@@ -750,6 +749,7 @@ devecocli ui screenshot --device Phone --display 0 --path ./screenshots/phone.pn
 
 - `ui screenshot` 支持真机和模拟器。
 - 仅有一个可用设备时可省略 `--device`，多个设备同时连接时必须指定。
+- `--path` 可以使用相对于当前目录的路径。可以指定已存在的文件夹并自动生成 PNG 文件名，也可以指定完整的 PNG 文件路径；不会自动创建目录或覆盖已有文件。
 - 截图能力统一通过 `ui screenshot` 提供，不放在模拟器场景操作命令中。
 - 截图统一使用 `hdc shell snapshot_display` 和 `hdc file recv` 实现；设置 `DEVECO_CLI_DEBUG=1` 可查看实际执行命令。
 
