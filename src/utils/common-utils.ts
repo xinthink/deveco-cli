@@ -302,9 +302,8 @@ export class CommonUtils {
     inputPath: string,
     projectRoot: string
   ): { contained: boolean; reason?: string } {
-    if (path.isAbsolute(inputPath)) {
-      return { contained: false, reason: `Absolute path is not allowed: ${inputPath}` };
-    }
+    // 绝对路径不再一刀切拒绝：交由 isPathContained（path.resolve 忽略 projectRoot，
+    // isPathEscaping 兜底跨盘/逃逸）判定是否落在工程内，再由末尾 realpath 检查防 symlink 逃逸。
     const initialCheck = CommonUtils.isPathContained(inputPath, projectRoot);
     if (!initialCheck.contained) {
       return initialCheck;

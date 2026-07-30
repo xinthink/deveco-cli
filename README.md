@@ -1219,7 +1219,7 @@ devecocli skills remove --skill skillname --agent agentname  # skillname需替�
 
 ### `serve mcp`
 
-启动本地 `MCP` 服务。智能体配置 `MCP` 服务后，可通过 `MCP` 协议调用 `ArkTS` / `C++` 语法检查工具。不同智能体平台配置 `MCP` 服务的界面不一样，一个智能体平台的配置示例如下。
+启动本地 `MCP` 服务。智能体配置 `MCP` 服务后，可通过 `MCP` 协议调用下方列出的代码分析与语言特性工具。不同智能体平台配置 `MCP` 服务的界面不一样，一个智能体平台的配置示例如下。
 推荐通过 `devecocli init --mcp` 自动配置
 
 ```bash
@@ -1242,6 +1242,88 @@ devecocli skills remove --skill skillname --agent agentname  # skillname需替�
   }
 }
 ```
+
+#### MCP 工具
+
+`deveco-mcp` 服务遵循 [MCP](https://modelcontextprotocol.io) 规范，通过 `tools/list` 暴露工具、由模型经 `tools/call` 调用。每个工具由**名称**、**描述**和 **JSON Schema 入参**定义；返回值为 `content` 文本数组，`isError: true` 表示执行错误。
+
+**工具总览：**
+
+| 工具名 | 用途 | 支持语言 |
+| --- | --- | --- |
+| `check` | 静态语法分析，返回结构化诊断信息 | ArkTS、C/C++ |
+| `hover` | 获取指定位置的悬浮信息（类型、文档） | ArkTS、C/C++ |
+| `definition` | 查找符号定义位置 | ArkTS、C/C++ |
+| `declaration` | 查找符号声明位置（ArkTS 中可能与定义不同） | ArkTS、C/C++ |
+| `references` | 查找符号在全工程中的所有引用 | ArkTS、C/C++ |
+| `implementation` | 查找符号的实现（如接口实现） | ArkTS、C/C++ |
+| `workspaceSymbol` | 按名称在全工程搜索符号 | ArkTS、C/C++ |
+| `documentSymbol` | 获取单文件的符号树（函数、类、变量及范围） | ArkTS、C/C++ |
+| `callHierarchy` | 查询函数调用关系（incoming=调用方，outgoing=被调用方） | ArkTS 双向、C/C++ 仅 incoming |
+| `restart` | 原地重启（重置状态 + 重新 sync/init），不杀进程、客户端不断开；ERROR 态可用 | ArkTS、C/C++（可按 target 单选） |
+
+**可用性说明：**
+
+- `check` 与 `restart` 始终注册；其余 7 个语言特性工具仅在 DevEco Studio 附带标准 LSP 服务入口（`standardIndex/index.js`）时注册，老版本将不暴露这些工具。
+- 所有语言特性工具需项目进入 `READY` 状态（`ohpm install` + `hvigor sync` + LSP 初始化完成）后才可用；未就绪时返回 `please retry in N seconds`，模型可稍后重试。`restart` 例外：它正是用于把 server 从 `ERROR` 态拉回，调用后返回"约 10 秒后重试"，后台异步重置并重新 sync/init。
+- C/C++ 工具需要工程包含 C++ 模块；无 C++ 代码时返回 `No C++ code`。
+- 支持的文件扩展名：ArkTS 为 `.ets`；C/C++ 为 `.c` `.cc` `.cpp` `.cxx` `.c++` `.h` `.hh` `.hpp` `.hxx` `.h++` `.ipp` `.ixx` `.inl` `.inc` `.tpp`。
+- 不属于当前工程的路径会被拒绝。
+
+**入参定义：**
+
+##### `check`
+
+对传入的源文件进行静态语法分析并返回诊断信息，支持 ArkTS 与 C/C++ 在同一次调用中混合传入。
+
+| 参数 | 类型 | 必选 | 说明 |
+| --- | --- | --- | --- |
+| `files` | string[] | 是 | 待检查的源文件路径列表，相对工程根目录，至少 1 个 |
+
+##### `hover` / `definition` / `declaration` / `references` / `implementation`
+
+位置类语言特性，共享同一入参结构。返回该位置符号的类型/文档信息、定义/声明位置、引用列表或实现列表。
+
+| 参数 | 类型 | 必选 | 说明 |
+| --- | --- | --- | --- |
+| `file` | string | 是 | 源文件路径，相对工程根目录，支持 `.ets` 与 C/C++ 扩展名 |
+| `line` | number | 是 | 行号，0-based |
+| `character` | number | 是 | 列号（字符偏移），0-based |
+
+##### `workspaceSymbol`
+
+按名称在全工程搜索符号，无需打开具体文件。
+
+| 参数 | 类型 | 必选 | 说明 |
+| --- | --- | --- | --- |
+| `query` | string | 是 | 符号名称或片段，非空 |
+
+##### `documentSymbol`
+
+获取单个文件的符号树，适合文件概览、结构化拆解和大文件切片。
+
+| 参数 | 类型 | 必选 | 说明 |
+| --- | --- | --- | --- |
+| `file` | string | 是 | 源文件路径，相对工程根目录，支持 `.ets` 与 C/C++ 扩展名 |
+
+##### `callHierarchy`
+
+查询某位置函数的调用关系。
+
+| 参数 | 类型 | 必选 | 说明 |
+| --- | --- | --- | --- |
+| `file` | string | 是 | 源文件路径，相对工程根目录，支持 `.ets` 与 C/C++ 扩展名 |
+| `line` | number | 是 | 行号，0-based |
+| `character` | number | 是 | 列号（字符偏移），0-based |
+| `direction` | enum | 是 | `incoming`=谁调用了该函数；`outgoing`=该函数调用了谁。ArkTS 支持双向，C/C++（clangd）仅 `incoming` |
+
+##### `restart`
+
+原地重启 MCP server：重置双侧状态并重新 sync/init（ohpm install + hvigor sync + compileNative + LSP 握手），不杀进程、客户端连接保持。用于 sync/init 失败导致 server 停在 `ERROR` 态时（免去退出并重开 agent）。fire-and-forget：立即返回"约 10 秒后重试"，重置在后台异步进行。**注意：`restart` 仅在修复根因后用于恢复，不能修复错误的工程配置。若重启后再次失败，说明是持久性配置问题（oh-package.json5/build-profile.json5 无效、ohpm install 或 hvigor sync 失败、SDK 版本不符等），不要循环调用 `restart`，应请用户排查并修复工程后再重试。**
+
+| 参数 | 类型 | 必选 | 说明 |
+| --- | --- | --- | --- |
+| `target` | enum | 否 | 重启哪一侧：`arkts`（ArkTS ace-server）、`cpp`（C++ clangd）、`all`（双侧，默认）。省略等同 `all` |
 
 ### `serve lsp`
 

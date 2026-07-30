@@ -152,10 +152,37 @@ export class DevecoCliMcpServer {
    * - `workspaceSymbol`：全工程符号搜索，无需打开文件，仅 READY 状态可用。
    * - `documentSymbol`：单文件符号树，需 didOpen/didClose，仅 READY 状态可用。
    * - `callHierarchy`：函数调用关系查询（incoming/outgoing），需 didOpen/didClose，仅 READY 状态可用。
+   * - `restart`：原地重启（重置状态 + 重新 sync/init），不杀进程、客户端不断开；ERROR 态可用，可按 target 重启单侧。
    */
   private registerTools(): void {
     this.registerCheckTool();
     this.registerLspFeatureTools();
+    this.registerRestartTool();
+  }
+
+  /** 注册 restart 工具：原地重置状态并重新初始化（不杀进程、客户端连接保持）。 */
+  private registerRestartTool(): void {
+    this.toolRouter.add(
+      {
+        name: 'restart',
+        description:
+          'Restart the MCP server in-place: re-sync the project and re-initialize the LSP, ' +
+          'without dropping the client connection. Use to recover from a stuck/ERROR state ' +
+          'after fixing the root cause, instead of exiting and reopening the agent. ' +
+          'Use target to restart one side only (arkts/cpp) or both (all, default). ' +
+          'Caution: if initialization fails again after a restart, the cause is likely a persistent ' +
+          'project/SDK configuration issue—do not call restart repeatedly; ask the user to fix the project first.',
+        inputSchema: z.object({
+          target: z
+            .enum(['arkts', 'cpp', 'all'])
+            .default('all')
+            .describe(
+              'Which backend to restart: "arkts" (ArkTS ace-server), "cpp" (C++ clangd), or "all" (both, default).',
+            ),
+        }),
+      },
+      async (args: Record<string, unknown>) => this.handleRestartCall(args),
+    );
   }
 
   /** 注册 check 工具（ArkTS + C/C++ 诊断）。 */
@@ -171,7 +198,8 @@ export class DevecoCliMcpServer {
             .array(z.string())
             .min(1)
             .describe(
-              'List of source file paths to check, relative to the project root. ' +
+              'List of source file paths to check, relative to the project root ' +
+                '(absolute paths within the project are also accepted). ' +
                 'Supports ArkTS and C/C++ files in the same call.'
             ),
         }),
@@ -198,7 +226,7 @@ export class DevecoCliMcpServer {
     }
 
     const lspPositionSchema = z.object({
-      file: z.string().describe('Source file path, relative to the project root. Supports .ets (ArkTS) and C/C++ extensions.'),
+      file: z.string().describe('Source file path, relative to the project root (absolute paths within the project are also accepted). Supports .ets (ArkTS) and C/C++ extensions.'),
       line: z.number().describe('Line number (0-based)'),
       character: z.number().describe('Character offset in the line (0-based)'),
     });
@@ -245,7 +273,7 @@ export class DevecoCliMcpServer {
           'Get the symbol tree (functions, classes, variables with ranges) of an ArkTS (.ets) or C/C++ file. ' +
           'Useful for file overview, structured code breakdown, and large file slicing.',
         inputSchema: z.object({
-          file: z.string().describe('Source file path, relative to the project root. Supports .ets and C/C++ extensions.'),
+          file: z.string().describe('Source file path, relative to the project root (absolute paths within the project are also accepted). Supports .ets and C/C++ extensions.'),
         }),
       },
       async (args: Record<string, unknown>) => this.handleDocumentSymbolCall(args)
@@ -262,7 +290,7 @@ export class DevecoCliMcpServer {
           'Use direction "incoming" to find callers, "outgoing" to find callees. ' +
           'ArkTS supports both directions; C/C++ (clangd) supports incoming only.',
         inputSchema: z.object({
-          file: z.string().describe('Source file path, relative to the project root. Supports .ets and C/C++ extensions.'),
+          file: z.string().describe('Source file path, relative to the project root (absolute paths within the project are also accepted). Supports .ets and C/C++ extensions.'),
           line: z.number().describe('Line number (0-based)'),
           character: z.number().describe('Character offset in the line (0-based)'),
           direction: z.enum(['incoming', 'outgoing']).describe('"incoming" = who calls this function, "outgoing" = what this function calls'),
@@ -300,8 +328,8 @@ export class DevecoCliMcpServer {
 
   /**
    * 路径 containment 校验：
-   * - 有 projectPath 时：对每个文件做 isPathContained 检查
-   * - 无 projectPath 时：仅拒绝绝对路径
+   * - 有 projectPath 时：相对路径或工程内绝对路径放行；工程外/跨盘/`..` 穿越/symlink 逃逸拒绝
+   * - 无 projectPath 时：仅拒绝绝对路径（无工程根无法判定归属）
    * 通过返回 null，失败返回错误响应。
    */
   private validateContainment(
@@ -789,8 +817,17 @@ export class DevecoCliMcpServer {
     if (this.initRetryCount >= MAX_INIT_RETRY) {
       mcpLog.error(`Init retry limit reached (${this.initRetryCount}/${MAX_INIT_RETRY}), will not auto-retry`);
       return {
-        content: [{ type: 'text', text: 'Project initialization failed multiple times. Please check project configuration and restart the MCP Server.' }],
-        isError: true
+        content: [
+          {
+            type: 'text',
+            text:
+              `Project initialization failed repeatedly (auto-retry exhausted: ${this.initRetryCount}/${MAX_INIT_RETRY}). ` +
+              'Ask the user to investigate and confirm `ohpm install` + `hvigor` sync succeed manually. ' +
+              'Do NOT call the `restart` tool repeatedly — call it at most once after the user fixes the root cause; ' +
+              'if it fails again, stop retrying and escalate to the user.',
+          },
+        ],
+        isError: true,
       };
     }
     mcpLog.info(`Error check: auto-retrying (${this.initRetryCount}/${MAX_INIT_RETRY})`);
@@ -888,8 +925,17 @@ export class DevecoCliMcpServer {
     if (this.cppInitRetryCount >= MAX_INIT_RETRY) {
       mcpLog.error(`C++ init retry limit reached (${this.cppInitRetryCount}/${MAX_INIT_RETRY}), will not auto-retry`);
       return {
-        content: [{ type: 'text', text: 'C++ project initialization failed multiple times. Please check project configuration and restart the MCP Server.' }],
-        isError: true
+        content: [
+          {
+            type: 'text',
+            text:
+              `C++ project initialization failed repeatedly (auto-retry exhausted: ${this.cppInitRetryCount}/${MAX_INIT_RETRY}). ` +
+              'Ask the user to investigate and confirm `hvigor compileNative` succeeds manually. ' +
+              'Do NOT call the `restart` tool repeatedly — call it at most once after the user fixes the root cause; ' +
+              'if it fails again, stop retrying and escalate to the user.',
+          },
+        ],
+        isError: true,
       };
     }
     mcpLog.info(`C++ error check: auto-retrying (${this.cppInitRetryCount}/${MAX_INIT_RETRY})`);
@@ -927,6 +973,89 @@ export class DevecoCliMcpServer {
       errors.push(text);
     } else {
       infos.push(text);
+    }
+  }
+
+  /**
+   * restart 工具入口：原地重启 server（重置状态 + 重新 sync/init），客户端连接保持。
+   * 按 target 选择重置 ArkTS 侧 / C++ 侧 / 双侧。fire-and-forget，立即返回提示。
+   */
+  private async handleRestartCall(
+    args: Record<string, unknown>,
+  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+    const raw = (args as { target?: unknown }).target;
+    const target: 'arkts' | 'cpp' | 'all' =
+      raw === 'cpp' ? 'cpp' : raw === 'arkts' ? 'arkts' : 'all';
+    this.restartProject(target);
+    const sides = target === 'all' ? 'ArkTS + C++' : target === 'cpp' ? 'C++' : 'ArkTS';
+    return {
+      content: [
+        {
+          type: 'text',
+          text:
+            `MCP server is restarting in-place (${sides}): re-sync project + re-initialize LSP. ` +
+            'Client connection preserved—no need to exit the agent. Please retry tools in ~10 seconds.',
+        },
+      ],
+    };
+  }
+
+  /** 按 target 分流重置对应侧（或双侧）并触发重新初始化。 */
+  private restartProject(target: 'arkts' | 'cpp' | 'all'): void {
+    mcpLog.info(`[restart] resetting tools + state, re-init (target=${target})`);
+    if (target === 'arkts' || target === 'all') {
+      this.restartArkts();
+    }
+    if (target === 'cpp' || target === 'all') {
+      this.restartCpp();
+    }
+  }
+
+  /** 重置 ArkTS 侧工具与状态，触发重新 sync/init（参照 setProjectPath 的 ArkTS 分支）。 */
+  private restartArkts(): void {
+    if (this.arktsCheckTool) {
+      this.arktsCheckTool.shutdown().catch((err) =>
+        mcpLog.warn('Failed to shutdown ArktsCheckTool during restart:', err),
+      );
+      this.arktsCheckTool = null;
+    }
+    this.initRetryCount = 0;
+    this.syncSkippedDueToLock = false;
+    this.syncSkipStartedAt = 0;
+    this.configChangedTriggeredResync = false;
+    if (this.initPromise) {
+      this.needsReinit = true;
+      mcpLog.info('[restart] ArkTS init is running, will reinit after current init completes');
+    } else {
+      this.projectState = ProjectLifecycle.IDLE;
+      this.ensureProjectReady().catch((err) =>
+        mcpLog.warn('Failed to re-init ArkTS project during restart:', err),
+      );
+    }
+  }
+
+  /** 重置 C++ 侧工具与状态，触发重新 compileNative + clangd init（参照 setProjectPath 的 C++ 分支）。 */
+  private restartCpp(): void {
+    this.cppCheckTool = null;
+    this.cppLspTool = null;
+    if (this.cppLspManager) {
+      this.cppLspManager.dispose().catch((err) =>
+        mcpLog.warn('Failed to dispose ClangdLspManager during restart:', err),
+      );
+      this.cppLspManager = null;
+    }
+    this.cppInitRetryCount = 0;
+    this.cppHasNoCppCode = false;
+    this.cppSyncSkippedDueToLock = false;
+    this.cppSyncSkipStartedAt = 0;
+    if (this.cppInitPromise) {
+      this.cppNeedsReinit = true;
+      mcpLog.info('[restart] C++ init is running, will reinit after current init completes');
+    } else {
+      this.cppProjectState = CppLifecycle.IDLE_CPP;
+      this.ensureCppProjectReady().catch((err) =>
+        mcpLog.warn('Failed to re-init C++ project during restart:', err),
+      );
     }
   }
 
