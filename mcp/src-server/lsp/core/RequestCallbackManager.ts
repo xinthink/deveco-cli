@@ -79,8 +79,11 @@ export class RequestCallbackManager {
         this.clearTimeout(key);
         const cb = this.callbacks.get(key);
         if (cb) {
-            cb(method, payload);
-            this.callbacks.delete(key);
+            try {
+                cb(method, payload);
+            } finally {
+                this.callbacks.delete(key);
+            }
         } else {
             const registered = [...this.callbacks.keys()].map((k) => String(k));
             logger.info(
@@ -96,8 +99,11 @@ export class RequestCallbackManager {
         }
         const timeout = setTimeout(() => {
             logger.info(`[RequestCallbackManager] timeout, key=${key}, method=${method}`);
-            onTimeout();
-            this.timeouts.delete(key);
+            try {
+                onTimeout();
+            } finally {
+                this.timeouts.delete(key);
+            }
         }, timeoutMs);
         this.timeouts.set(key, timeout);
     }

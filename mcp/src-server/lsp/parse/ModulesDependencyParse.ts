@@ -8,12 +8,6 @@ import * as fs from 'fs';
 import { ModuleModel } from '../model/ModuleModel.js';
 import { ModuleDependencies } from '../model/ModuleDependencies.js';
 import { ModuleDependencyInfo } from '../model/ModuleDependencyInfo.js';
-
-/** getDependenciesOnly 返回项：在 ModuleDependencies 基础上增加 moduleName */
-export interface DepsOnlyItem extends ModuleDependencies {
-    moduleName?: string;
-}
-
 import { ModuleJsonParam } from '../model/ModuleJsonParam.js';
 import { ModuleModelDependency } from './ModuleModelDependency.js';
 import { PackageJsonParser } from './PackageJsonParser.js';
@@ -25,6 +19,11 @@ import { CommonUtils } from '../../../../src/utils/common-utils.js';
 import { DependencyMapParseResult, DependencyMapParseStatus } from '../constant.js';
 import { isRecord } from '../common/typeGuards.js';
 import { ModuleInfoParse } from './ModuleInfoParse.js';
+
+/** getDependenciesOnly 返回项：在 ModuleDependencies 基础上增加 moduleName */
+export interface DepsOnlyItem extends ModuleDependencies {
+    moduleName?: string;
+}
 
 type DependencyModuleEntry = {
     name: string;

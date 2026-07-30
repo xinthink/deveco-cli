@@ -37,7 +37,8 @@ function parseApiLevel(file: string): number | undefined {
     };
     const level = Number(metadata.apiVersion ?? metadata.data?.apiVersion);
     return Number.isInteger(level) && level >= 17 ? level : undefined;
-  } catch {
+  } catch (e) {
+    debugLog(`[ToolProvider] Failed to parse API level from ${file}: ${e instanceof Error ? e.message : String(e)}`);
     return undefined;
   }
 }

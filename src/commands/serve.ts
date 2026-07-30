@@ -45,7 +45,7 @@ async function startStdioMcpServer(): Promise<void> {
   try {
     await server.start();
   } catch (err) {
-    console.error('Failed to start MCP server:', err);
+    console.error('Failed to start MCP server:', err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
 }
