@@ -1,0 +1,43 @@
+name: Publish Daily Version
+
+on:
+  push:
+    tags:
+      - 'daily/v*Test*'
+
+permissions:
+  repository: read
+
+jobs:
+  publish:
+    name: npm publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: checkout
+      - name: 设置 Node.js
+        uses: setup-node
+        with:
+          node-version: 22
+          cache: 'npm'
+      - name: 配置 npm 镜像
+        run: npm config set registry https://mirrors.huaweicloud.com/repository/npm/
+      - name: 安装依赖
+        run: npm ci
+      - name: Build
+        run: npm run build
+      - name: 下载 docs.zip
+        run: |
+          RELEASE=$(curl -sL 'https://api.gitcode.com/api/v5/repos/openharmony-sig/deveco-cli/releases/tags/assets%2Fdocs' -H 'Accept: application/json')
+          echo "$RELEASE" | jq .
+          DOWNLOAD_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name == "docs.zip" and .type == "attach") | .browser_download_url')
+          curl -fSL -o docs.zip "$DOWNLOAD_URL"
+          ls -l docs.zip
+      - name: 构建索引
+        run: |
+            npm run build:index
+            ls -l index.zip
+      - name: 发布到 npm
+        run: |
+            echo "npm tag: ${{ vars.TEST_NPM_DIST_TAG }}"
+            npm publish --access public --registry https://registry.npmjs.org --tag ${{ vars.TEST_NPM_DIST_TAG }} "--//registry.npmjs.org/:_authToken=${{ secrets.TEST_NPM_TOKEN }}"
