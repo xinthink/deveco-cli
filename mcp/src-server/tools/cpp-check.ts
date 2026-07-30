@@ -11,6 +11,7 @@ import {
   isSupportedCppFile,
   toFileUri,
 } from '../utils/common.js';
+import { CommonUtils } from '../../../src/utils/common-utils.js';
 import { ClangdLspManager } from '../lsp/ClangdLspManager.js';
 import { buildNotReadyResponse, type CppToolResult } from './cpp-lsp-shared.js';
 
@@ -126,12 +127,17 @@ export class CppCheckTool {
 
   /** 把入参里的路径解析为绝对路径，过滤出存在且为 C/C++ 的文件。 */
   private collectValidFiles(files: string[], errors: string[]): string[] {
-    const workspace = this.manager.projectRoot;
+    const workspace = path.resolve(this.manager.projectRoot);
     const valid: string[] = [];
     for (const fileArg of files) {
-      const resolved = path.isAbsolute(fileArg)
-        ? fileArg
-        : path.join(workspace, fileArg);
+      const containment = CommonUtils.isPathContained(fileArg, workspace);
+      if (!containment.contained) {
+        errors.push(`Path traversal detected: ${containment.reason}`);
+        continue;
+      }
+
+      const resolved = path.resolve(path.isAbsolute(fileArg) ? fileArg : path.join(workspace, fileArg));
+
       if (!fs.existsSync(resolved)) {
         errors.push(`File does not exist: ${fileArg}`);
         continue;

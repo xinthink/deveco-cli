@@ -106,7 +106,14 @@ export class HttpClient {
    * @returns 解析后的 JSON 对象
    */
   public parseJson<T>(response: HttpResponse): T {
-    return JSON.parse(response.data) as T;
+    try {
+      return JSON.parse(response.data) as T;
+    } catch (error) {
+      throw new Error(
+        `Failed to parse JSON response: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
+    }
   }
 
   /**

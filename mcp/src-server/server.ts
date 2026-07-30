@@ -43,6 +43,7 @@ enum CppLifecycle {
 
 const MAX_INIT_RETRY = 3;
 const SYNC_SKIP_TIMEOUT_MS = 10 * 60 * 1000;
+const MAX_CHECK_FILES = 100;
 
 /**
  * MCP Server Configuration
@@ -351,6 +352,13 @@ export class DevecoCliMcpServer {
       mcpLog.warn('check tool called with empty files list');
       return {
         content: [{ type: 'text', text: 'No files provided' }],
+        isError: true,
+      };
+    }
+    if (files.length > MAX_CHECK_FILES) {
+      mcpLog.warn(`check tool called with ${files.length} files (max: ${MAX_CHECK_FILES})`);
+      return {
+        content: [{ type: 'text', text: `Too many files: ${files.length}. Maximum allowed is ${MAX_CHECK_FILES}.` }],
         isError: true,
       };
     }

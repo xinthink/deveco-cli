@@ -6,6 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { CommonUtils } from '../../../src/utils/common-utils.js';
 import {
   cleanupOldSiblingDirs,
   detectStandardProtocol,
@@ -829,12 +830,16 @@ export class ArktsCheckTool {
 
   /** 把入参里的相对路径解析为绝对路径，并过滤出存在且后缀为 .ets 的文件。 */
   private collectValidFiles(files: string[], errors: string[]): string[] {
-    const workspacePath = this.projectPath;
+    const workspacePath = path.resolve(this.projectPath);
     const validFiles: string[] = [];
     for (const fileArg of files) {
-      const resolved = path.isAbsolute(fileArg)
-        ? fileArg
-        : path.join(workspacePath, fileArg);
+      const containment = CommonUtils.isPathContained(fileArg, workspacePath);
+      if (!containment.contained) {
+        errors.push(`文件路径越权: ${containment.reason}`);
+        continue;
+      }
+
+      const resolved = path.resolve(path.isAbsolute(fileArg) ? fileArg : path.join(workspacePath, fileArg));
 
       if (!fs.existsSync(resolved)) {
         errors.push(`文件不存在: ${fileArg}`);
