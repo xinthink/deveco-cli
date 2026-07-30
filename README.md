@@ -1222,7 +1222,7 @@ devecocli skills remove --skill skillname --agent agentname  # skillname需替�
 
 ### `signature generate`
 
-自动生成 HarmonyOS 调试签名材料（包括p12密钥库、csr证书请求文件、p7b配置文件、cer证书文件），并将签名配置写入项目的 `build-profile.json5` 中。
+自动生成调试签名材料（包括p12密钥库、csr证书请求文件、p7b配置文件、cer证书文件），并将签名配置写入项目的 `build-profile.json5` 中。
 
 **命令格式：**
 
