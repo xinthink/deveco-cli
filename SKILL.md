@@ -114,7 +114,7 @@ Inspect UI on a connected device. All subcommands accept `--device <name|serial>
 | Subcommand | Description | Key Options |
 |---|---|---|
 | `layout` | Dump ArkUI accessibility layout tree — **visible area only** (on-screen nodes) | `--id <id>`, `--window <windowId>`, `--all-windows`, `--depth <n>` (0=unlimited, 1=root only, 2=root+children), `--format default\|json`, `--mode full\|simplified` |
-| `window list` | List active windows | `--format table\|json`, `--all` (include system windows) |
+| `window list` | List active windows | `--format default\|json`, `--all` (include system windows) |
 | `screenshot` | Capture a screenshot of the device screen | `--display <displayId>`, `--path <path>` (existing directory or PNG file path whose parent exists; default: `./screenshot-<timestamp>.png`) |
 | `click [x] [y]` | Tap at the specified coordinates or node | `--id <id>` (auto-resolves to center), `--window <windowId>` (used with `--id`) |
 | `doubleclick [x] [y]` | Double-tap at the specified coordinates or node | `--id <id>`, `--window <windowId>` |
@@ -130,7 +130,7 @@ Inspect UI on a connected device. All subcommands accept `--device <name|serial>
 - **`swipe` vs `dircfling`**: `swipe` requires exact start/end coordinates and supports `--speed`; `dircfling` only needs a direction (`up/down/left/right`) and uses system default speed (ideal for page/list scrolling).
 - **Text encoding**: Special characters in `text` are Base64-encoded internally to safely pass through device shell.
 - `--format json` pairs well with `jq`.
-- `--mode raw`: full layout tree, no filtering.
+- `--mode full`: full layout tree, no filtering.
 - `--mode simplified` (default): folds meaningless wrapper containers (non-root, no `id`, no text, not interactive) by lifting their surviving children up. `--depth` truncates after folding.
 
 

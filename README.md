@@ -127,6 +127,8 @@ devecocli init --path D:\work\ARKTS\NewData
 | `devecocli run`           | 安装并运行应用                                   |
 | `devecocli device list`   | 查看当前连接设备                                  |
 | `devecocli emulator list` | 查看本地模拟器实例                                 |
+| `devecocli ui layout`    | 导出设备屏幕上的 UI 节点树（布局、坐标、节点 ID）           |
+| `devecocli ui window list` | 查看设备窗口列表（为 `ui layout` / `ui click` 等提供窗口 ID） |
 | `devecocli ui screenshot` | 对真机或模拟器执行 UI 截图                          |
 | `devecocli ui click`      | 点击指定坐标或节点 ID                             |
 | `devecocli ui swipe`      | 自定义滑动（指定起点、终点和速度）                   |
@@ -972,6 +974,78 @@ devecocli ui text "Hello World" 100 200
 devecocli ui text "Hello World" --id search_box
 devecocli ui text "Hello World" --id search_box --window main_window
 ```
+
+### `ui layout`
+
+导出设备屏幕上的 UI 节点树，输出每个节点的类型、节点 ID、坐标边界 `[left,top,right,bottom]`、文本及可交互标志（`clickable` / `longClickable` / `scrollable` / `checkable`）。
+
+**命令格式：**
+
+```bash
+devecocli ui layout --device <name|serial> --id <id> --window <windowId> --all-windows --depth <n> --format <fmt> --mode <full|simplified>
+```
+
+**参数：**
+
+| 参数名 | 说明 |
+| --- | --- |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+| --id \<id> | 节点 ID，筛选树中匹配节点（仅输出匹配节点，不带子节点，强制 JSON）。不可与未筛选的全树输出同时视为列表查询 |
+| --window \<windowId> | 目标窗口 ID，与 `--all-windows` 互斥 |
+| --all-windows | 包含所有窗口，与 `--window` 互斥 |
+| --depth \<n> | 树深度限制，`0`=不限制（默认），`1`=仅根，`2`=根+子节点 |
+| --format | 输出格式，`default` 或 `json`，默认 `default` |
+| --mode | 输出模式：`full`=完整原始树；`simplified`（默认）=折叠无 ID、无文本、无可交互标志的包装节点 |
+
+**示例：**
+
+```bash
+devecocli ui layout
+devecocli ui layout --device Phone
+devecocli ui layout --device Phone --format json
+devecocli ui layout --mode full --depth 2
+devecocli ui layout --id submit_button
+devecocli ui layout --window 15 --format json
+```
+
+**说明：**
+
+- `--mode simplified`（默认）会折叠无 `id`、无 `text`、无任何可交互标志的包装节点，使输出聚焦于有意义的可操作节点；根节点始终保留。`--depth` 在折叠后截断。
+- `--id` 用于按节点 ID 查询，返回所有匹配节点（`children` 置空），常配合 `ui click --id` / `ui text --id` 定位坐标。
+- 节点 `bounds` 为 `[left, top, right, bottom]`，`ui click --id` 等交互命令据此取中心坐标点击。
+- `--window` 的窗口 ID 可通过 `devecocli ui window list` 获取。
+
+### `ui window list`
+
+查看设备上的窗口列表，输出窗口 ID、名称、PID、所属屏幕 ID 及是否聚焦。为 `ui layout --window`、`ui click --window` 等命令提供窗口 ID。
+
+**命令格式：**
+
+```bash
+devecocli ui window list --device <name|serial> --format <fmt> --all
+```
+
+**参数：**
+
+| 参数名 | 说明 |
+| --- | --- |
+| --device \<name\|serial> | 目标设备，多设备时必填 |
+| --format | 输出格式，`default` 或 `json`，默认 `default` |
+| --all | 显示包含系统窗口在内的所有窗口；缺省时仅显示应用窗口（`type === 1`） |
+
+**示例：**
+
+```bash
+devecocli ui window list
+devecocli ui window list --device Phone
+devecocli ui window list --format json
+devecocli ui window list --all
+```
+
+**说明：**
+
+- 聚焦窗口在 `default` 格式下高亮显示。
+- 缺省时仅列出应用窗口；加 `--all` 可查看系统窗口，用于排查多窗口场景。
 
 ### `run`
 
