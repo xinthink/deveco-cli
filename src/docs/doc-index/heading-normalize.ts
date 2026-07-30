@@ -26,7 +26,9 @@ export function stripApiVersionSuffix(symbol: string): string {
   return match[1];
 }
 
-function normalizeFromObjectDesc(displayTitle: string): NormalizedApiHeading | undefined {
+function normalizeFromObjectDesc(
+  displayTitle: string
+): NormalizedApiHeading | undefined {
   const objectMatch = displayTitle.match(OBJECT_DESC_RE);
   if (!objectMatch) {
     return undefined;
@@ -39,7 +41,9 @@ function normalizeFromObjectDesc(displayTitle: string): NormalizedApiHeading | u
   };
 }
 
-function normalizeFromUpperSymbol(displayTitle: string): NormalizedApiHeading | undefined {
+function normalizeFromUpperSymbol(
+  displayTitle: string
+): NormalizedApiHeading | undefined {
   const bare = stripApiVersionSuffix(displayTitle.replace(/\([^)]*\)$/, ''));
   if (/^[A-Z][A-Za-z0-9]*$/.test(bare)) {
     return { displayTitle, symbolName: bare, searchExtras: [bare] };

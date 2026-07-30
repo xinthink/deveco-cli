@@ -5,7 +5,7 @@
  * Eval-tuned named query rules — shared by query-normalizer and catalog-routing.
  */
 
-import type { CatalogName } from '../doc-portal-types.js';
+import type { CatalogName } from '../portal/catalog.js';
 import {
   isOhosModuleQuery,
   shouldReferencesFirstForManagerQuery,
@@ -158,7 +158,10 @@ const NAMED_CONCEPT_BOOST_RULES: NamedConceptBoostRule[] = [
   },
 ];
 
-function applyWeights(boosts: Map<number, number>, weights: CatalogWeight[]): void {
+function applyWeights(
+  boosts: Map<number, number>,
+  weights: CatalogWeight[]
+): void {
   for (const { catalog, multiplier } of weights) {
     const catalogId = CATALOG_NAME_TO_ID[catalog];
     boosts.set(catalogId, (boosts.get(catalogId) ?? 1) * multiplier);
@@ -192,9 +195,14 @@ export function shouldMergeReferencesWithGlobalFallback(
   );
 }
 
-export function inferNamedSearchCatalog(rawQuery: string): CatalogName | undefined {
+export function inferNamedSearchCatalog(
+  rawQuery: string
+): CatalogName | undefined {
   const trimmed = rawQuery.trim();
-  if (isOhosModuleQuery(trimmed) || NAMED_QUERY_RE.pureApiSymbol.test(trimmed)) {
+  if (
+    isOhosModuleQuery(trimmed) ||
+    NAMED_QUERY_RE.pureApiSymbol.test(trimmed)
+  ) {
     return 'harmonyos-references';
   }
   if (isStageModelExactQuery(trimmed)) {

@@ -79,7 +79,7 @@ export const CATALOG_NAMES = [
   'harmonyos-roadmap',
 ] as const;
 
-export type CatalogName = typeof CATALOG_NAMES[number];
+export type CatalogName = (typeof CATALOG_NAMES)[number];
 
 export const CATALOG_TITLES: Record<CatalogName, string> = {
   'harmonyos-guides': '开发指南',

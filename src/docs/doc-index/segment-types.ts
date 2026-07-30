@@ -31,7 +31,6 @@ export interface BuildMeta {
 export type BuildState =
   | 'idle'
   | 'installing'
-  | 'extracting'
   | 'indexing'
   | 'persisting'
   | 'done'

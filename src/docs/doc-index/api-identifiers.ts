@@ -34,7 +34,10 @@ export function escapeFtsToken(token: string): string {
   return `"${token.replace(/"/g, '""')}"`;
 }
 
-export function buildFtsMatch(tokens: string[], operator: 'OR' | 'AND'): string {
+export function buildFtsMatch(
+  tokens: string[],
+  operator: 'OR' | 'AND'
+): string {
   const unique = [...new Set(tokens.filter(Boolean))];
   if (unique.length === 0) {
     return '""';
@@ -61,7 +64,8 @@ export function isOhosModuleQuery(trimmed: string): boolean {
 
 export function isSingleCamelCaseApiQuery(trimmed: string): boolean {
   return (
-    SINGLE_CAMEL_CASE_QUERY_RE.test(trimmed) && trimmed.length >= CAMEL_CASE_MIN_LEN
+    SINGLE_CAMEL_CASE_QUERY_RE.test(trimmed) &&
+    trimmed.length >= CAMEL_CASE_MIN_LEN
   );
 }
 
@@ -132,7 +136,10 @@ export function filterSubsumedTokens(tokens: string[]): string[] {
   });
 }
 
-export function appendSymbolVariants(target: Set<string>, symbol: string): void {
+export function appendSymbolVariants(
+  target: Set<string>,
+  symbol: string
+): void {
   const trimmed = symbol.trim();
   if (!trimmed) {
     return;
@@ -207,13 +214,12 @@ function managerMergeFirstWord(camelCase: string): string | null {
 }
 
 /** Narrow option C: API 参考先搜 + 全库补全（wifi/notification 等 *Manager）。 */
-export function shouldReferencesFirstForManagerQuery(rawQuery: string): boolean {
+export function shouldReferencesFirstForManagerQuery(
+  rawQuery: string
+): boolean {
   const trimmed = rawQuery.trim();
   const split = getManagerSplitApiCompound(trimmed);
-  if (
-    split &&
-    MANAGER_REFERENCE_MERGE_FIRST_WORDS.has(split.first)
-  ) {
+  if (split && MANAGER_REFERENCE_MERGE_FIRST_WORDS.has(split.first)) {
     return true;
   }
   if (isSingleCamelCaseApiQuery(trimmed)) {

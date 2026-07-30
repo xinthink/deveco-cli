@@ -70,7 +70,10 @@ function buildSplitApiPrepared(
   rawQuery: string,
   split: ReturnType<typeof parseSplitApiPhraseQuery>
 ): PreparedQuery {
-  const expandedQuery = expandSynonymsLimited(rawQuery, SYNONYM_EXPAND_MAX_PARTS);
+  const expandedQuery = expandSynonymsLimited(
+    rawQuery,
+    SYNONYM_EXPAND_MAX_PARTS
+  );
   const synonymParts = expandedQuery.split(/\s+/).filter(Boolean);
   const left = [
     split!.first,
@@ -90,7 +93,10 @@ function buildSplitApiPrepared(
   };
 }
 
-function buildSingleApiPrepared(rawQuery: string, trimmed: string): PreparedQuery {
+function buildSingleApiPrepared(
+  rawQuery: string,
+  trimmed: string
+): PreparedQuery {
   const tokens = capTokens(buildSingleApiQueryTokens(trimmed), []);
   return {
     rawQuery,
@@ -101,7 +107,9 @@ function buildSingleApiPrepared(rawQuery: string, trimmed: string): PreparedQuer
   };
 }
 
-export async function prepareSearchQuery(keywords: string[]): Promise<PreparedQuery> {
+export async function prepareSearchQuery(
+  keywords: string[]
+): Promise<PreparedQuery> {
   const rawQuery = normalizeSearchInput(keywords);
   const trimmed = rawQuery.trim();
   const stageOverride = getStageModelPreparedOverride(trimmed);
@@ -124,7 +132,10 @@ export async function prepareSearchQuery(keywords: string[]): Promise<PreparedQu
   }
 
   const conceptPriority = extractNamedConceptTokens(rawQuery);
-  const priorityTokens = [...extractPriorityApiTokens(rawQuery), ...conceptPriority];
+  const priorityTokens = [
+    ...extractPriorityApiTokens(rawQuery),
+    ...conceptPriority,
+  ];
   const skipSynonyms = shouldSkipSynonymExpansion(trimmed);
   const expandedQuery = skipSynonyms
     ? rawQuery

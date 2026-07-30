@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-import type { CatalogName } from '../doc-portal-types.js';
-import type { LocalSearchResult } from '../local-doc-service.js';
+import type { CatalogName } from '../portal/catalog.js';
+import type { LocalSearchResult } from '../service/local-doc-service.js';
 import type { DocumentIndexSource } from './segment-types.js';
 
 export interface SqliteBackend {

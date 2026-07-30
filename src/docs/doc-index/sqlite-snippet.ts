@@ -15,7 +15,16 @@ export interface SnippetOptions {
   excerptTruncated?: boolean;
 }
 
-const WORD_BOUNDARY_CHARS = [' ', '。', '，', '；', '、', '.', '!', '?'] as const;
+const WORD_BOUNDARY_CHARS = [
+  ' ',
+  '。',
+  '，',
+  '；',
+  '、',
+  '.',
+  '!',
+  '?',
+] as const;
 
 function findLastWordBoundary(text: string, minIndex: number): number {
   let best = -1;

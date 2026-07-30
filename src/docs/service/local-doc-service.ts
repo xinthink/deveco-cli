@@ -3,13 +3,13 @@
  * SPDX-License-Identifier: MIT
  */
 
-import type { CatalogName } from './doc-portal-types.js';
-import { awaitDocReady, DocInitializer } from './doc-initializer.js';
-import { readMarkdownFromDocsZip } from './doc-index/docs-zip-reader.js';
+import type { CatalogName } from '../portal/catalog.js';
+import { awaitDocReady, DocInitializer } from '../init/doc-initializer.js';
+import { readMarkdownFromDocsZip } from '../doc-index/docs-zip-reader.js';
 import {
   resetSearchDbCache,
   searchSqliteIndex,
-} from './doc-index/sqlite-index.js';
+} from '../doc-index/sqlite-index.js';
 
 export interface LocalSearchResult {
   title: string;

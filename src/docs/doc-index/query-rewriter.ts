@@ -3,7 +3,11 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { readIndexLexiconFile, readBuildLexiconFile, type IndexLexiconFile } from './lexicon.js';
+import {
+  readIndexLexiconFile,
+  readBuildLexiconFile,
+  type IndexLexiconFile,
+} from './lexicon.js';
 import { sha256Text } from './hash-utils.js';
 
 type SynonymGroups = string[][];
@@ -52,7 +56,11 @@ export function expandSynonymsLimited(query: string, maxParts: number): string {
   const expanded = new Set<string>();
   const limit = Number.isFinite(maxParts) ? maxParts : parts.length;
 
-  for (let index = 0; index < parts.length && expanded.size < limit; index += 1) {
+  for (
+    let index = 0;
+    index < parts.length && expanded.size < limit;
+    index += 1
+  ) {
     const part = parts[index];
     expanded.add(part);
 

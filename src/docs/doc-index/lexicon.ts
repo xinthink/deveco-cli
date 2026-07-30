@@ -22,7 +22,9 @@ export class LexiconNotFoundError extends Error {
   }
 }
 
-export function isLexiconNotFoundError(error: unknown): error is LexiconNotFoundError {
+export function isLexiconNotFoundError(
+  error: unknown
+): error is LexiconNotFoundError {
   return error instanceof LexiconNotFoundError;
 }
 
@@ -67,7 +69,10 @@ export function readIndexLexiconFile(name: IndexLexiconFile): string {
   return fs.readFileSync(filePath, 'utf-8');
 }
 
-export function readBuildLexiconFile(name: IndexLexiconFile, lexiconDir: string): string {
+export function readBuildLexiconFile(
+  name: IndexLexiconFile,
+  lexiconDir: string
+): string {
   return fs.readFileSync(path.join(lexiconDir, name), 'utf-8');
 }
 

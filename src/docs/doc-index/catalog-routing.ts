@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-import type { CatalogName } from '../doc-portal-types.js';
-import { CATALOG_TITLES } from '../doc-portal-types.js';
+import type { CatalogName } from '../portal/catalog.js';
+import { CATALOG_TITLES } from '../portal/catalog.js';
 import { CATALOG_NAME_TO_ID } from './constants.js';
 /** 全库搜索时固定排到结果列表后部（未指定 --catalog 时）。 */
 export const TAIL_SEARCH_CATALOGS = [
@@ -45,9 +45,9 @@ export function orderRowsWithTailCatalogsLast<T extends { catalog_id: number }>(
   return [...head, ...tail];
 }
 
-export function orderLocalResultsWithTailCatalogsLast<T extends { documentId: string }>(
-  results: T[]
-): T[] {
+export function orderLocalResultsWithTailCatalogsLast<
+  T extends { documentId: string },
+>(results: T[]): T[] {
   const head: T[] = [];
   const tail: T[] = [];
   for (const row of results) {
@@ -75,7 +75,11 @@ export interface CatalogRoutingRule {
 export const CATALOG_ROUTING_RULES: CatalogRoutingRule[] = [
   { pattern: /@ohos\./i, catalog: 'harmonyos-references', multiplier: 1.5 },
   { pattern: /@[A-Z][a-zA-Z]+/, catalog: 'harmonyos-guides', multiplier: 1.35 },
-  { pattern: /(如何|怎么|怎样|步骤)/, catalog: 'harmonyos-guides', multiplier: 1.45 },
+  {
+    pattern: /(如何|怎么|怎样|步骤)/,
+    catalog: 'harmonyos-guides',
+    multiplier: 1.45,
+  },
   {
     pattern: /(生命周期|原理|概述|什么是|模型|介绍)/,
     catalog: 'harmonyos-guides',
@@ -135,7 +139,11 @@ function applyQueryShapeHeuristics(
   if (hasPascalApi || hasCamelApi) {
     applyCatalogWeight(boosts, 'harmonyos-references', 1.55);
   }
-  if (/\b[A-Z][a-zA-Z]*(Gesture|Dialog|Sheet|Transition|Recognizer)\b/.test(trimmed)) {
+  if (
+    /\b[A-Z][a-zA-Z]*(Gesture|Dialog|Sheet|Transition|Recognizer)\b/.test(
+      trimmed
+    )
+  ) {
     applyCatalogWeight(boosts, 'harmonyos-references', 1.75);
   }
 }

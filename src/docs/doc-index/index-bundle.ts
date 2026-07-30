@@ -8,7 +8,6 @@ import * as path from 'path';
 import AdmZip from 'adm-zip';
 import {
   findBundledIndexZip,
-  getDocsDir,
   getIndexDir,
   getIndexTmpDir,
 } from './doc-paths.js';
@@ -17,25 +16,20 @@ import { INDEX_LEXICON_FILES } from './lexicon.js';
 import { assertDocStorageSafe } from './path-safety.js';
 import type { BuildMeta } from './segment-types.js';
 
-const BUNDLE_FILES = ['search.db', 'build-meta.json', ...INDEX_LEXICON_FILES] as const;
-const LEGACY_INDEX_FILES = ['corpus.json', 'corpus-offsets.json', 'orama.dpack'];
+const BUNDLE_FILES = [
+  'search.db',
+  'build-meta.json',
+  ...INDEX_LEXICON_FILES,
+] as const;
+const LEGACY_INDEX_FILES = [
+  'corpus.json',
+  'corpus-offsets.json',
+  'orama.dpack',
+];
 
 async function cleanLegacyIndexArtifacts(indexDir: string): Promise<void> {
   for (const name of LEGACY_INDEX_FILES) {
     await fs.promises.rm(path.join(indexDir, name), { force: true });
-  }
-}
-
-async function cleanExtractedDocsTree(docsDir: string): Promise<void> {
-  const entries = await fs.promises.readdir(docsDir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.name === '.index') {
-      continue;
-    }
-    await fs.promises.rm(path.join(docsDir, entry.name), {
-      recursive: true,
-      force: true,
-    });
   }
 }
 
@@ -125,8 +119,6 @@ export async function installBundledIndex(
   }
 
   await commitBundleFiles(tmpDir);
-  await fs.promises.mkdir(getDocsDir(), { recursive: true });
-  await cleanExtractedDocsTree(getDocsDir());
   return installedMeta;
 }
 
