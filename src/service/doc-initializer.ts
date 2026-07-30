@@ -4,8 +4,6 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
-import AdmZip from 'adm-zip';
 import lockfile from 'proper-lockfile';
 import ora, { type Ora } from 'ora';
 import {
@@ -28,25 +26,16 @@ import {
 import {
   findDocsZip,
   getBuildLockFile,
-  getDocInitLogPath,
   getIndexDir,
-  getIndexTmpDir,
 } from './doc-index/doc-paths.js';
 import { sha256File } from './doc-index/hash-utils.js';
 import {
   assertDocStorageSafe,
   isDocStorageError,
 } from './doc-index/path-safety.js';
-import {
-  buildSearchIndex,
-  createTempDocsExtractDir,
-  normalizeExtractedLayout,
-} from './doc-index/index-builder.js';
-import { getSynonymsHash, getTermsHash } from './doc-index/query-rewriter.js';
 import { resetSearchDbCache } from './doc-index/sqlite-index.js';
 import type { BuildMeta } from './doc-index/segment-types.js';
 import { assertDocNativeDeps } from '../utils/native-deps.js';
-import { isPathInside } from '../utils/path-containment.js';
 
 export class DocNotReadyError extends Error {
   constructor(
@@ -71,54 +60,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function appendLog(message: string): Promise<void> {
-  const logPath = getDocInitLogPath();
-  await fs.promises.mkdir(path.dirname(logPath), { recursive: true });
-  await fs.promises.appendFile(logPath, `${new Date().toISOString()} ${message}\n`);
-}
-
-async function extractDocsZipToDir(docsDir: string): Promise<void> {
-  const zipPath = findDocsZip();
-  if (!zipPath) {
-    throw new Error('docs.zip not found');
-  }
-
-  await fs.promises.rm(docsDir, { recursive: true, force: true });
-  await fs.promises.mkdir(docsDir, { recursive: true });
-
-  const resolvedDocsDir = path.resolve(docsDir);
-  const zip = new AdmZip(zipPath);
-  for (const entry of zip.getEntries()) {
-    const dest = path.resolve(resolvedDocsDir, entry.entryName);
-    if (!isPathInside(dest, resolvedDocsDir)) {
-      throw new Error(`Unsafe docs.zip entry path: ${entry.entryName}`);
-    }
-    if (entry.isDirectory) {
-      await fs.promises.mkdir(dest, { recursive: true });
-      continue;
-    }
-    await fs.promises.mkdir(path.dirname(dest), { recursive: true });
-    await fs.promises.writeFile(dest, entry.getData());
-  }
-  await normalizeExtractedLayout(docsDir);
-}
-
-async function commitTmpIndex(): Promise<void> {
-  await assertDocStorageSafe({ mode: 'write' });
-  const indexDir = getIndexDir();
-  const tmpDir = getIndexTmpDir();
-  const files = await fs.promises.readdir(tmpDir);
-
-  for (const file of files) {
-    const target = path.join(indexDir, file);
-    await fs.promises.rm(target, { force: true });
-    await fs.promises.rename(path.join(tmpDir, file), target);
-  }
-
-  await fs.promises.rm(tmpDir, { recursive: true, force: true });
-  await fs.promises.rm(path.join(indexDir, 'orama.dpack'), { force: true });
-}
-
 async function attemptBundledInstall(
   docsZipSha256: string,
   spinner: Ora | undefined,
@@ -138,7 +79,7 @@ async function attemptBundledInstall(
   }
 }
 
-/** Tier 1: install bundle. Tier 2: clean scratch and retry. Returns false → local rebuild. */
+/** Tier 1: install bundle. Tier 2: clean scratch and retry. Returns false → caller surfaces reinstall hint. */
 async function runBundledInstallPath(
   docsZipSha256: string,
   spinner?: Ora
@@ -172,65 +113,8 @@ async function runBundledInstallPath(
     if (isDocStorageError(error)) {
       throw error;
     }
-    const message = error instanceof Error ? error.message : String(error);
-    await appendLog(
-      `Bundled index install failed; falling back to local rebuild: ${message}`
-    );
     return false;
   }
-}
-
-async function runLocalIndexBuild(
-  options: DocInitOptions,
-  docsZipSha256: string,
-  spinner?: Ora
-): Promise<void> {
-  const tmpDir = getIndexTmpDir();
-  const docsExtractDir = await createTempDocsExtractDir();
-  await fs.promises.mkdir(getIndexDir(), { recursive: true });
-  await fs.promises.rm(tmpDir, { recursive: true, force: true });
-
-  spinner?.start('Building search index…');
-  await updateBuildStatus({
-    state: 'indexing',
-    phase: 2,
-    phaseLabel: 'Building search index',
-    message: 'Building search index…',
-  });
-
-  try {
-    await extractDocsZipToDir(docsExtractDir);
-    await buildSearchIndex({
-      docsDir: docsExtractDir,
-      tmpDir,
-      docsZipSha256,
-      termsHash: getTermsHash(),
-      synonymsHash: getSynonymsHash(),
-      builtBy: options.builtBy ?? 'doc-init',
-      onProgress: async (progress) => {
-        if (spinner) {
-          spinner.text = progress.message;
-        }
-        await updateBuildStatus({
-          state: 'indexing',
-          current: progress.current,
-          total: progress.total,
-          message: progress.message,
-        });
-      },
-    });
-  } finally {
-    await fs.promises.rm(docsExtractDir, { recursive: true, force: true });
-  }
-
-  await updateBuildStatus({
-    state: 'persisting',
-    phase: 3,
-    phaseLabel: 'Persisting index',
-    message: 'Persisting index…',
-  });
-  await commitTmpIndex();
-  resetSearchDbCache();
 }
 
 async function finalizeSuccess(spinner?: Ora): Promise<void> {
@@ -260,7 +144,6 @@ async function finalizeUpToDate(spinner?: Ora): Promise<void> {
 async function handleInitError(error: unknown, spinner?: Ora): Promise<never> {
   const message = error instanceof Error ? error.message : String(error);
   await updateBuildStatus({ state: 'error', error: message });
-  await appendLog(`ERROR: ${message}`);
   spinner?.fail(message);
   throw error;
 }
@@ -304,15 +187,13 @@ async function runInitPipeline(
     return;
   }
 
-  const canUseBundled =
-    !options.force && isBundledIndexUsable(docsZipSha256);
-
-  if (canUseBundled && (await runBundledInstallPath(docsZipSha256, spinner))) {
+  if (isBundledIndexUsable(docsZipSha256) && (await runBundledInstallPath(docsZipSha256, spinner))) {
     return;
   }
 
-  await runLocalIndexBuild(options, docsZipSha256, spinner);
-  await finalizeSuccess(spinner);
+  throw new Error(
+    'Documentation index bundle is unavailable or corrupted. Reinstall the package with: npm uninstall -g @deveco/deveco-cli && npm install -g <package.tgz>'
+  );
 }
 
 export class DocInitializer {

@@ -19,7 +19,6 @@ export default defineConfig({
   splitting: false,
   external: [
     'jieba-wasm',
-    'better-sqlite3',
     '@sqlite.org/sqlite-wasm',
     'yauzl',
   ],

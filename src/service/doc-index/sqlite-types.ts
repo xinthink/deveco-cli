@@ -7,10 +7,7 @@ import type { CatalogName } from '../doc-portal-types.js';
 import type { LocalSearchResult } from '../local-doc-service.js';
 import type { DocumentIndexSource } from './segment-types.js';
 
-export type SqliteBackendKind = 'better-sqlite3' | 'sqlite-wasm';
-
 export interface SqliteBackend {
-  readonly kind: SqliteBackendKind;
   resetCache(): void;
   buildSearchIndex(
     dbPath: string,

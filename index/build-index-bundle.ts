@@ -11,7 +11,6 @@ import {
   createTempDocsExtractDir,
   normalizeExtractedLayout,
 } from '../src/service/doc-index/index-builder.js';
-import { findDocsZip } from '../src/service/doc-index/doc-paths.js';
 import { sha256File } from '../src/service/doc-index/hash-utils.js';
 import { INDEX_DB_MAX_BYTES } from '../src/service/doc-index/constants.js';
 import {
@@ -19,15 +18,9 @@ import {
   getTermsHash,
 } from '../src/service/doc-index/query-rewriter.js';
 import { INDEX_LEXICON_FILES } from '../src/service/doc-index/lexicon.js';
-import { LEXICON_DIR, PROJECT_ROOT, resolveDocsDir } from './lib/paths.js';
+import { DOCS_ZIP, LEXICON_DIR, PROJECT_ROOT } from './lib/paths.js';
 
 async function resolveDocsSource(docsZipPath: string): Promise<{ docsExtractDir: string; cleanup: () => Promise<void> }> {
-  const localDocsDir = resolveDocsDir();
-  if (localDocsDir) {
-    console.log(`Using local docs dir: ${localDocsDir}`);
-    return { docsExtractDir: localDocsDir, cleanup: async () => {} };
-  }
-
   const docsExtractDir = await createTempDocsExtractDir();
 
   console.log('Extracting docs.zip to temp dir…');
@@ -88,7 +81,7 @@ async function packIndexZip(outputDir: string, indexZipPath: string, searchDbPat
 }
 
 async function main(): Promise<void> {
-  const docsZipPath = findDocsZip() ?? path.join(PROJECT_ROOT, 'docs.zip');
+  const docsZipPath = DOCS_ZIP;
   if (!fs.existsSync(docsZipPath)) {
     throw new Error(`docs.zip not found at ${docsZipPath}`);
   }

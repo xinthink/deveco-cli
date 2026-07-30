@@ -56,7 +56,7 @@ src/
 
 mcp/src-server/               # Bundled stdio MCP server (ArkTS/C++ syntax checking via LSP)
 templates/application/        # Project scaffold copied by `devecocli create`
-scripts/                      # postinstall + better-sqlite3 vendoring
+scripts/                      # postinstall + docs index bootstrap
 index/                        # Source for `npm run build:index` (regenerates index.zip)
 ```
 

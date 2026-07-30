@@ -189,7 +189,6 @@ async function searchWasmIndex(
 export async function createSqliteWasmBackend(): Promise<SqliteBackend> {
   await getSqliteModule();
   return {
-    kind: 'sqlite-wasm',
     resetCache: resetWasmCache,
     buildSearchIndex: buildWasmIndex,
     searchIndex: (_keywords, catalog, limit, dbPath, match, query, rawQuery) =>
