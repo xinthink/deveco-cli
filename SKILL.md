@@ -58,9 +58,9 @@ Manage local emulator instances and system images.
 ### `devecocli ui`
 Inspect UI on a connected physical device or running emulator.
 - `screenshot`: Capture a screenshot from a physical device or running emulator. `--device <name|serial>` is optional when exactly one device is connected, and required when multiple devices are connected.
-- Optional: `--display <displayId>`, `--path <path>` (existing directory or PNG file path whose parent exists; create the directory first; default: `./screenshot-<timestamp>.png`).
+- Optional: `--display <displayId>`. Required: `--path <path>` (existing directory or PNG file path, including paths relative to the current directory; writable destination; no overwrite).
 - Implementation uses `hdc shell snapshot_display` and `hdc file recv`; set `DEVECO_CLI_DEBUG=1` to inspect the actual `hdc` commands.
-*Ex*: `mkdir -p screenshots && devecocli ui screenshot --device Phone --path ./screenshots/phone.png`
+*Ex*: `devecocli ui screenshot --device Phone --path ./screenshots/phone.png`
 
 ### `devecocli docs`
 Search/read local HarmonyOS docs.
@@ -123,7 +123,7 @@ Inspect UI on a connected device. All subcommands accept `--device <name|serial>
 |---|---|---|
 | `layout` | Dump ArkUI accessibility layout tree — **visible area only** (on-screen nodes) | `--id <id>`, `--window <windowId>`, `--all-windows`, `--depth <n>` (0=unlimited, 1=root only, 2=root+children), `--format default\|json`, `--mode full\|simplified` |
 | `window list` | List active windows | `--format default\|json`, `--all` (include system windows) |
-| `screenshot` | Capture a screenshot of the device screen | `--display <displayId>`, `--path <path>` (existing directory or PNG file path whose parent exists; default: `./screenshot-<timestamp>.png`) |
+| `screenshot` | Capture a screenshot of the device screen | `--display <displayId>`, required `--path <path>` (existing directory or PNG file path; relative paths supported; writable destination; no overwrite) |
 | `click [x] [y]` | Tap at the specified coordinates or node | `--id <id>` (auto-resolves to center), `--window <windowId>` (used with `--id`) |
 | `doubleclick [x] [y]` | Double-tap at the specified coordinates or node | `--id <id>`, `--window <windowId>` |
 | `longclick [x] [y]` | Long-press at the specified coordinates or node | `--id <id>`, `--window <windowId>` |

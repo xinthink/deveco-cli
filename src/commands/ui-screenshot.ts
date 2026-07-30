@@ -6,10 +6,10 @@ import { Command } from 'commander';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { execa } from 'execa';
-import { green, red } from 'colorette';
-import { DeviceManager } from '../service/device-manager.js';
+import { green } from 'colorette';
 import { ToolProvider } from '../toolchain/index.js';
+import { resolveDeviceSerial } from '../utils/device-selector.js';
+import { runHdcWithRetry, type HdcCommandResult } from '../utils/hdc-param.js';
 import { debugLog } from '../utils/logger.js';
 
 interface ScreenshotOptions {
@@ -26,39 +26,99 @@ interface ScreenshotContext {
   display?: string;
 }
 
-interface HdcResult {
-  stdout: string;
-  stderr: string;
+interface FileSystemError extends Error {
+  code?: string;
 }
 
 function timestamp(): string {
   return String(Date.now());
 }
 
-function resolveLocalPath(input: string | undefined): string {
-  if (!input?.trim()) {
-    return path.resolve(`screenshot-${timestamp()}.png`);
-  }
-  const resolved = path.resolve(input.trim());
-  if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
-    return path.join(resolved, `screenshot-${timestamp()}.png`);
-  }
-  if (path.extname(resolved).toLowerCase() !== '.png') {
-    if (!fs.existsSync(resolved)) {
-      throw new Error(`Screenshot directory does not exist: ${resolved}`);
+function assertWritableDirectory(parent: string): void {
+  let parentStat: fs.Stats;
+  try {
+    parentStat = fs.statSync(parent);
+  } catch (error) {
+    const code = (error as FileSystemError).code;
+    if (code === 'ENOENT') {
+      throw new Error(`Screenshot directory does not exist: ${parent}`, {
+        cause: error,
+      });
     }
-    if (!fs.statSync(resolved).isDirectory()) {
-      throw new Error(`Screenshot path is not a directory: ${resolved}`);
+    if (code === 'EACCES' || code === 'EPERM') {
+      throw new Error(`Screenshot directory is not writable: ${parent}`, {
+        cause: error,
+      });
     }
-    return path.join(resolved, `screenshot-${timestamp()}.png`);
+    throw new Error(
+      `Invalid screenshot path: ${(error as Error).message}${code ? ` (${code})` : ''}`,
+      { cause: error }
+    );
   }
-  const parent = path.dirname(resolved);
-  if (!fs.existsSync(parent)) {
-    throw new Error(`Screenshot directory does not exist: ${parent}`);
-  }
-  if (!fs.statSync(parent).isDirectory()) {
+  if (!parentStat.isDirectory()) {
     throw new Error(`Screenshot parent path is not a directory: ${parent}`);
   }
+
+  try {
+    fs.accessSync(parent, fs.constants.W_OK | fs.constants.X_OK);
+  } catch (error) {
+    throw new Error(`Screenshot directory is not writable: ${parent}`, {
+      cause: error,
+    });
+  }
+}
+
+function assertDestinationAvailable(resolved: string, parent: string): void {
+  try {
+    fs.lstatSync(resolved);
+    throw new Error(`Screenshot file already exists: ${resolved}`);
+  } catch (error) {
+    const code = (error as FileSystemError).code;
+    if (code === 'ENOENT') {
+      return;
+    }
+    if (code === 'EACCES' || code === 'EPERM') {
+      throw new Error(`Screenshot directory is not writable: ${parent}`, {
+        cause: error,
+      });
+    }
+    if (error instanceof Error && !code) {
+      throw error;
+    }
+    throw new Error(
+      `Invalid screenshot path: ${(error as Error).message}${code ? ` (${code})` : ''}`,
+      { cause: error }
+    );
+  }
+}
+
+function resolveLocalPath(input: string | undefined): string {
+  if (!input?.trim()) {
+    throw new Error('--path is required.');
+  }
+  const value = input.trim();
+  const resolved = path.resolve(value);
+  try {
+    if (fs.statSync(resolved).isDirectory()) {
+      assertWritableDirectory(resolved);
+      const destination = path.join(resolved, `screenshot-${timestamp()}.png`);
+      assertDestinationAvailable(destination, resolved);
+      return destination;
+    }
+  } catch (error) {
+    const code = (error as FileSystemError).code;
+    if (code !== 'ENOENT') {
+      throw error;
+    }
+  }
+  if (path.extname(resolved).toLowerCase() !== '.png') {
+    throw new Error(
+      `Screenshot path must be an existing directory or a PNG file: ${resolved}`
+    );
+  }
+  const parent = path.dirname(resolved);
+  assertWritableDirectory(parent);
+  assertDestinationAvailable(resolved, parent);
   return resolved;
 }
 
@@ -77,89 +137,6 @@ function assertPngFile(filePath: string): void {
   if (!signature.equals(pngSignature)) {
     throw new Error(`Screenshot file is not a valid PNG: ${filePath}`);
   }
-}
-
-async function runHdc(
-  hdcPath: string,
-  args: string[],
-  cwd?: string
-): Promise<string> {
-  debugLog(`Executing: ${hdcPath} ${args.join(' ')}`);
-  const { stdout } = await execa(hdcPath, args, {
-    env: { ...process.env },
-    cwd,
-  });
-  return stdout;
-}
-
-async function runHdcResult(
-  hdcPath: string,
-  args: string[],
-  cwd?: string
-): Promise<HdcResult> {
-  debugLog(`Executing: ${hdcPath} ${args.join(' ')}`);
-  const { stdout, stderr } = await execa(hdcPath, args, {
-    env: { ...process.env },
-    cwd,
-  });
-  return { stdout, stderr };
-}
-
-async function tryRunHdc(
-  hdcPath: string,
-  args: string[],
-  cwd?: string
-): Promise<string> {
-  try {
-    return await runHdc(hdcPath, args, cwd);
-  } catch (error) {
-    return (error as { stdout?: string; stderr?: string }).stdout ?? '';
-  }
-}
-
-async function resolveTargetSerial(
-  toolProvider: ToolProvider,
-  selector: string | undefined
-): Promise<string> {
-  const manager = DeviceManager.from(toolProvider);
-  const devices = await manager.listDevices();
-  if (devices.length === 0) {
-    throw new Error(
-      'No active devices found. Start an emulator or connect a physical device.'
-    );
-  }
-  if (selector === undefined) {
-    if (devices.length === 1) {
-      return devices[0].serial;
-    }
-    const available = await formatAvailableDevices(manager, devices);
-    throw new Error(
-      'Multiple devices found. Specify a target device using `--device <name|serial>`.\n' +
-        `Available devices:\n${available}`
-    );
-  }
-  const target = selector.trim();
-  if (!target) {
-    throw new Error('--device must not be empty.');
-  }
-  const info = await manager.getDeviceInfo(devices, target);
-  if (!info) {
-    throw new Error(`Device "${target}" not found.`);
-  }
-  return info.serial;
-}
-
-async function formatAvailableDevices(
-  manager: DeviceManager,
-  devices: { serial: string }[]
-): Promise<string> {
-  const rows = await Promise.all(
-    devices.map(async (device) => {
-      const name = await manager.getDeviceName(device.serial);
-      return `  - ${name} (${device.serial})`;
-    })
-  );
-  return rows.join('\n');
 }
 
 function buildSnapshotArgs(ctx: ScreenshotContext, type?: string): string[] {
@@ -186,7 +163,16 @@ function moveScreenshotToDestination(
   sourcePath: string,
   localPath: string
 ): void {
-  fs.copyFileSync(sourcePath, localPath);
+  try {
+    fs.copyFileSync(sourcePath, localPath, fs.constants.COPYFILE_EXCL);
+  } catch (error) {
+    if ((error as FileSystemError).code === 'EEXIST') {
+      throw new Error(`Screenshot file already exists: ${localPath}`, {
+        cause: error,
+      });
+    }
+    throw error;
+  }
   assertPngFile(localPath);
 }
 
@@ -203,36 +189,33 @@ function parseRemoteFileSize(output: string): number | undefined {
 async function getRemoteScreenshotSize(
   ctx: ScreenshotContext
 ): Promise<number | undefined> {
-  const output = await tryRunHdc(ctx.hdcPath, [
-    '-t',
-    ctx.serial,
-    'shell',
-    'ls',
-    '-l',
-    ctx.remotePath,
-  ]);
-  return parseRemoteFileSize(output);
+  const args = ['-t', ctx.serial, 'shell', 'ls', '-l', ctx.remotePath];
+  debugLog(`Executing: ${ctx.hdcPath} ${args.join(' ')}`);
+  const result = await runHdcWithRetry(ctx.hdcPath, args);
+  return result.exitCode === 0 ? parseRemoteFileSize(result.stdout) : undefined;
 }
 
-function formatHdcOutput(result: HdcResult): string {
+function formatHdcOutput(result: HdcCommandResult): string {
   return [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+}
+
+function isInvalidDisplayOutput(output: string): boolean {
+  const invalid = String.raw`invalid|not found|not exist|does not exist|out of range|unsupported`;
+  return (
+    new RegExp(String.raw`display(?:\s*id)?.*(?:${invalid})`, 'is').test(
+      output
+    ) ||
+    new RegExp(String.raw`(?:${invalid}).*display(?:\s*id)?`, 'is').test(output)
+  );
 }
 
 async function tryCreateRemoteScreenshot(
   ctx: ScreenshotContext,
   type?: string
 ): Promise<{ created: boolean; output: string }> {
-  let result: HdcResult;
-  try {
-    result = await runHdcResult(ctx.hdcPath, buildSnapshotArgs(ctx, type));
-  } catch (error) {
-    result = {
-      stdout: (error as { stdout?: string }).stdout ?? '',
-      stderr:
-        (error as { stderr?: string; message?: string }).stderr ??
-        (error as Error).message,
-    };
-  }
+  const args = buildSnapshotArgs(ctx, type);
+  debugLog(`Executing: ${ctx.hdcPath} ${args.join(' ')}`);
+  const result = await runHdcWithRetry(ctx.hdcPath, args);
   const size = await getRemoteScreenshotSize(ctx);
   return {
     created: size !== undefined && size > 0,
@@ -241,19 +224,24 @@ async function tryCreateRemoteScreenshot(
 }
 
 async function createRemoteScreenshot(ctx: ScreenshotContext): Promise<void> {
-  const outputs: string[] = [];
+  let output = '';
   for (const type of [undefined, 'png']) {
     const result = await tryCreateRemoteScreenshot(ctx, type);
     if (result.created) {
       return;
     }
+    if (ctx.display !== undefined && isInvalidDisplayOutput(result.output)) {
+      throw new Error(
+        `Screenshot was not created on device: ${ctx.remotePath}.\nsnapshot_display output:\n${result.output}`
+      );
+    }
     if (result.output) {
-      outputs.push(result.output);
+      output = result.output;
     }
   }
   throw new Error(
-    outputs.length > 0
-      ? `Screenshot was not created on device: ${ctx.remotePath}. snapshot_display output: ${outputs.join('\n')}`
+    output
+      ? `Screenshot was not created on device: ${ctx.remotePath}.\nsnapshot_display output:\n${output}`
       : `Screenshot was not created on device: ${ctx.remotePath}.`
   );
 }
@@ -305,17 +293,15 @@ function findReceivedScreenshot(
 async function tryReceiveScreenshot(
   ctx: ScreenshotContext,
   receiveDir: string,
-  localTarget: string,
-  cwd?: string
+  localTarget: string
 ): Promise<string | undefined> {
-  try {
-    await runHdc(
-      ctx.hdcPath,
-      ['-t', ctx.serial, 'file', 'recv', ctx.remotePath, localTarget],
-      cwd
+  const args = ['-t', ctx.serial, 'file', 'recv', ctx.remotePath, localTarget];
+  debugLog(`Executing: ${ctx.hdcPath} ${args.join(' ')}`);
+  const result = await runHdcWithRetry(ctx.hdcPath, args);
+  if (result.exitCode !== 0) {
+    debugLog(
+      `hdc file recv failed: ${result.stderr || result.stdout || `exit code ${result.exitCode}`}`
     );
-  } catch (error) {
-    debugLog(`hdc file recv failed: ${(error as Error).message}`);
   }
   return findReceivedScreenshot(receiveDir, ctx.remotePath);
 }
@@ -326,7 +312,11 @@ async function receiveScreenshotFile(ctx: ScreenshotContext): Promise<void> {
   );
   try {
     const receivedPath =
-      (await tryReceiveScreenshot(ctx, receiveDir, '.', receiveDir)) ??
+      (await tryReceiveScreenshot(
+        ctx,
+        receiveDir,
+        path.join(receiveDir, path.basename(ctx.remotePath))
+      )) ??
       (await tryReceiveScreenshot(ctx, receiveDir, receiveDir)) ??
       (await tryReceiveScreenshot(
         ctx,
@@ -343,14 +333,9 @@ async function receiveScreenshotFile(ctx: ScreenshotContext): Promise<void> {
 }
 
 async function removeRemoteScreenshot(ctx: ScreenshotContext): Promise<void> {
-  await runHdc(ctx.hdcPath, [
-    '-t',
-    ctx.serial,
-    'shell',
-    'rm',
-    '-f',
-    ctx.remotePath,
-  ]).catch(() => undefined);
+  const args = ['-t', ctx.serial, 'shell', 'rm', '-f', ctx.remotePath];
+  debugLog(`Executing: ${ctx.hdcPath} ${args.join(' ')}`);
+  await runHdcWithRetry(ctx.hdcPath, args);
 }
 
 async function captureScreenshot(ctx: ScreenshotContext): Promise<void> {
@@ -363,29 +348,23 @@ async function captureScreenshot(ctx: ScreenshotContext): Promise<void> {
 }
 
 async function screenshotAction(options: ScreenshotOptions): Promise<void> {
-  try {
-    const display =
-      options.display !== undefined
-        ? parseDisplayId(options.display)
-        : undefined;
-    const toolProvider = await ToolProvider.new();
-    const serial = await resolveTargetSerial(toolProvider, options.device);
-    const localPath = resolveLocalPath(options.path);
-    const remotePath = `/data/local/tmp/devecocli-${randomUUID()}.png`;
-    await captureScreenshot({
-      hdcPath: toolProvider.hdcPath,
-      serial,
-      localPath,
-      remotePath,
-      display,
-    });
-    console.log(green(`Screenshot saved to ${localPath}`));
-  } catch (error) {
-    console.error(
-      red(`Failed to capture screenshot: ${(error as Error).message}`)
-    );
-    process.exit(1);
+  const localPath = resolveLocalPath(options.path);
+  const display =
+    options.display !== undefined ? parseDisplayId(options.display) : undefined;
+  if (options.device !== undefined && !options.device.trim()) {
+    throw new Error('--device must not be empty.');
   }
+  const toolProvider = await ToolProvider.new();
+  const serial = await resolveDeviceSerial(toolProvider, options.device);
+  const remotePath = `/data/local/tmp/devecocli-${randomUUID()}.png`;
+  await captureScreenshot({
+    hdcPath: toolProvider.hdcPath,
+    serial,
+    localPath,
+    remotePath,
+    display,
+  });
+  console.log(green(`Screenshot saved to ${localPath}`));
 }
 
 export const screenshotCommand = new Command('screenshot')
@@ -397,6 +376,6 @@ export const screenshotCommand = new Command('screenshot')
   .option('--display <displayId>', 'Target display id; omit for default screen')
   .option(
     '--path <path>',
-    'Save path: directory or full file path with name; PNG only (default: ./screenshot-<timestamp>.png)'
+    'Required directory or PNG file path; destination must be writable'
   )
   .action(screenshotAction);
