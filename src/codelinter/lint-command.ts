@@ -21,8 +21,8 @@ import type {
   CodelinterReport,
   CodelinterReportFormat,
 } from './types.js';
-/** 先校验十进制数字形式，是否大于零由 parseLimit 继续判断。 */
-const POSITIVE_INTEGER_PATTERN = /^\d+$/;
+/** 先校验有符号十进制整数形式，是否大于零由 parseLimit 继续判断。 */
+const INTEGER_PATTERN = /^-?\d+$/;
 
 interface LintOptions {
   fix?: boolean;
@@ -115,7 +115,7 @@ function parseLintPath(value: string): string {
 
 function parseLimit(value: string): number {
   assertSafeTextValue(value, 'limit');
-  if (!POSITIVE_INTEGER_PATTERN.test(value)) {
+  if (!INTEGER_PATTERN.test(value)) {
     throw new InvalidArgumentError('`--limit` must be a positive integer.');
   }
   const limit = Number.parseInt(value, 10);
