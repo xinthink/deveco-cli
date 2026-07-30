@@ -76,8 +76,9 @@ function getTopLevelCommand(command: Command): Command {
 }
 
 // Commands that must work without a DevEco Studio toolchain (e.g. `auth` runs
-// before the IDE is installed; `update` escapes a blocked/broken release).
-const TOOLCHAIN_FREE_COMMANDS = new Set(['update', 'auth']);
+// before the IDE is installed; `update` escapes a blocked/broken release;
+// `serve` hosts MCP/LSP and resolves the toolchain internally).
+const TOOLCHAIN_FREE_COMMANDS = new Set(['update', 'auth', 'serve']);
 
 program.hook('preAction', async (_thisCommand, actionCommand) => {
   const topLevel = getTopLevelCommand(actionCommand);

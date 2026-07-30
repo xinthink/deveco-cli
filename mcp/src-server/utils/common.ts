@@ -185,16 +185,13 @@ export function findHarmonyProjectInDir(startPath: string): string | null {
 }
 
 export function findArktsLangServerPath(devecoPath?: string | null): string | null {
-  if (process.platform === 'linux') {
-    return null;
-  }
-
   const devecoRoot = devecoPath ?? findDevEcoPath();
   if (!devecoRoot) {
     return null;
   }
 
-  let pluginsOpenharmonyPath: string;
+  // Studio 布局: <root>/plugins/openharmony/ace-server/out/index.js（仅 Win/macOS）
+  let pluginsOpenharmonyPath: string | null = null;
   if (process.platform === 'win32') {
     pluginsOpenharmonyPath = path.join(devecoRoot, 'plugins', 'openharmony');
   } else if (process.platform === 'darwin') {
@@ -204,29 +201,91 @@ export function findArktsLangServerPath(devecoPath?: string | null): string | nu
       'plugins',
       'openharmony'
     );
-  } else {
-    return null;
+  }
+  if (pluginsOpenharmonyPath) {
+    const aceServerIndexPath = path.join(
+      pluginsOpenharmonyPath,
+      'ace-server',
+      'out',
+      'index.js'
+    );
+    if (fs.existsSync(aceServerIndexPath)) {
+      return pluginsOpenharmonyPath;
+    }
   }
 
-  const aceServerIndexPath = path.join(
-    pluginsOpenharmonyPath,
-    'ace-server',
-    'out',
-    'index.js'
-  );
-  if (fs.existsSync(aceServerIndexPath)) {
-    return pluginsOpenharmonyPath;
+  // CLT 布局: <root>/arkts-lsp/lib/out/index.js（全平台）
+  const cltArktsLspLibPath = path.join(devecoRoot, 'arkts-lsp', 'lib');
+  const cltServerIndexPath = path.join(cltArktsLspLibPath, 'out', 'index.js');
+  if (fs.existsSync(cltServerIndexPath)) {
+    return cltArktsLspLibPath;
   }
+
   return null;
 }
 
 /**
- * clangd 在 DevEco Studio 安装目录下的相对路径。
- * 完整路径 = `<devecoHome>/<...CLANGD_RELATIVE_SEGMENTS>(.exe?)`。
- * 与 `wrapper.ts/CLANGD_RELATIVE_PATH_SEGMENTS` 保持一致。
+ * 解析 ArkTS LSP / MCP 启动及 C++/ArkTS sync 所需的 sdkPath。
+ * 从 devecoPath 派生（devecoStudioContentRoot(smartFindToolPath(devecoPath)) + '/sdk'）。
+ *
+ * 注意：sync 阶段（ohpm/hvigor/compileNative）会从 dirname(sdkPath) 派生
+ * tools/ohpm 等同级目录。
  */
-const CLANGD_RELATIVE_SEGMENTS = [
-  'sdk',
+export function resolveSdkPath(devecoPath?: string | null): string {
+  const resolvedDevecoPath = smartFindToolPath(devecoPath ?? '');
+  const contentRoot = devecoStudioContentRoot(resolvedDevecoPath);
+  return path.join(contentRoot, 'sdk');
+}
+
+/**
+ * 启动期一次性解析 ArkTS / C++ 全流程共用的两条固定路径。
+ * 两条路径各自独立，按 CLT / DevEco Studio 安装布局派生。
+ * 返回值在启动期固定，后续所有消费方应从此结果派生，不再重复解析。
+ */
+export interface ToolchainPaths {
+  sdkPath: string;
+  arktsLangServerPath: string | null;
+}
+export function resolveToolchainPaths(devecoPath?: string | null): ToolchainPaths {
+  return {
+    sdkPath: resolveSdkPath(devecoPath),
+    arktsLangServerPath: findArktsLangServerPath(devecoPath),
+  };
+}
+
+/**
+ * 根据 arkts-lang-server 根目录拼接 server 入口 js 路径。
+ * 自动区分两种目录布局：
+ * - Studio: `<root>/ace-server/out/(standardIndex/)?index.js`
+ * - CLT:    `<root>/out/(standardIndex/)?index.js`
+ */
+export function resolveArktsServerEntry(
+  root: string,
+  useStandardProtocol: boolean
+): string {
+  const entryFile = useStandardProtocol
+    ? path.join('standardIndex', 'index.js')
+    : 'index.js';
+
+  if (fs.existsSync(path.join(root, 'ace-server'))) {
+    return path.join(root, 'ace-server', 'out', entryFile);
+  }
+  return path.join(root, 'out', entryFile);
+}
+
+/**
+ * 检测是否支持标准 LSP 协议（standardIndex/index.js 是否存在）。
+ * 兼容 Studio 和 CLT 两种目录布局。
+ */
+export function detectStandardProtocol(root: string): boolean {
+  return fs.existsSync(resolveArktsServerEntry(root, true));
+}
+
+/**
+ * clangd 相对于 sdk 根目录的路径段。
+ * 完整路径 = `<sdkPath>/<...CLANGD_IN_SDK_SEGMENTS>(.exe?)`。
+ */
+const CLANGD_IN_SDK_SEGMENTS = [
   'default',
   'openharmony',
   'native',
@@ -246,63 +305,15 @@ export const COMPILE_COMMANDS_RELATIVE_SEGMENTS = [
 ] as const;
 
 /**
- * 把 DevEco 安装根目录映射为该平台下"放置 sdk/tools/plugins 的目录":
- *  - macOS: `<root>/Contents`
- *  - Windows / Linux: `<root>`
+ * 由启动期固定的 sdkPath 派生 clangd 可执行文件路径：
+ * `<sdkPath>/default/openharmony/native/llvm/bin/clangd(.exe)`。
+ * sdkPath 已在启动期经环境变量 / CLT|Studio 布局解析固定，本函数不再读取环境变量。
+ * 路径存在返回绝对路径，否则返回 null。
  */
-function devecoContentRootForClangd(devecoHome: string): string {
-  if (process.platform === 'darwin') {
-    if (devecoHome.endsWith('.app')) {
-      return path.join(devecoHome, 'Contents');
-    }
-  }
-  return devecoHome;
-}
-
-/**
- * 给定 DevEco Studio 安装目录，返回 clangd 可能存在的候选路径。
- * 与 Rust 版本（`getClangdPathCandidatesFromDevecoHome`）的查找行为保持一致。
- */
-function clangdCandidatesFromDevecoHome(devecoHome: string): string[] {
-  const candidates = new Set<string>();
-  const homes = [devecoHome, devecoContentRootForClangd(devecoHome)];
-  for (const home of homes) {
-    const base = path.join(home, ...CLANGD_RELATIVE_SEGMENTS);
-    candidates.add(process.platform === 'win32' ? base + '.exe' : base);
-  }
-  return [...candidates];
-}
-
-/**
- * 查找系统上 clangd 可执行文件路径：
- * 1. 先看环境变量 `DEVECO_HOME` / `DEVECO_PATH`；
- * 2. 否则使用 {@link findDevEcoPath} 找到的 DevEco Studio 安装目录。
- * 找到第一个存在的候选路径就返回；都不存在返回 null。
- */
-export function findClangdPath(devecoPath?: string | null): string | null {
-  const checked: string[] = [];
-
-  const envHome = process.env.DEVECO_HOME ?? process.env.DEVECO_PATH;
-  if (envHome && envHome.trim()) {
-    for (const c of clangdCandidatesFromDevecoHome(envHome.trim())) {
-      checked.push(c);
-      if (fs.existsSync(c)) {
-        return c;
-      }
-    }
-  }
-
-  const devecoRoot = devecoPath ?? findDevEcoPath();
-  if (devecoRoot) {
-    for (const c of clangdCandidatesFromDevecoHome(devecoRoot)) {
-      checked.push(c);
-      if (fs.existsSync(c)) {
-        return c;
-      }
-    }
-  }
-
-  return null;
+export function clangdPathFromSdk(sdkPath: string): string | null {
+  const base = path.join(sdkPath, ...CLANGD_IN_SDK_SEGMENTS);
+  const candidate = process.platform === 'win32' ? base + '.exe' : base;
+  return fs.existsSync(candidate) ? candidate : null;
 }
 
 /**
