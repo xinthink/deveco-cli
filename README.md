@@ -439,7 +439,20 @@ devecocli check lint [path]
 **命令格式：**
 
 ```bash
+devecocli emulator list [--format <table|json>]
+```
+
+**参数：**
+
+| 参数名 | 说明 |
+| --- | --- |
+| `--format` | 可选，控制终端输出格式，取值为 `table` 或 `json`，默认为 `table` |
+
+**示例：**
+
+```bash
 devecocli emulator list
+devecocli emulator list --format json
 ```
 
 ### `emulator start`
@@ -514,7 +527,7 @@ devecocli emulator sensor --target Phone --heartrate 80
 **说明：**
 
 - `--target` 支持模拟器名称或 `127.0.0.1:<port>` 序列号。
-- `battery --level` 取值范围为整数 `[1, 100]`。
+- `battery --level` 会自动查询模拟器当前充电状态：充电时取值范围为整数 `[0, 100]`，未充电时为 `[1, 100]`。
 - `battery --status` 取值为 `charging` 或 `discharging`。
 - `geolocation` 支持 `--longitude`、`--latitude`、`--altitude`、`--direction`。
 - `scene` 取值为 `outdoorRunning`、`outdoorCycling`、`drivingNavigation`。

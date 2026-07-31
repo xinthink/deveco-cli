@@ -8,7 +8,10 @@ import type { EmulatorInfo } from './emulator-types.js';
 import { normalizeListNameKey } from './emulator-types.js';
 import { spawnEmulatorDetached } from '../utils/emulator-spawn.js';
 import { runAllEmulatorStartStrategies } from './emulator-start-strategies.js';
-import { isEmulatorRunningByHdcName } from '../utils/emulator-hdc-targets.js';
+import {
+  getEmulatorBatteryChargingState,
+  isEmulatorRunningByHdcName,
+} from '../utils/emulator-hdc-targets.js';
 import { parseEmulatorListOutput } from './emulator-list-parse.js';
 import { debugLog } from '../utils/logger.js';
 import {
@@ -226,6 +229,20 @@ export class EmulatorManager {
     }
     if (!(await this.isAlreadyRunning(target.name, target))) {
       throw new Error(`Emulator "${instance}" is not running.`);
+    }
+    if (action.type === 'folded-state') {
+      assertFoldedStateSupported(target, action.state);
+    }
+    if (action.type === 'battery') {
+      const charging = await getEmulatorBatteryChargingState(
+        this.hdcPath,
+        target.name
+      );
+      if (!charging && action.level === 0) {
+        throw new Error(
+          'Battery level must be an integer in [1, 100] while the emulator is not charging.'
+        );
+      }
     }
     const args = this.buildControlArgs(target.name, action);
     debugLog(
