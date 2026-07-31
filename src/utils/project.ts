@@ -6,6 +6,7 @@ import fs from 'fs';
 import * as path from 'path';
 import json5 from 'json5';
 import { CommonUtils } from './common-utils.js';
+import { debugLog } from './logger.js';
 
 export interface ProductNode {
   name: string;
@@ -123,6 +124,18 @@ export class Project {
     }
   }
 
+  public findOwningModule(filePath: string): string | null {
+    const normalized = path.normalize(filePath);
+    for (const m of this.profile.modules) {
+      const moduleDir = path.normalize(path.join(this.rootDir, m.srcPath));
+      const prefix = moduleDir + path.sep;
+      if (normalized.startsWith(prefix) || normalized === moduleDir) {
+        return m.name;
+      }
+    }
+    return null;
+  }
+
   public getModuleProfile(moduleName: string): ModuleProfile {
     const moduleNode = this.profile.modules.find((m) => m.name === moduleName);
     if (!moduleNode) {
@@ -140,9 +153,16 @@ export class Project {
       );
     }
 
-    const content = fs.readFileSync(profilePath, 'utf-8');
-    const profile = json5.parse(content) as ModuleProfile;
-    return profile;
+    try {
+      const content = fs.readFileSync(profilePath, 'utf-8');
+      const profile = json5.parse(content) as ModuleProfile;
+      return profile;
+    } catch (e) {
+      throw new Error(
+        `Failed to parse module build profile at ${profilePath}: ${e instanceof Error ? e.message : String(e)}`,
+        { cause: e }
+      );
+    }
   }
 
   public getBundleName(): string {
@@ -273,8 +293,9 @@ export class Project {
           deps.push(depModule.name);
         }
       }
-    } catch {
+    } catch (e) {
       // Ignore unparseable oh-package.json5
+      debugLog(`Failed to get module dependencies: ${e instanceof Error ? e.message : String(e)}`);
     }
     return deps;
   }
@@ -478,8 +499,16 @@ export class Project {
     isSigned: boolean;
     dependRemoteHsps: { hspName: string; hspPath: string }[];
   } {
-    const content = fs.readFileSync(metadataPath, 'utf-8');
-    const parsed = json5.parse(content) as Record<string, unknown>[] | Record<string, unknown>;
+    let parsed: Record<string, unknown>[] | Record<string, unknown>;
+    try {
+      const content = fs.readFileSync(metadataPath, 'utf-8');
+      parsed = json5.parse(content) as Record<string, unknown>[] | Record<string, unknown>;
+    } catch (e) {
+      throw new Error(
+        `Failed to parse output metadata at ${metadataPath}: ${e instanceof Error ? e.message : String(e)}`,
+        { cause: e }
+      );
+    }
 
     let packageName: string | undefined;
     let isSigned = false;

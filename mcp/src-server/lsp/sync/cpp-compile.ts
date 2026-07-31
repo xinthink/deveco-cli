@@ -10,7 +10,6 @@ import { executeBuildCommand } from './buildProject.js';
 import { CommonUtils } from '../../../../src/utils/common-utils.js';
 import {
     compileCommandsPath,
-    devecoStudioContentRoot,
 } from '../../utils/common.js';
 import { mcpLog } from '../../utils/mcp-logger.js';
 
@@ -222,18 +221,17 @@ const COMPILE_COMMANDS_RELATIVE_SEGMENTS = [
 
 /**
  * 执行 compileNative 构建以生成 compile_commands.json。
+ * sdkPath 由启动期固定（env / CLT|Studio 布局），tools/hvigor 从其 dirname（contentRoot）派生。
  */
 export async function runCompileNative(
     projectPath: string,
-    devecoPath: string,
+    sdkPath: string,
     cppModules: ModuleInfo[],
 ): Promise<void> {
-    const sdkPath = path.join(devecoStudioContentRoot(devecoPath), 'sdk');
-
-    const nodePath = process.execPath || 'node';
-    const toolsDir = path.join(devecoStudioContentRoot(devecoPath), 'tools');
-    mcpLog.info(`[CppCompile] devecoPath: ${devecoPath}, contentRoot: ${devecoStudioContentRoot(devecoPath)}, sdkPath: ${sdkPath}, toolsDir: ${toolsDir}`);
+    const toolsDir = path.join(path.dirname(sdkPath), 'tools');
     const hvigorPath = path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.js');
+    const nodePath = process.execPath || 'node';
+    mcpLog.info(`[CppCompile] sdkPath: ${sdkPath}, toolsDir: ${toolsDir}, hvigorPath: ${hvigorPath}`);
 
     for (const module of cppModules) {
         const hvigorArgs = [
@@ -271,7 +269,7 @@ export async function runCompileNative(
  * 2. 对每个模块执行 compileNative
  * 3. 合并 compile_commands.json
  */
-export async function initializeCppProject(projectPath: string, devecoPath: string): Promise<void> {
+export async function initializeCppProject(projectPath: string, sdkPath: string): Promise<void> {
     const cppModules = findCppModules(projectPath);
 
     if (cppModules.length === 0) {
@@ -283,7 +281,7 @@ export async function initializeCppProject(projectPath: string, devecoPath: stri
         `[CppCompile] Found ${cppModules.length} C++ module(s): ${cppModules.map((m) => m.name).join(', ')}`,
     );
 
-    await runCompileNative(projectPath, devecoPath, cppModules);
+    await runCompileNative(projectPath, sdkPath, cppModules);
     findAndMergeCompileCommands(projectPath);
 }
 

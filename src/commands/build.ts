@@ -26,12 +26,13 @@ function validateProjectConfig(project: Project, options: BuildOptions) {
 
   // Validate build mode
   if (options.buildMode) {
-    const found = project.profile.app.buildModeSet.some(
-      (m) => m.name === options.buildMode
-    );
-    if (!found) {
+    const defaultModes = ['debug', 'release'];
+    const customModes = (project.profile.app.buildModeSet?.map((m) => m.name) ?? [])
+      .filter((m) => !defaultModes.includes(m));
+    const allModes = [...defaultModes, ...customModes];
+    if (!allModes.includes(options.buildMode)) {
       throw new Error(
-        `Build mode '${options.buildMode}' not found in project build-profile.json5.`
+        `Build mode '${options.buildMode}' not found. Available modes: ${allModes.join(', ')}`
       );
     }
   }

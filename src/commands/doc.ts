@@ -5,15 +5,16 @@
 
 import { Command, InvalidArgumentError } from 'commander';
 import { red, dim } from 'colorette';
-import { localDocService, LocalSearchResult } from '../service/local-doc-service.js';
-import { awaitDocReady } from '../service/doc-initializer.js';
-import { QUERY_MAX_RAW_CHARS } from '../service/doc-index/constants.js';
-import { isDocStorageError } from '../service/doc-index/path-safety.js';
 import {
-  CatalogName,
+  localDocService,
+  type LocalSearchResult,
+  awaitDocReady,
+  QUERY_MAX_RAW_CHARS,
+  isDocStorageError,
+  type CatalogName,
   CATALOG_NAMES,
   CATALOG_TITLES,
-} from '../service/doc-portal-types.js';
+} from '../docs/index.js';
 
 interface SearchOptions {
   catalog?: CatalogName | 'all';
@@ -25,7 +26,9 @@ interface CatalogOptions {
   format?: 'json' | 'default';
 }
 
-function validateOneOf<T extends string>(...allowed: T[]): (value: string) => T {
+function validateOneOf<T extends string>(
+  ...allowed: T[]
+): (value: string) => T {
   return (value: string) => {
     if (!allowed.includes(value as T)) {
       throw new InvalidArgumentError(`Allowed values: ${allowed.join(', ')}`);
@@ -42,8 +45,14 @@ function validatePositiveInt(value: string): number {
   return num;
 }
 
-const validateSearchFormat = validateOneOf<'json' | 'default'>('json', 'default');
-const validateCatalogFormat = validateOneOf<'json' | 'default'>('json', 'default');
+const validateSearchFormat = validateOneOf<'json' | 'default'>(
+  'json',
+  'default'
+);
+const validateCatalogFormat = validateOneOf<'json' | 'default'>(
+  'json',
+  'default'
+);
 
 function formatDocCommandError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
@@ -63,7 +72,12 @@ const docCommand = new Command('docs').description(
 docCommand
   .command('search <keywords...>')
   .description('Search documentation by keywords')
-  .option('--catalog <name>', 'Catalog name (all for all catalogs)', validateCatalogOrAll, 'all')
+  .option(
+    '--catalog <name>',
+    'Catalog name (all for all catalogs)',
+    validateCatalogOrAll,
+    'all'
+  )
   .option(
     '--format <fmt>',
     'Output format (default, json)',
@@ -74,7 +88,8 @@ docCommand
   .action(async (keywords: string[], opts: SearchOptions) => {
     try {
       const searchInput = resolveSearchInput(keywords);
-      const catalog = opts.catalog && opts.catalog !== 'all' ? opts.catalog : undefined;
+      const catalog =
+        opts.catalog && opts.catalog !== 'all' ? opts.catalog : undefined;
       const results = await localDocService.search(
         searchInput,
         catalog,
@@ -114,12 +129,17 @@ docCommand
 docCommand
   .command('catalog')
   .description('List all available catalogs')
-  .option('--format <fmt>', 'Output format (default, json)', validateCatalogFormat, 'default')
+  .option(
+    '--format <fmt>',
+    'Output format (default, json)',
+    validateCatalogFormat,
+    'default'
+  )
   .action(async (opts: CatalogOptions) => {
     try {
       await awaitDocReady();
       if (opts.format === 'json') {
-        const catalogs = CATALOG_NAMES.map(name => ({
+        const catalogs = CATALOG_NAMES.map((name) => ({
           name,
           title: CATALOG_TITLES[name],
         }));
@@ -136,7 +156,9 @@ docCommand
   });
 
 function resolveSearchInput(keywords: string[]): string[] {
-  const normalizedKeywords = keywords.map((keyword) => keyword.trim()).filter(Boolean);
+  const normalizedKeywords = keywords
+    .map((keyword) => keyword.trim())
+    .filter(Boolean);
   if (normalizedKeywords.length === 0) {
     throw new Error('Keywords cannot be empty.');
   }

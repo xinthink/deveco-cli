@@ -5,7 +5,7 @@
  * Internal entry for postinstall only — not exposed as a CLI subcommand.
  */
 
-import { DocInitializer } from '../service/doc-initializer.js';
+import { DocInitializer } from '../docs/init/doc-initializer.js';
 
 const builtBy = process.env.DEVECO_CLI_POSTINSTALL ? 'postinstall' : 'doc-init';
 

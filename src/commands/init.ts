@@ -218,7 +218,7 @@ const initCommand = new Command('init')
     try {
       await handleInitCommand(options);
     } catch (error: unknown) {
-      console.error(red((error as Error).message));
+      console.error(red(error instanceof Error ? error.message : String(error)));
       process.exit(1);
     }
   });

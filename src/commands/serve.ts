@@ -15,14 +15,18 @@ async function startStdioMcpServer(): Promise<void> {
   const PROJECT_PATH = process.env.PROJECT_PATH || '';
   const NODE_MAX_OLD_SPACE_SIZE = process.env.NODE_MAX_OLD_SPACE_SIZE;
   const DEBUG = process.env.DEBUG === 'true' || process.env.DEBUG === '1';
-  const toolProvider = await ToolProvider.new();
-  toolProvider.require({ clt: false });
+  // ToolProvider 优先用 DevEco Studio/CLT 安装；缺失时若设置了 DEVECO_CLI_SDK_PATH /
+  // DEVECO_CLI_ARKTS_LSP_PATH 则以最小配置启动（sdk/arkts-lsp 由 MCP 内部按环境变量派生）。
   const projectPath = PROJECT_PATH;
-  const devecoPath = toolProvider.devecoStudioPath;
+  const toolProvider = await ToolProvider.new();
+  const devecoPath =
+    toolProvider.sourceType === 'clt'
+      ? toolProvider.toolchainRoot
+      : (toolProvider.devecoStudioPath ?? null);
 
   const server = createMcpServer({
     projectPath,
-    devecoPath,
+    devecoPath: devecoPath ?? undefined,
     nodeMaxOldSpaceSize: NODE_MAX_OLD_SPACE_SIZE,
     debug: DEBUG,
   });
@@ -41,7 +45,7 @@ async function startStdioMcpServer(): Promise<void> {
   try {
     await server.start();
   } catch (err) {
-    console.error('Failed to start MCP server:', err);
+    console.error('Failed to start MCP server:', err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
 }

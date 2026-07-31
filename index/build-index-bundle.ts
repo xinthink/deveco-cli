@@ -8,50 +8,23 @@ import * as path from 'path';
 import AdmZip from 'adm-zip';
 import {
   buildSearchIndex,
-  createTempDocsExtractDir,
-  normalizeExtractedLayout,
-} from '../src/service/doc-index/index-builder.js';
-import { findDocsZip } from '../src/service/doc-index/doc-paths.js';
-import { sha256File } from '../src/service/doc-index/hash-utils.js';
-import { INDEX_DB_MAX_BYTES } from '../src/service/doc-index/constants.js';
-import {
+  sha256File,
+  INDEX_DB_MAX_BYTES,
   getSynonymsHash,
   getTermsHash,
-} from '../src/service/doc-index/query-rewriter.js';
-import { INDEX_LEXICON_FILES } from '../src/service/doc-index/lexicon.js';
-import { LEXICON_DIR, PROJECT_ROOT, resolveDocsDir } from './lib/paths.js';
-
-async function resolveDocsSource(docsZipPath: string): Promise<{ docsExtractDir: string; cleanup: () => Promise<void> }> {
-  const localDocsDir = resolveDocsDir();
-  if (localDocsDir) {
-    console.log(`Using local docs dir: ${localDocsDir}`);
-    return { docsExtractDir: localDocsDir, cleanup: async () => {} };
-  }
-
-  const docsExtractDir = await createTempDocsExtractDir();
-
-  console.log('Extracting docs.zip to temp dir…');
-  const zip = new AdmZip(docsZipPath);
-  zip.extractAllTo(docsExtractDir, true);
-  await normalizeExtractedLayout(docsExtractDir);
-
-  return {
-    docsExtractDir,
-    cleanup: async () => {
-      await fs.promises.rm(docsExtractDir, { recursive: true, force: true });
-    },
-  };
-}
+  INDEX_LEXICON_FILES,
+} from '../src/docs/index.js';
+import { DOCS_ZIP, LEXICON_DIR, PROJECT_ROOT } from './lib/paths.js';
 
 async function buildAndValidateIndex(
-  docsExtractDir: string,
+  docsZipPath: string,
   docsZipSha256: string,
   outputDir: string,
   searchDbPath: string
 ): Promise<{ segmentCount: number; dbSizeBytes: number }> {
   console.log('Building search.db…');
   const meta = await buildSearchIndex({
-    docsDir: docsExtractDir,
+    docsZipPath,
     tmpDir: outputDir,
     docsZipSha256,
     termsHash: getTermsHash(LEXICON_DIR),
@@ -74,7 +47,11 @@ async function buildAndValidateIndex(
   return { segmentCount: meta.segmentCount, dbSizeBytes: dbStat.size };
 }
 
-async function packIndexZip(outputDir: string, indexZipPath: string, searchDbPath: string): Promise<number> {
+async function packIndexZip(
+  outputDir: string,
+  indexZipPath: string,
+  searchDbPath: string
+): Promise<number> {
   console.log('Packing index.zip…');
   const bundle = new AdmZip();
   bundle.addLocalFile(searchDbPath);
@@ -88,7 +65,7 @@ async function packIndexZip(outputDir: string, indexZipPath: string, searchDbPat
 }
 
 async function main(): Promise<void> {
-  const docsZipPath = findDocsZip() ?? path.join(PROJECT_ROOT, 'docs.zip');
+  const docsZipPath = DOCS_ZIP;
   if (!fs.existsSync(docsZipPath)) {
     throw new Error(`docs.zip not found at ${docsZipPath}`);
   }
@@ -97,20 +74,26 @@ async function main(): Promise<void> {
   const indexZipPath = path.join(PROJECT_ROOT, 'index.zip');
   const searchDbPath = path.join(outputDir, 'search.db');
 
-  const { docsExtractDir, cleanup } = await resolveDocsSource(docsZipPath);
-
   try {
     await fs.promises.rm(outputDir, { recursive: true, force: true });
     await fs.promises.mkdir(outputDir, { recursive: true });
 
-    const { segmentCount, dbSizeBytes } = await buildAndValidateIndex(docsExtractDir, docsZipSha256, outputDir, searchDbPath);
-    const indexZipSize = await packIndexZip(outputDir, indexZipPath, searchDbPath);
+    const { segmentCount, dbSizeBytes } = await buildAndValidateIndex(
+      docsZipPath,
+      docsZipSha256,
+      outputDir,
+      searchDbPath
+    );
+    const indexZipSize = await packIndexZip(
+      outputDir,
+      indexZipPath,
+      searchDbPath
+    );
 
     console.log(
       `Done. segments=${segmentCount.toLocaleString()}, search.db=${(dbSizeBytes / 1024 / 1024).toFixed(2)} MB, index.zip=${(indexZipSize / 1024 / 1024).toFixed(2)} MB`
     );
   } finally {
-    await cleanup();
     await fs.promises.rm(outputDir, { recursive: true, force: true });
   }
 }

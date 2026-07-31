@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: MIT
  */
 import { Command } from 'commander';
-import { cyan } from 'colorette';
+import { red, cyan } from 'colorette';
 import * as readline from 'readline';
-import { loginService, getTeamList, type Team } from '../auth';
+import { loginService, getTeamList, isDevecoCodeAuth, DefinedError, type Team } from '../auth';
 
 function renderTeamTable(teams: Team[]): string {
   if (teams.length === 0) {
@@ -40,6 +40,10 @@ authCommand
   .command('login')
   .description('Log in to your Huawei Developer account')
   .action(async () => {
+    if (isDevecoCodeAuth()) {
+      console.log(red('Login is managed by DevEco Code. Login from DevEco Code instead.'));
+      return;
+    }
     try {
       const isLoggedIn = await loginService.isLoggedIn();
       if (isLoggedIn) {
@@ -57,6 +61,9 @@ authCommand
         cyan(`Login successful. Logged in as ${userInfo.userName}.`)
       );
     } catch (error) {
+      if (error instanceof DefinedError) {
+        throw error;
+      }
       throw new Error('Login failed', { cause: error });
     }
   });
@@ -65,6 +72,10 @@ authCommand
   .command('logout')
   .description('Log out of your Huawei Developer account')
   .action(async () => {
+    if (isDevecoCodeAuth()) {
+      console.log(red('Login is managed by DevEco Code. Log out from DevEco Code instead.'));
+      return;
+    }
     try {
       const loggedOut = await loginService.logout();
       if (loggedOut) {
@@ -105,19 +116,18 @@ const teamCommand = authCommand
 teamCommand
   .command('list')
   .description('List team accounts the current user has joined')
-  .option('--json', 'output as JSON', false)
-  .action(async (options: { json: boolean }) => {
+  .action(async () => {
     try {
       const isLoggedIn = await loginService.isLoggedIn();
       if (!isLoggedIn) {
-        console.log(cyan('Please run `devecocli auth login` first.'));
+        if (isDevecoCodeAuth()) {
+          console.log(red('Not logged in. Please login via DevEco Code first.'));
+        } else {
+          console.log(cyan('Please run `devecocli auth login` first.'));
+        }
         return;
       }
       const result = await getTeamList();
-      if (options.json) {
-        console.log(JSON.stringify(result, null, 2));
-        return;
-      }
       console.log(renderTeamTable(result.teamList));
     } catch (error) {
       throw new Error('Failed to list teams', { cause: error });

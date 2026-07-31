@@ -20,6 +20,7 @@ export interface ApplyContext {
   targetDeviceId: string;
   bundleName: string;
   abilityName: string;
+  isHotReload?: boolean;
 }
 
 export class ApplyManager {
@@ -45,8 +46,9 @@ export class ApplyManager {
     const modules = this.writeChangeFileList(ctx, files);
     // 一次 hvigorw 构建所有模块的 hqf，再一次 quickfix 推送
     const hqfPaths = await this.buildHqf(ctx, modules);
+    await this.stopApp(ctx);
     await this.installHqf(ctx, hqfPaths);
-    await this.restartApp(ctx);
+    await this.launchApp(ctx);
     console.log('[Apply] Apply complete');
   }
 
@@ -71,21 +73,30 @@ export class ApplyManager {
   private async installHqf(ctx: ApplyContext, hqfPaths: string[]): Promise<void> {
     console.log(`[Apply] Installing ${hqfPaths.length} hqf(s) to ${ctx.targetDeviceId}`);
     const installer = new InstallHqf(this.toolProvider);
-    const result = await installer.install(ctx.targetDeviceId, hqfPaths, ctx.bundleName);
+    const result = await installer.install(ctx.targetDeviceId, hqfPaths, ctx.bundleName, ctx.isHotReload ?? false);
     if (!result.success) {
       throw new Error(`hqf install failed: ${result.message}`);
     }
     console.log('[Apply] hqf installed');
   }
 
-  private async restartApp(ctx: ApplyContext): Promise<void> {
+  private async stopApp(ctx: ApplyContext): Promise<void> {
     const adapter = new HdcAdapter(this.toolProvider);
     try {
       await adapter.forceStopApp(ctx.targetDeviceId, ctx.bundleName);
-      await adapter.launchApp(ctx.targetDeviceId, ctx.bundleName, ctx.abilityName);
-      console.log('[Apply] app restarted');
+      console.log('[Apply] app stopped');
     } catch (e) {
-      console.warn(`[Apply] restart failed (hqf already applied): ${(e as Error).message}`);
+      console.warn(`[Apply] stop app failed: ${(e as Error).message}`);
+    }
+  }
+
+  private async launchApp(ctx: ApplyContext): Promise<void> {
+    const adapter = new HdcAdapter(this.toolProvider);
+    try {
+      await adapter.launchApp(ctx.targetDeviceId, ctx.bundleName, ctx.abilityName);
+      console.log('[Apply] app launched');
+    } catch (e) {
+      console.warn(`[Apply] launch app failed: ${(e as Error).message}`);
     }
   }
 }

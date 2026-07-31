@@ -8,7 +8,7 @@ description: >-
 
 `devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc`, emulator toolchain, and bundled skills installer. **Prefer `devecocli` over invoking underlying tools directly.**
 
-Available commands: `build`, `check`, `run`, `update`, `device`, `emulator`, `ui`, `skills`, `log`, `create`, `init`, `serve`, `docs`, `signature`, `login`, `logout`, `whoami`.
+Available commands: `build`, `check`, `run`, `update`, `device`, `emulator`, `ui`, `skills`, `log`, `create`, `init`, `serve`, `docs`, `signature`, `auth`.
 
 **Sandbox Rule**: Commands tagged `[Outside sandbox]` must be run outside the sandbox.
 
@@ -58,9 +58,9 @@ Manage local emulator instances and system images.
 ### `devecocli ui`
 Inspect UI on a connected physical device or running emulator.
 - `screenshot`: Capture a screenshot from a physical device or running emulator. `--device <name|serial>` is optional when exactly one device is connected, and required when multiple devices are connected.
-- Optional: `--display <displayId>`, `--path <path>` (existing directory or PNG file path whose parent exists; create the directory first; default: `./screenshot-<timestamp>.png`).
+- Optional: `--display <displayId>`. Required: `--path <path>` (existing directory or PNG file path, including paths relative to the current directory; writable destination; no overwrite).
 - Implementation uses `hdc shell snapshot_display` and `hdc file recv`; set `DEVECO_CLI_DEBUG=1` to inspect the actual `hdc` commands.
-*Ex*: `mkdir -p screenshots && devecocli ui screenshot --device Phone --path ./screenshots/phone.png`
+*Ex*: `devecocli ui screenshot --device Phone --path ./screenshots/phone.png`
 
 ### `devecocli docs`
 Search/read local HarmonyOS docs.
@@ -85,10 +85,18 @@ Build, install, and launch.
   - **Prereq**: DevEco Studio ≥6.1.1 (hvigor `assembleDevHqf` support; below is rejected with an upgrade hint); run `devecocli run` once first (full build + deploy + generates the `buildConfig.json` cache that `--apply` reuses).
   - **If changes don't take effect**: check `<module>/build/config/buildConfig.json` has content — empty/missing means `devecocli run` wasn't run; on any apply failure, fall back to a full `devecocli run`.
 *Ex*: `devecocli run` → edit code → write `.hvigor/changes.txt` → `devecocli run --apply changes.txt`
+- `--hotreload [action]`: **Hot-reload watch session** — must be started as a **background process** (the process holds a persistent socket to the hvigor daemon). It builds the hap in hot-reload mode (`hotReload=true debuggable=true`), deploys+launches the app, then the process itself connects a socket to the daemon and sends `CommonBuild assembleHap --hot-reload-build --watch`, **staying connected** so the daemon's watch worker (rollup watch) stays alive for `--hotreload-apply` to reuse. The process stays alive (onBuildOutput streams to its stdout). **Must be stopped (kill the background process) when the hot-reload debug session ends** — otherwise the watch worker/daemon leaks. `--hotreload stop` additionally stops the hvigor daemon.
+  - **Usage**: start `devecocli run --module <m> --hotreload` as a background process; wait for the `.hotreload-mode` marker (or "watch session active" on its stdout) = ready; then run `devecocli run --module <m> --hotreload-apply <file>` (foreground). When done: kill the background process + `devecocli run --hotreload stop`.
+- `--hotreload-apply <fileName>`: **Hot reload without app restart** — reads the changed-file list from `.hvigor/<fileName>` (same format/merge rules as `--apply`), opens a **short socket** to the daemon (kept alive by the background `--hotreload` process) and sends `CommonBuild assembleDevHqf --hot-compile` → the watch worker incrementally hot-compiles changed `.ets`/`.ts` into abc (HotReloadArkTS; output/errors streamed live via WatchLog), then **manually** packs + signs a hqf from that abc (`app_packing_tool.jar` + `hap-sign-tool.jar`, DevEco material password decrypted via `DecipherUtil`), and installs it via `bm quickfix -a -f -o`. The app is **not restarted** — changes take effect immediately.
+  - **Prereq**: the background `devecocli run --hotreload` process must be running (holds the watch session). If `--hotreload-apply` times out, the watch session isn't alive — (re)start the background `--hotreload`.
+  - **Scope (important)**: hot reload targets a **single module** (`--module` required; the target can be entry/hsp/feature; `har` deps are folded in and fine). **`har` dependency changes are auto-routed** to the dependent main module's (entry/feature/hsp) `hotReload/changedFileList.json` — so editing a har's `.ets` and listing it hot-reloads via the target module. Changes in **`feature`/`hsp` dependency modules** (not the target) are NOT hot-reloadable — they're detected and warned (run a full `devecocli run` to redeploy those). `@State`/state-decorator changes are **not** hot-reloadable (state isn't re-initialized); hot-reloadable changes are non-state code: UI property values (`.fontColor`/`.fontSize`), `Text`/`Button` literal labels, method bodies, expressions. Resources/native changes need a full run.
+  - **Compile errors**: ArkTS compile errors from the hot compile are routed (via WatchLog) to the **background `--hotreload` process**, which writes them to **`.hvigor/hotreload-watch.log`** (and its stdout). On failure, `--hotreload-apply` reads that file and prints the errors inline (fast-fail, ~15s timeout if the watch session is dead).
+  - **Artifacts under `.hvigor/`** (shared with `--apply`): `.hvigor/<fileName>` = the changed-file list you write; `.hvigor/hotreload-watch.log` = the watch session's onBuildOutput/compile-errors (written by the background `--hotreload` process; safe to read/delete). The hot-reload marker is `<module>/build/<product>/.hotreload-mode`.
+*Ex*: background `devecocli run --module entry --hotreload` → (ready) → edit `.fontColor` in `entry/src/main/ets/pages/Index.ets` → write path to `.hvigor/changes.txt` → `devecocli run --module entry --hotreload-apply changes.txt` (UI updates without restart). When done: kill the background process + `devecocli run --hotreload stop`.
 
 ### `devecocli signature generate` `[Outside sandbox]`
 Auto-generate HarmonyOS signing materials (local p12/csr + cloud cert + test profile) and write signing config to `build-profile.json5`.
-- **Prereq**: `devecocli login` first; run from a project directory (with `build-profile.json5`); a connected device or emulator is required for device registration.
+- **Prereq**: `devecocli auth login` first; run from a project directory (with `build-profile.json5`); a connected device or emulator is required for device registration.
 - `--product <name>`: Product name for local p12/csr file naming (default: `default`).
 - `--team-id <id>`: Specify the team-id (default: current user's id).
 - `--force`: Force regenerate even if existing materials are valid.
@@ -114,22 +122,23 @@ Inspect UI on a connected device. All subcommands accept `--device <name|serial>
 | Subcommand | Description | Key Options |
 |---|---|---|
 | `layout` | Dump ArkUI accessibility layout tree — **visible area only** (on-screen nodes) | `--id <id>`, `--window <windowId>`, `--all-windows`, `--depth <n>` (0=unlimited, 1=root only, 2=root+children), `--format default\|json`, `--mode full\|simplified` |
-| `window list` | List active windows | `--format table\|json`, `--all` (include system windows) |
-| `screenshot` | Capture a screenshot of the device screen | `--display <displayId>`, `--path <path>` (existing directory or PNG file path whose parent exists; default: `./screenshot-<timestamp>.png`) |
+| `window list` | List active windows | `--format default\|json`, `--all` (include system windows) |
+| `screenshot` | Capture a screenshot of the device screen | `--display <displayId>`, required `--path <path>` (existing directory or PNG file path; relative paths supported; writable destination; no overwrite) |
 | `click [x] [y]` | Tap at the specified coordinates or node | `--id <id>` (auto-resolves to center), `--window <windowId>` (used with `--id`) |
 | `doubleclick [x] [y]` | Double-tap at the specified coordinates or node | `--id <id>`, `--window <windowId>` |
 | `longclick [x] [y]` | Long-press at the specified coordinates or node | `--id <id>`, `--window <windowId>` |
-| `swipe <x1> <y1> <x2> <y2>` | Swipe from one point to another | `--speed <n>` (200–40000, px/s) |
+| `swipe <x1> <y1> <x2> <y2>` | Swipe from one point to another (precise coordinates, custom speed) | `--speed <n>` (200–40000, px/s) |
 | `fling <x1> <y1> <x2> <y2>` | Fling from one point to another | `--speed <n>` (200–40000, px/s) |
 | `drag <x1> <y1> <x2> <y2>` | Drag from one point to another | `--speed <n>` (200–40000, px/s) |
-| `dircfling <direction>` | Fling in a fixed direction | `direction`: `up`, `down`, `left`, `right` |
+| `dircfling <direction>` | Quick directional fling (system default speed, ideal for scrolling) | `direction`: `up`, `down`, `left`, `right` |
 | `text <text> [x] [y]` | Input text at a target location or the currently focused field | `--id <id>` (auto-resolves to center), `--window <windowId>` (used with `--id`) |
 
-- Coordinates and `--id` are mutually exclusive. Provide either `x y` or `--id <id>`; for `text`, if neither is given the text goes to the currently focused field.
-- `--window <windowId>` may only be used together with `--id`.
-- Default: focused window only. Use `--window <id>` or `--all-windows` to target specific/all windows (mutually exclusive).
+- **Coordinates vs `--id`**: Mutually exclusive. Provide either `x y` or `--id <id>`. For `text`, if neither is given, text goes to the currently focused field.
+- **`--window`**: May only be used together with `--id`. Default is focused window. Secondary display operations via `--id` + `--window` are not supported.
+- **`swipe` vs `dircfling`**: `swipe` requires exact start/end coordinates and supports `--speed`; `dircfling` only needs a direction (`up/down/left/right`) and uses system default speed (ideal for page/list scrolling).
+- **Text encoding**: Special characters in `text` are Base64-encoded internally to safely pass through device shell.
 - `--format json` pairs well with `jq`.
-- `--mode raw`: full layout tree, no filtering.
+- `--mode full`: full layout tree, no filtering.
 - `--mode simplified` (default): folds meaningless wrapper containers (non-root, no `id`, no text, not interactive) by lifting their surviving children up. `--depth` truncates after folding.
 
 
@@ -146,15 +155,18 @@ MUTUALLY EXCLUSIVE modes for setup:
 - `-f, --force`: Overwrite existing config.
 *MCP Rules*: Global MCP (no `--project`) only supports `opencode` and `cursor`. Others require `--project`.
 
-### `devecocli login`
+### `devecocli auth login`
 Sign in to your Huawei Developer account. Opens a browser for OAuth authentication. Required before `signature generate`.
-*Ex*: `devecocli login`
+*Ex*: `devecocli auth login`
 
-### `devecocli logout`
+### `devecocli auth logout`
 Sign out and clear locally stored credentials.
 
-### `devecocli whoami`
+### `devecocli auth status`
 Show the current logged-in user.
+
+### `devecocli auth team list`
+List team accounts the current user has joined.
 
 ### `devecocli skills`
 Manage HarmonyOS skills in AI agents/projects.
@@ -164,7 +176,7 @@ Manage HarmonyOS skills in AI agents/projects.
 
 ### `devecocli check compat` `[Outside sandbox]`
 Scan source code for breaking API changes between two SDK versions. Built on top of DevEco Studio's `arkanalyzer-apiscan` plugin.
-- `versions`: List available target SDK versions.
+- `versions`: List available target SDK versions. Opts: `--format <default|json>` (default: `default`).
 - Default (no args): project-level scan.
 - `--modules <m1> [m2...]`: Module-level scan.
 - `<file1> [file2...]`: File-level scan (`.ets`/`.c`/`.cpp` only).
@@ -191,7 +203,7 @@ Validation order: `files` + `--modules` mutually exclusive → `--source-version
 - **Release build**:
   `devecocli build --product oversea --build-mode release`
 - **First-time signing setup**:
-  `devecocli login` -> `devecocli signature generate --product default` -> `devecocli build` -> `devecocli run`
+  `devecocli auth login` -> `devecocli signature generate --product default` -> `devecocli build` -> `devecocli run`
 
 ## Troubleshooting
 
@@ -199,9 +211,9 @@ Validation order: `files` + `--modules` mutually exclusive → `--source-version
 - **"Multiple entry modules" / "No entry module"**: Pass `--modules` (build) or `--module` (run).
 - **"No active devices" / "Multiple devices connected"**: Connect/start emulator. Pass `-t <serial>` (device view) or `--device <name|serial>` (run/log).
 - **`error:install sign info inconsistent`**: Signing key changed. Run `devecocli run --uninstall` or `devecocli signature generate --force`.
-- **`Not logged in. Run devecocli login first`**: Run `devecocli login` to authenticate.
+- **`Not logged in. Run devecocli auth login first`**: Run `devecocli auth login` to authenticate.
 - **`Provision number exceeds limit`**: Test provision quota is full. Delete old test provisions in DevEco Studio (Signing Configs) or AGC console, then retry `devecocli signature generate`.
-- **`Invalid AccessToken. Sign in and try again`**: Token expired. Run `devecocli login` again.
+- **`Invalid AccessToken. Sign in and try again`**: Token expired. Run `devecocli auth login` again.
 - **`skills add` agent not found**: Valid: `codebuddy`, `cursor`, `opencode`, `qoder`, `trae-cn`.
 - **`emulator start` / `image download` blocked on agreement**: User MUST accept agreements. Interactive: `devecocli emulator license` (requires TTY). Non-interactive (CI/scripts): `devecocli emulator license accept`. Agents cannot run the interactive form; suggest the user run it, or use `license accept` if a non-TTY flow is acceptable. Do not retry until accepted.
 - **`image download` failure / timeout**: Do NOT auto-retry. Give the command to the user to run manually in their terminal.

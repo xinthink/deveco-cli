@@ -63,19 +63,17 @@ export async function assertCliDataDirSafe(): Promise<string> {
   return realDir;
 }
 
-export function buildCliDataDirHintLines(logPath: string): string[] {
+export function buildCliDataDirHintLines(): string[] {
   const dataDir = getCliDataDir();
   if (isCliDataDirConfigured()) {
     return [
       `Data directory (DEVECO_CLI_DATA_DIR): ${dataDir}`,
       'If you changed this in System Environment Variables, open a new terminal and retry.',
-      `Log file: ${logPath}`,
     ];
   }
   return [
     `Data directory (default): ${dataDir}`,
     'To use a custom location, set DEVECO_CLI_DATA_DIR and open a new terminal.',
-    `Log file: ${logPath}`,
   ];
 }
 

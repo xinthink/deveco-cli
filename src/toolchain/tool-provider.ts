@@ -23,10 +23,6 @@ const CLT_VERSION = /^#\s*Version:\s*(\S+)/;
  */
 const COMPAT_MIN_STUDIO_VERSION = '26.0.0.810';
 
-export function getDownloadUrl(): string {
-  return DOWNLOAD_URL;
-}
-
 type InstallSourceType = 'clt' | 'studio';
 
 type SignatureVerificationResult = {
@@ -41,7 +37,8 @@ function parseApiLevel(file: string): number | undefined {
     };
     const level = Number(metadata.apiVersion ?? metadata.data?.apiVersion);
     return Number.isInteger(level) && level >= 17 ? level : undefined;
-  } catch {
+  } catch (e) {
+    debugLog(`[ToolProvider] Failed to parse API level from ${file}: ${e instanceof Error ? e.message : String(e)}`);
     return undefined;
   }
 }
@@ -667,7 +664,7 @@ export class ToolProvider {
       throw new Error(
         `A required component is missing. The detected DevEco Studio version is ${current}. ` +
           `The minimum required version is ${COMPAT_MIN_STUDIO_VERSION}. ` +
-          `Upgrade before using 'check compat' at ${DOWNLOAD_URL}`
+          `Upgrade before using 'check compat' at ${IDE_DOWNLOAD_URL}`
       );
     }
     this._apiscanPaths = { apiChangeDir, scriptPath };
@@ -729,7 +726,10 @@ export class ToolProvider {
     );
     ToolProvider.powerShellPath = fs.existsSync(candidate) ? candidate : '';
     if (ToolProvider.powerShellPath) {
-      ToolProvider.powerShellModulesPath = path.join(path.dirname(ToolProvider.powerShellPath), 'Modules');
+      ToolProvider.powerShellModulesPath = path.join(
+        path.dirname(ToolProvider.powerShellPath),
+        'Modules'
+      );
     }
     return ToolProvider.powerShellPath;
   }
@@ -762,11 +762,15 @@ export class ToolProvider {
           scriptPath,
           file,
         ],
-        { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'],
+        {
+          encoding: 'utf8',
+          timeout: 5000,
+          stdio: ['ignore', 'pipe', 'ignore'],
           env: {
             ...process.env,
-            PSModulePath: ToolProvider.powerShellModulesPath
-          } }
+            PSModulePath: ToolProvider.powerShellModulesPath,
+          },
+        }
       );
       const result = JSON.parse(output) as { Status?: unknown };
       return { signed: Number(result.Status) === 0 };

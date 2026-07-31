@@ -25,6 +25,9 @@ export const AppConfig = {
 
   /** API 版本号 */
   API_VERSION: '1.0.0',
+
+  /** 外部认证源标识 */
+  AUTH_SOURCE_DEVECO_CODE: 'deveco-code',
 } as const;
 
 export const ApiEndpoints = {
