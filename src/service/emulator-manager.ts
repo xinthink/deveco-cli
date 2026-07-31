@@ -15,6 +15,7 @@ import {
 import { parseEmulatorListOutput } from './emulator-list-parse.js';
 import { debugLog } from '../utils/logger.js';
 import {
+  parseAvailableImageEntriesFromImageList,
   parseDownloadedImageEntriesFromImageList,
   parseDownloadedOsVersionsFromImageList,
   type DownloadedImageEntry,
@@ -230,9 +231,6 @@ export class EmulatorManager {
     if (!(await this.isAlreadyRunning(target.name, target))) {
       throw new Error(`Emulator "${instance}" is not running.`);
     }
-    if (action.type === 'folded-state') {
-      assertFoldedStateSupported(target, action.state);
-    }
     if (action.type === 'battery') {
       const charging = await getEmulatorBatteryChargingState(
         this.hdcPath,
@@ -350,6 +348,22 @@ export class EmulatorManager {
       args.push('-force');
     }
     await this.executeEmulatorInherit(args);
+  }
+
+  public async hasAvailableEmulatorImage(opts: {
+    deviceType: string;
+    osVersion: string;
+  }): Promise<boolean> {
+    const stdout = await this.listEmulatorImages({
+      deviceType: opts.deviceType,
+    });
+    const deviceType = normalizeToken(opts.deviceType);
+    const osVersion = normalizeToken(opts.osVersion);
+    return parseAvailableImageEntriesFromImageList(stdout).some(
+      (entry) =>
+        normalizeToken(entry.deviceType) === deviceType &&
+        normalizeToken(entry.osVersion) === osVersion
+    );
   }
 
   public async uninstallEmulatorImage(opts: {

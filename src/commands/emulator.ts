@@ -822,6 +822,19 @@ const IMAGE_LIST_TABLE_HEADERS = [
 const EMULATOR_IMAGE_LIST_EMPTY_HINT =
   'No matching system images found. Try `devecocli emulator image list --all`, then download an image via `devecocli emulator image download ...`.';
 
+async function assertImageDownloadAvailable(
+  manager: EmulatorManager,
+  deviceType: string,
+  osVersion: string
+): Promise<void> {
+  if (await manager.hasAvailableEmulatorImage({ deviceType, osVersion })) {
+    return;
+  }
+  throw new Error(
+    `Option '--os-version <version>' argument '${osVersion}' is invalid. The version entered is incorrect; download is not possible.`
+  );
+}
+
 function parseJsonArrayOrNull(text: string): unknown[] | null {
   try {
     const data = JSON.parse(text) as unknown;
@@ -957,6 +970,11 @@ imageCommand
         );
         process.exit(1);
       }
+      await assertImageDownloadAvailable(
+        manager,
+        opts.deviceType.trim(),
+        opts.osVersion.trim()
+      );
 
       try {
         await manager.installEmulatorImage({
