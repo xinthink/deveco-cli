@@ -5,6 +5,7 @@
 
 import AdmZip from 'adm-zip';
 import crypto from 'crypto';
+import { timingSafeEqual } from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -89,7 +90,9 @@ export async function verifyZipIntegrity(
   const actualSha256 = calculateSha256(zipBuffer);
   const expectedSha256 = expected.sha256.toLowerCase();
 
-  if (actualSha256 !== expectedSha256) {
+  const actualBuf = Buffer.from(actualSha256, 'hex');
+  const expectedBuf = Buffer.from(expectedSha256, 'hex');
+  if (actualBuf.length !== expectedBuf.length || !timingSafeEqual(actualBuf, expectedBuf)) {
     throw new Error(
       `Skill zip integrity verification failed: SHA256 mismatch`
     );

@@ -741,26 +741,14 @@ export class ToolProvider {
     if (!powerShell) {
       throw new Error('The PowerShell application was not found');
     }
-    const tempDirectory = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'deveco-verify-')
-    );
-    const scriptPath = path.join(tempDirectory, 'Verify-Signature.ps1');
-    fs.writeFileSync(
-      scriptPath,
-      'Get-AuthenticodeSignature -FilePath $args[0] | ConvertTo-Json -Depth 3 -Compress',
-      'utf8'
-    );
+    const scriptContent = `Get-AuthenticodeSignature -FilePath '${file.replace(/'/g, "''")}' | ConvertTo-Json -Depth 3 -Compress`;
     try {
       const output = execFileSync(
         powerShell,
         [
           '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          scriptPath,
-          file,
+          '-ExecutionPolicy', 'Bypass',
+          '-Command', scriptContent,
         ],
         {
           encoding: 'utf8',
@@ -777,8 +765,6 @@ export class ToolProvider {
     } catch (e) {
       debugLog(`[ToolProvider] verify Windows Signature, error msg: ${e}`);
       return { signed: false };
-    } finally {
-      fs.rmSync(tempDirectory, { recursive: true, force: true });
     }
   }
 

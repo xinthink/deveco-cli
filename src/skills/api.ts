@@ -53,9 +53,10 @@ export async function fetchTagIds(): Promise<string[]> {
 async function fetchSkillsForTag(tagId: string): Promise<Skill[]> {
   const skills: Skill[] = [];
   const pageSize = SkillsApiConstants.DEFAULT_PAGE_SIZE;
+  const maxPages = SkillsApiConstants.DEFAULT_MAX_PAGES;
   let pageNum = 1;
 
-  while (true) {
+  while (pageNum <= maxPages) {
     // 发送 POST 请求
     const response = await httpClient.post(SkillsApiConstants.SKILLS_API_URL, {
       headers: {

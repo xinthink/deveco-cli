@@ -19,6 +19,8 @@ export const SkillsApiConstants = {
   SKILL_API_BASE: `${API_BASE_URL}/api/registry/skill`,
   /** 默认分页大小 */
   DEFAULT_PAGE_SIZE: 20,
+  /** 默认最大分页数 */
+  DEFAULT_MAX_PAGES: 100,
   /** 成功响应码 */
   SUCCESS_CODE: '20000',
 } as const;
