@@ -105,6 +105,13 @@ cd MyApp
 opencode
 ```
 
+也支持 `atomcode`等 Agent，使用方式相同：
+
+```bash
+# 给 atomcode 安装技能
+devecocli init --agent atomcode
+```
+
 如果 `Agent` 不在 `--agent` 参数取值范围内，可使用 `--path` 参数进行添加，参考如下命令：
 
 ```bash
