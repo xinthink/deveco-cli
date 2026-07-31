@@ -192,7 +192,7 @@ export class HilogAdapter {
     bundleName: string
   ): Promise<string | null> {
     debugLog(`Retrieving PID for bundle ${bundleName}`);
-    CommonUtils.assertBundleName(bundleName);
+    CommonUtils.assertBundleNameStrict(bundleName);
 
     const result = await runHdcWithRetry(hdcPath, [
       '-t',

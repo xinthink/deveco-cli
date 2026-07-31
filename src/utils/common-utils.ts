@@ -199,9 +199,58 @@ export class CommonUtils {
   }
 
   static assertBundleName(name: string): void {
-    // 只允许字母/数字/下划线/点，长度 1-128
     if (!/^[A-Za-z0-9_.]{1,128}$/.test(name)) {
       throw new Error(`Invalid bundleName: ${JSON.stringify(name)}`);
+    }
+  }
+
+  static assertBundleNameStrict(name: string): void {
+    if (name.length < 7 || name.length > 128) {
+      throw new Error(
+        `Bundle name length must be 7-128 characters. Current: ${name.length}`
+      );
+    }
+
+    if (name.includes('..')) {
+      throw new Error(
+        'Bundle name cannot contain consecutive dots (e.g., "com..example").'
+      );
+    }
+
+    const segments = name.split('.');
+    if (segments.length < 3) {
+      throw new Error(
+        'Bundle name must contain at least 3 dot-separated segments.'
+      );
+    }
+
+    const segmentRegex = /^[a-zA-Z0-9_]+$/;
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+
+      if (!segmentRegex.test(segment)) {
+        throw new Error(
+          `Segment "${segment}" contains invalid characters. Only letters, digits, and underscores allowed.`
+        );
+      }
+
+      if (i === 0) {
+        if (!/^[a-zA-Z]/.test(segment)) {
+          throw new Error(
+            `First segment "${segment}" must start with a letter (a-z, A-Z).`
+          );
+        }
+      } else {
+        if (!/^[a-zA-Z0-9]/.test(segment)) {
+          throw new Error(
+            `Segment "${segment}" must start with a letter or digit.`
+          );
+        }
+      }
+
+      if (!/[a-zA-Z0-9]$/.test(segment)) {
+        throw new Error(`Segment "${segment}" must end with a letter or digit.`);
+      }
     }
   }
 
