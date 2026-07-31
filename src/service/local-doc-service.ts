@@ -29,7 +29,7 @@ export class LocalDocService {
   async search(
     keywords: string[],
     catalog?: CatalogName,
-    limit = 20
+    limit = 10
   ): Promise<LocalSearchResult[]> {
     await awaitDocReady();
     try {
