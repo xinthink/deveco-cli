@@ -172,13 +172,15 @@ async function resolveHqf(
   ];
   const t4 = Date.now();
   const genSign = new GenSignHqf(ctx.toolProvider, ctx.projectPath);
+  const isEmulator = ctx.targetDeviceId.includes('127.0.0.1') || ctx.targetDeviceId.includes('localhost');
   let hqfResult: GenSignHqfResult | null = null;
   for (const dir of abcCandidates) {
     const r = await genSign.generateAndSign(
       ctx.moduleName,
       dir,
       patchJsonPath,
-      ctx.productName
+      ctx.productName,
+      isEmulator
     );
     if (r.success && r.signedHqfPaths.length > 0) {
       hqfResult = r;

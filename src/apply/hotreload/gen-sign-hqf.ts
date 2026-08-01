@@ -167,7 +167,8 @@ export class GenSignHqf {
     moduleName: string,
     abcOutputDir: string,
     patchJsonPath: string,
-    productName: string
+    productName: string,
+    skipSign = false
   ): Promise<GenSignHqfResult> {
     const abcCheck = this.checkAbcExists(abcOutputDir);
     if (!abcCheck.exists) {
@@ -185,6 +186,15 @@ export class GenSignHqf {
         signedHqfPaths: [],
         unsignedHqfPath: hqfPaths.unsignedHqfPath,
         message: 'Failed to generate unsigned hqf.',
+      };
+    }
+
+    if (skipSign) {
+      return {
+        success: true,
+        signedHqfPaths: [hqfPaths.unsignedHqfPath],
+        unsignedHqfPath: hqfPaths.unsignedHqfPath,
+        message: 'Unsigned hqf generated (signing skipped for emulator).',
       };
     }
 
