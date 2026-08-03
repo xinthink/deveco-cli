@@ -190,7 +190,7 @@ function applyTailCatalogOrderWhenGlobal(
 export async function searchSqliteIndex(
   keywords: string[],
   catalog?: CatalogName,
-  limit = 20,
+  limit = 10,
   dbPath?: string
 ): Promise<LocalSearchResult[]> {
   const prepared = await prepareSearchQuery(keywords);

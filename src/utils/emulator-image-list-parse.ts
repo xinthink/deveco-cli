@@ -24,12 +24,9 @@ function isDownloadedTrue(obj: Record<string, unknown>): boolean {
   return d === true || String(d).toLowerCase() === 'true';
 }
 
-function parseDownloadedEntry(
+function parseImageEntry(
   row: Record<string, unknown>
 ): DownloadedImageEntry | null {
-  if (!isDownloadedTrue(row)) {
-    return null;
-  }
   const osVersion = pickString(row, [
     'osVersion',
     'OsVersion',
@@ -51,8 +48,9 @@ function parseDownloadedEntry(
   };
 }
 
-export function parseDownloadedImageEntriesFromImageList(
-  stdout: string
+function parseImageEntriesFromImageList(
+  stdout: string,
+  include: (row: Record<string, unknown>) => boolean = () => true
 ): DownloadedImageEntry[] {
   const text = stdout.trim();
   if (!text) {
@@ -68,7 +66,11 @@ export function parseDownloadedImageEntriesFromImageList(
       if (!item || typeof item !== 'object') {
         continue;
       }
-      const parsed = parseDownloadedEntry(item as Record<string, unknown>);
+      const row = item as Record<string, unknown>;
+      if (!include(row)) {
+        continue;
+      }
+      const parsed = parseImageEntry(row);
       if (parsed) {
         out.push(parsed);
       }
@@ -77,6 +79,18 @@ export function parseDownloadedImageEntriesFromImageList(
   } catch {
     return [];
   }
+}
+
+export function parseAvailableImageEntriesFromImageList(
+  stdout: string
+): DownloadedImageEntry[] {
+  return parseImageEntriesFromImageList(stdout);
+}
+
+export function parseDownloadedImageEntriesFromImageList(
+  stdout: string
+): DownloadedImageEntry[] {
+  return parseImageEntriesFromImageList(stdout, isDownloadedTrue);
 }
 
 export function parseDownloadedOsVersionsFromImageList(

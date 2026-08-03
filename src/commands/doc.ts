@@ -84,7 +84,7 @@ docCommand
     validateSearchFormat,
     'default'
   )
-  .option('--limit <n>', 'Max number of results', validatePositiveInt, 20)
+  .option('--limit <n>', 'Max number of results', validatePositiveInt, 10)
   .action(async (keywords: string[], opts: SearchOptions) => {
     try {
       const searchInput = resolveSearchInput(keywords);

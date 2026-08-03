@@ -13,6 +13,7 @@ enum FileClass {
   ETS_TS = 'ets_ts',
   RAW_FILE = 'raw_file',
   RES_FILE = 'res_file',
+  NATIVE = 'native',
   UNKNOWN = 'unknown',
 }
 
@@ -36,6 +37,7 @@ interface ModuleChangeCollector {
   patchEtsFiles: string[];
   patchRawFiles: PatchResourceEntry[];
   patchResFiles: PatchResourceEntry[];
+  nativeFiles: string[];
 }
 
 export interface WriteResult {
@@ -123,6 +125,7 @@ export class ChangedFileListWriter {
         patchEtsFiles: [],
         patchRawFiles: [],
         patchResFiles: [],
+        nativeFiles: [],
       });
     }
     return collectors;
@@ -235,7 +238,8 @@ export class ChangedFileListWriter {
     return collector.hotReloadEntries.length > 0 ||
       collector.patchEtsFiles.length > 0 ||
       collector.patchRawFiles.length > 0 ||
-      collector.patchResFiles.length > 0;
+      collector.patchResFiles.length > 0 ||
+      collector.nativeFiles.length > 0;
   }
 
   private static initEmptyForModule(
@@ -282,6 +286,11 @@ export class ChangedFileListWriter {
     if (ext === '.ets' || ext === '.ts') {
       const owning = ChangedFileListWriter.findModuleByFilePath(filePath, projectRoot, modules);
       return { fileClass: FileClass.ETS_TS, moduleSrcPath: owning?.srcPath ?? '' };
+    }
+
+    if (ext === '.cpp' || ext === '.cc' || ext === '.c' || ext === '.h' || ext === '.hpp') {
+      const owning = ChangedFileListWriter.findModuleByFilePath(filePath, projectRoot, modules);
+      return { fileClass: FileClass.NATIVE, moduleSrcPath: owning?.srcPath ?? '' };
     }
 
     const normalized = filePath.replace(/\\/g, '/');
@@ -460,6 +469,8 @@ export class ChangedFileListWriter {
       collector.patchRawFiles.push({ filePath, resourcePath: resourceDir });
     } else if (fileClass === FileClass.RES_FILE) {
       collector.patchResFiles.push({ filePath, resourcePath: resourceDir });
+    } else if (fileClass === FileClass.NATIVE) {
+      collector.nativeFiles.push(filePath);
     }
   }
 

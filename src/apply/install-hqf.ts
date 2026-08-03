@@ -117,7 +117,7 @@ export class InstallHqf {
     console.log(
       `[Apply] Installing ${remoteHqfPaths.length} hqf patch(es) via quickfix...`
     );
-    const args = ['-t', target, 'shell', 'bm', 'quickfix', '-a', '-f', ...remoteHqfPaths];
+    const args = ['-t', target, 'shell', 'bm', 'quickfix', '-a', '-f', ...remoteHqfPaths, '-d'];
     if (!isHotReload) {
       args.push('-o');
     }

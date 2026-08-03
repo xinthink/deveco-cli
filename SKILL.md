@@ -214,7 +214,7 @@ Validation order: `files` + `--modules` mutually exclusive → `--source-version
 - **`Not logged in. Run devecocli auth login first`**: Run `devecocli auth login` to authenticate.
 - **`Provision number exceeds limit`**: Test provision quota is full. Delete old test provisions in DevEco Studio (Signing Configs) or AGC console, then retry `devecocli signature generate`.
 - **`Invalid AccessToken. Sign in and try again`**: Token expired. Run `devecocli auth login` again.
-- **`skills add` agent not found**: Valid: `codebuddy`, `cursor`, `opencode`, `qoder`, `trae-cn`.
+- **`skills add` agent not found**: Valid: `atomcode`, `codebuddy`, `cursor`, `opencode`, `qoder`, `trae-cn`.
 - **`emulator start` / `image download` blocked on agreement**: User MUST accept agreements. Interactive: `devecocli emulator license` (requires TTY). Non-interactive (CI/scripts): `devecocli emulator license accept`. Agents cannot run the interactive form; suggest the user run it, or use `license accept` if a non-TTY flow is acceptable. Do not retry until accepted.
 - **`image download` failure / timeout**: Do NOT auto-retry. Give the command to the user to run manually in their terminal.
 - **`emulator create` timeout**: Treat as user-action step. Ask user to open DevEco Studio -> Device Manager. Check `emulator list` after user confirms. Do NOT auto-retry or edit SDK files.

@@ -105,6 +105,13 @@ cd MyApp
 opencode
 ```
 
+也支持 `atomcode`等 Agent，使用方式相同：
+
+```bash
+# 给 atomcode 安装技能
+devecocli init --agent atomcode
+```
+
 如果 `Agent` 不在 `--agent` 参数取值范围内，可使用 `--path` 参数进行添加，参考如下命令：
 
 ```bash
@@ -234,7 +241,7 @@ devecocli docs search <keywords...> --catalog <name> --format <fmt> --limit <n>
 | keywords... | 必选，搜索关键词，多个关键词用空格隔开                                                                                                                                                                |
 | --catalog   | 可选，文档类别，取值包含`harmonyos-releases`（版本说明）、 `harmonyos-guides`（指南）、`harmonyos-references`（API参考）、`best-practices`（最佳实践）、`harmonyos-faqs`（FAQ）、`harmonyos-roadmap`（变更预告）、`all`（所有分类，默认） |
 | --format    | 可选，控制输出格式，取值包括 `default` 、`json` ，默认为`default` ，输出结果包括文档ID、标题、文档的概括内容                                                                                                              |
-| --limit     | 可选，设置搜索结果返回条数，默认为20                                                                                                                                                                |
+| --limit     | 可选，设置搜索结果返回条数，默认为10                                                                                                                                                                |
 
 **示例：**
 
