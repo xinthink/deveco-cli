@@ -144,7 +144,7 @@ export class AclPermissionConfig {
 
   private static readonly PERMISSION_DEFINITIONS_RELATIVE_PATH = path.join(
     'lib',
-    'permissionDefinitions.json'
+    'PermissionDefinitions.json'
   );
 
   private static readonly INCLUDE_ACL_PERMISSIONS: ReadonlySet<string> =
