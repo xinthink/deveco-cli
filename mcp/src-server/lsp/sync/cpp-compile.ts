@@ -10,6 +10,7 @@ import { executeBuildCommand } from './buildProject.js';
 import { CommonUtils } from '../../../../src/utils/common-utils.js';
 import {
     compileCommandsPath,
+    resolveHvigorPath,
 } from '../../utils/common.js';
 import { mcpLog } from '../../utils/mcp-logger.js';
 
@@ -228,10 +229,13 @@ export async function runCompileNative(
     sdkPath: string,
     cppModules: ModuleInfo[],
 ): Promise<void> {
-    const toolsDir = path.join(path.dirname(sdkPath), 'tools');
-    const hvigorPath = path.join(toolsDir, 'hvigor', 'bin', 'hvigorw.js');
+    const hvigorPath = resolveHvigorPath(sdkPath);
+    if (!hvigorPath) {
+        mcpLog.warn(`[CppCompile] hvigorw.js not found under sdk '${sdkPath}'`);
+        return;
+    }
     const nodePath = process.execPath || 'node';
-    mcpLog.info(`[CppCompile] sdkPath: ${sdkPath}, toolsDir: ${toolsDir}, hvigorPath: ${hvigorPath}`);
+    mcpLog.info(`[CppCompile] sdkPath: ${sdkPath}, hvigorPath: ${hvigorPath}`);
 
     for (const module of cppModules) {
         const hvigorArgs = [

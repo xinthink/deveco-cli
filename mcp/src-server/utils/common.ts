@@ -226,15 +226,44 @@ export function findArktsLangServerPath(devecoPath?: string | null): string | nu
 
 /**
  * 解析 ArkTS LSP / MCP 启动及 C++/ArkTS sync 所需的 sdkPath。
- * 从 devecoPath 派生（devecoStudioContentRoot(smartFindToolPath(devecoPath)) + '/sdk'）。
+ *
+ * macOS 下 DevEco Studio（.app 包）的 sdk 位于 `<root>/Contents/sdk`，
+ * 而 CLT 与其他平台一致位于 `<root>/sdk`（无 Contents 层）。先按 CLT
+ * 布局探测 `<root>/sdk`，命中即用；否则按 Studio 布局经
+ * {@link devecoStudioContentRoot} 解析（macOS 追加 Contents）。
  *
  * 注意：sync 阶段（ohpm/hvigor/compileNative）会从 dirname(sdkPath) 派生
  * tools/ohpm 等同级目录。
  */
 export function resolveSdkPath(devecoPath?: string | null): string {
-  const resolvedDevecoPath = smartFindToolPath(devecoPath ?? '');
-  const contentRoot = devecoStudioContentRoot(resolvedDevecoPath);
-  return path.join(contentRoot, 'sdk');
+  const root = smartFindToolPath(devecoPath ?? '');
+  // CLT 布局: <root>/sdk（全平台一致，无 Contents 层）
+  const cltSdkPath = path.join(root, 'sdk');
+  if (fs.existsSync(cltSdkPath)) {
+    return cltSdkPath;
+  }
+  // Studio 布局: macOS <root>/Contents/sdk，Windows/Linux <root>/sdk
+  return path.join(devecoStudioContentRoot(root), 'sdk');
+}
+
+/**
+ * 从 sdkPath 派生 hvigorw.js 路径，对齐 buildCltToolPaths/buildStudioToolPaths 布局。
+ * - CLT: `<root>/hvigor/bin/hvigorw.js`（根下，无 tools 层）
+ * - Studio: `<root>/tools/hvigor/bin/hvigorw.js`（tools 下）
+ * `<root>` 即 `dirname(sdkPath)`。先试 tools/ 再试根下，命中即返回，否则 null。
+ */
+export function resolveHvigorPath(sdkPath: string): string | null {
+  const root = path.dirname(sdkPath);
+  const candidates = [
+    path.join(root, 'tools', 'hvigor', 'bin', 'hvigorw.js'),
+    path.join(root, 'hvigor', 'bin', 'hvigorw.js'),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) {
+      return c;
+    }
+  }
+  return null;
 }
 
 /**

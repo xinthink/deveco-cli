@@ -4,10 +4,9 @@
  */
 
 import { spawn, ChildProcess } from 'child_process';
-import * as path from 'path';
 import * as fs from 'fs';
 import { logger } from '../logger.js';
-import { findNodePath } from '../../utils/common.js';
+import { findNodePath, resolveHvigorPath } from '../../utils/common.js';
 
 /** 构建结果 */
 export interface BuildResult {
@@ -34,7 +33,9 @@ function collectChildOutput(child: ChildProcess): { stdout: string[]; stderr: st
         stdout.push(data.toString());
     });
     child.stderr?.on('data', (data: Buffer | string) => {
-        stderr.push(data.toString());
+        const text = data.toString();
+        stderr.push(text);
+        text.split(/\r?\n/).filter(Boolean).forEach((line) => logger.info('[hvigor:err] %s', line));
     });
     return { stdout, stderr };
 }
@@ -106,7 +107,7 @@ export async function executeBuildCommand(
 }
 
 function getEnvConfig(sdkPath: string): Record<string, string> {
-    const hvigorwPath = path.join(path.dirname(sdkPath), 'tools', 'hvigor', 'bin', 'hvigorw.js');
+    const hvigorwPath = resolveHvigorPath(sdkPath) ?? '';
     return {
         node_path: findNodePath(sdkPath),
         hvigor_path: hvigorwPath,
@@ -147,6 +148,7 @@ export async function syncProject(projectPath: string, sdkPath: string): Promise
             sdkPath,
             DEFAULT_HVIGOR_ARGS,
         );
+        logger.info(`[hvigor] sync finished: success=${buildResult.success}, exitCode=${buildResult.exitCode}`);
         return buildResult.success;
     } catch (e) {
         logger.info(`syncProject failed: ${JSON.stringify(e)}`);
