@@ -207,8 +207,7 @@ async function deployHqf(
   const installResult = await installer.install(
     ctx.targetDeviceId,
     signedHqfPaths,
-    ctx.bundleName,
-    true
+    ctx.bundleName
   );
   console.log(`[Timing] quickfix install: ${Date.now() - t5}ms`);
   if (!installResult.success) {
