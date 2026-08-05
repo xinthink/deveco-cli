@@ -20,7 +20,6 @@ export interface ApplyContext {
   targetDeviceId: string;
   bundleName: string;
   abilityName: string;
-  isHotReload?: boolean;
 }
 
 export class ApplyManager {
@@ -73,7 +72,7 @@ export class ApplyManager {
   private async installHqf(ctx: ApplyContext, hqfPaths: string[]): Promise<void> {
     console.log(`[Apply] Installing ${hqfPaths.length} hqf(s) to ${ctx.targetDeviceId}`);
     const installer = new InstallHqf(this.toolProvider);
-    const result = await installer.install(ctx.targetDeviceId, hqfPaths, ctx.bundleName, ctx.isHotReload ?? false);
+    const result = await installer.install(ctx.targetDeviceId, hqfPaths, ctx.bundleName);
     if (!result.success) {
       throw new Error(`hqf install failed: ${result.message}`);
     }

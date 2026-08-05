@@ -47,8 +47,7 @@ export class InstallHqf {
   public async install(
     target: string,
     hqfPaths: string[],
-    bundleName: string,
-    isHotReload = false
+    bundleName: string
   ): Promise<InstallHqfResult> {
     for (const hqfPath of hqfPaths) {
       if (!fs.existsSync(hqfPath)) {
@@ -68,7 +67,7 @@ export class InstallHqf {
         remoteHqfPaths.push(remoteHqfPath);
         await this.pushHqf(target, hqfPaths[i], remoteDir, remoteHqfPath);
       }
-      return await this.executeQuickfix(target, remoteHqfPaths, isHotReload);
+      return await this.executeQuickfix(target, remoteHqfPaths);
     } catch (error) {
       const msg = `hqf install error: ${(error as Error).message}`;
       console.error(`[Apply] ${msg}`);
@@ -111,14 +110,14 @@ export class InstallHqf {
    */
   private async executeQuickfix(
     target: string,
-    remoteHqfPaths: string[],
-    isHotReload = false
+    remoteHqfPaths: string[]
   ): Promise<InstallHqfResult> {
     console.log(
       `[Apply] Installing ${remoteHqfPaths.length} hqf patch(es) via quickfix...`
     );
     const args = ['-t', target, 'shell', 'bm', 'quickfix', '-a', '-f', ...remoteHqfPaths, '-d'];
-    if (!isHotReload) {
+    const apiVersion = await this.getApiVersion(target);
+    if (apiVersion > 17) {
       args.push('-o');
     }
     const quickfixResult = await this.runHdc(args, false);
@@ -138,6 +137,23 @@ export class InstallHqf {
       'Please try reinstalling the application.';
     console.error(`[Apply] ${msg}`);
     return { success: false, message: msg };
+  }
+
+  private async getApiVersion(target: string): Promise<number> {
+    try {
+      const result = await this.runHdc(
+        ['-t', target, 'shell', 'param', 'get', 'const.ohos.apiversion'],
+        false
+      );
+      const version = parseInt(result.trim(), 10);
+      if (!isNaN(version)) {
+        console.log(`[InstallHqf] device API version: ${version}`);
+        return version;
+      }
+    } catch {
+      // ignore
+    }
+    return 0;
   }
 
   /**
