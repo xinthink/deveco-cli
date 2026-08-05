@@ -297,10 +297,17 @@ async function runHotReloadFlow(
     green('Hot-reload watch session active (socket persistent). Edit code, write .hvigor/<file>, then `devecocli run --hotreload-apply <file>` in another terminal. Ctrl+C here to stop.')
   );
 
+  daemonClient.onSocketDisconnect(() => {
+    console.log('Daemon disconnected (likely via --hotreload stop). Exiting watch session.');
+    process.exit(0);
+  });
+
   await new Promise<void>(() => {
     // Never resolves: the CLI process stays alive holding the watch-session
     // socket open so the daemon's watch worker stays (for --hotreload-apply).
-    // Ctrl+C exits (socket closes, watch worker released).
+    // When the daemon is killed (--hotreload stop), the socket disconnects
+    // and the handler above calls process.exit(0).
+    // Ctrl+C also exits (SIGINT default handler).
   });
 }
 

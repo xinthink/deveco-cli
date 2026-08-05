@@ -210,6 +210,12 @@ export class HvigorDaemonClient {
     this.invalidateSocket();
   }
 
+  public onSocketDisconnect(callback: () => void): void {
+    if (this.cachedSocket) {
+      this.cachedSocket.on('disconnect', callback);
+    }
+  }
+
   private async getOrCreateSocket(daemon: DaemonInfo): Promise<Socket> {
     if (this.cachedSocket && this.cachedDaemonPort === daemon.port) {
       if (this.cachedSocket.connected) {
