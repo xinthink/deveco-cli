@@ -214,7 +214,9 @@ async function buildGenKeypairArgs(opts: P12KeyPairOpts): Promise<string[]> {
     }
 
     // 日志脱敏，防止密钥泄露
-    const logSafeArgs = args.map(item => ['-keyPwd', '-keystorePwd'].includes(item) ? `${item} ******` : item);
+    const logSafeArgs = args.map((item, i) =>
+        i > 0 && ['-keyPwd', '-keystorePwd'].includes(args[i - 1]) ? '******' : item
+    );
     logger.debug('generate-keypair 命令（脱敏）：', logSafeArgs.join(' '));
     return [javaPath, ...args];
 }
@@ -244,7 +246,9 @@ async function buildGenCsrArgs(opts: CSRKeyPairOpts): Promise<string[]> {
         args.push('-pwdInputMode', opts.pwdInputMode);
     }
 
-    const logSafeArgs = args.map(item => ['-keyPwd', '-keystorePwd'].includes(item) ? `${item} ******` : item);
+    const logSafeArgs = args.map((item, i) =>
+        i > 0 && ['-keyPwd', '-keystorePwd'].includes(args[i - 1]) ? '******' : item
+    );
     logger.debug('generate-csr 命令（脱敏）：', logSafeArgs.join(' '));
     return [javaPath, ...args];
 }
