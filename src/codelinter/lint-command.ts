@@ -7,6 +7,7 @@ import { Argument, Command, InvalidArgumentError } from 'commander';
 import fs from 'fs';
 import * as path from 'path';
 import { ToolProvider } from '../toolchain/index.js';
+import { readStudioVersion } from '../toolchain/studio-version.js';
 import { SpinnerHelper } from '../utils/spinner-helper.js';
 import { CodelinterAdapter } from './codelinter-adapter.js';
 import {
@@ -23,6 +24,8 @@ import type {
 } from './types.js';
 /** 先校验有符号十进制整数形式，是否大于零由 parseLimit 继续判断。 */
 const INTEGER_PATTERN = /^-?\d+$/;
+/** 显式报告格式和输出路径从 Studio 6.1 起受支持。 */
+const MODERN_REPORT_STUDIO_VERSION = '6.1.0';
 
 interface LintOptions {
   fix?: boolean;
@@ -73,9 +76,7 @@ export function createLintCommand(): Command {
       'Maximum terminal issues to display when --output-path is omitted',
       parseLimit
     )
-    .action(async (lintPath: string | undefined, options: LintOptions) => {
-      await handleLintCommand(lintPath, options);
-    });
+    .action(handleLintCommand);
 }
 
 function parseLintFormat(value: string): CodelinterReportFormat {
@@ -144,10 +145,21 @@ function assertSafePathValue(value: string, fieldName: string): void {
 
 async function handleLintCommand(
   lintPath: string | undefined,
-  options: LintOptions
+  options: LintOptions,
+  command: Command
 ): Promise<void> {
   const cwd = process.cwd();
-  const reportPath = resolveReportPath(options.outputPath, options.format, cwd);
+  const toolProvider = await ToolProvider.new();
+  const reportOptions = resolveSupportedReportOptions(
+    toolProvider,
+    command,
+    options
+  );
+  const reportPath = resolveReportPath(
+    reportOptions.outputPath,
+    reportOptions.format,
+    cwd
+  );
   if (options.fix) {
     console.warn(
       yellow(
@@ -156,23 +168,23 @@ async function handleLintCommand(
     );
   }
 
-  const result = await executeLint(lintPath, options, cwd);
+  const result = await executeLint(toolProvider, lintPath, options, cwd);
   writeTextToStderr(result.diagnostics);
   process.exitCode = writeLintResult(
     result,
     reportPath,
-    options.format,
+    reportOptions.format,
     options.limit,
     cwd
   );
 }
 
 async function executeLint(
+  toolProvider: ToolProvider,
   lintPath: string | undefined,
   options: LintOptions,
   cwd: string
 ): Promise<CodelinterCheckResult> {
-  const toolProvider = await ToolProvider.new();
   const adapter = new CodelinterAdapter(toolProvider, cwd);
   return runWithCheckingSpinner(adapter, {
     lintPath,
@@ -181,6 +193,56 @@ async function executeLint(
     fix: options.fix,
     incremental: options.incremental,
   });
+}
+
+/** 返回用户显式指定且仅由新版 Studio 支持的报告选项。 */
+function getSpecifiedModernReportOptions(command: Command): string[] {
+  return [
+    ['format', '--format'],
+    ['outputPath', '--output-path'],
+  ]
+    .filter(
+      ([optionName]) => command.getOptionValueSource(optionName) === 'cli'
+    )
+    .map(([, optionFlag]) => optionFlag);
+}
+
+/** 在旧版 Studio 中提示并忽略不受原生支持的报告选项。 */
+function resolveSupportedReportOptions(
+  toolProvider: ToolProvider,
+  command: Command,
+  options: LintOptions
+): Pick<LintOptions, 'format' | 'outputPath'> {
+  const specifiedOptions = getSpecifiedModernReportOptions(command);
+  if (specifiedOptions.length === 0 || toolProvider.sourceType !== 'studio') {
+    return options;
+  }
+
+  const studioVersion = readStudioVersion(toolProvider.toolchainRoot);
+  if (
+    studioVersion &&
+    ToolProvider.compareVersion(studioVersion, MODERN_REPORT_STUDIO_VERSION) >= 0
+  ) {
+    return options;
+  }
+
+  const optionNoun = specifiedOptions.length === 1 ? 'option' : 'options';
+  console.warn(
+    yellow(
+      `Warning: The detected DevEco Studio version is: ` +
+        `${studioVersion ?? 'unknown'}. Unsupported ${optionNoun}: ` +
+        `${specifiedOptions.join(', ')}. Minimum supported version: ` +
+        `${MODERN_REPORT_STUDIO_VERSION}. Action: ignore the unsupported ` +
+        `${optionNoun} and continue the lint check with default terminal output.`
+    )
+  );
+
+  return {
+    format: specifiedOptions.includes('--format') ? 'default' : options.format,
+    outputPath: specifiedOptions.includes('--output-path')
+      ? undefined
+      : options.outputPath,
+  };
 }
 
 async function runWithCheckingSpinner(

@@ -229,7 +229,8 @@ export class ToolProvider {
     );
   }
 
-  public assertIdeVersion(minimum = '6.1.0'): void {
+  /** 校验 Studio 版本，默认使用全局最低版本 6.0.0。 */
+  public assertIdeVersion(minimum = '6.0.0'): void {
     this.assertStudio();
     ToolProvider.assertMinimumVersion(
       readStudioVersion(this._toolchainRoot),
@@ -626,6 +627,30 @@ export class ToolProvider {
       }
     }
     return 23;
+  }
+  /** 读取默认 SDK 包的平台版本。 */
+  public getSdkPlatformVersion(): string {
+    const metadataPath = path.join(this.sdkPath, 'default', 'sdk-pkg.json');
+    let metadata: { data?: { platformVersion?: unknown } };
+    try {
+      metadata = JSON.parse(
+        fs.readFileSync(metadataPath, 'utf8')
+      ) as typeof metadata;
+    } catch (error) {
+      throw new Error(`Failed to read SDK metadata: ${metadataPath}`, {
+        cause: error,
+      });
+    }
+
+    const rawPlatformVersion = metadata.data?.platformVersion;
+    const platformVersion =
+      typeof rawPlatformVersion === 'string' ? rawPlatformVersion.trim() : '';
+    if (!platformVersion) {
+      throw new Error(
+        `Missing data.platformVersion in SDK metadata: ${metadataPath}`
+      );
+    }
+    return platformVersion;
   }
   public detectApiLevel(): number {
     return this.getMaxApiLevel();

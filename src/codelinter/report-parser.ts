@@ -23,6 +23,8 @@ const INFORMATION_LINE_PATTERNS = [
   /^Write finished\.$/,
   /^CodeLinter found some defects in your code\.$/,
 ] as const;
+/** Studio 6.0 时过滤Code Linter 原生输出中状态信息和进度消息。 */
+const HIDDEN_NATIVE_MESSAGE_TYPES = new Set([1]);
 
 /** 过滤 Code Linter 原生输出中的 ANSI、进度和状态信息。 */
 export function filterCodelinterNativeText(text: string | undefined): string {
@@ -33,10 +35,36 @@ export function filterCodelinterNativeText(text: string | undefined): string {
     .replace(ANSI_PATTERN, '')
     .replace(CARRIAGE_RETURN_PATTERN, '\n')
     .split('\n')
+    .map(normalizeNativeMessage)
     .map((line) => line.trimEnd())
     .filter((line) => shouldKeepLine(line));
 
   return lines.length > 0 ? `${lines.join('\n')}\n` : '';
+}
+
+/** 将旧版消息协议转换为可展示诊断文本。 */
+function normalizeNativeMessage(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('{')) {
+    return line;
+  }
+  try {
+    const message = JSON.parse(trimmed) as {
+      content?: unknown;
+      messageType?: unknown;
+    };
+    if (
+      typeof message.content !== 'string' ||
+      typeof message.messageType !== 'number'
+    ) {
+      return line;
+    }
+    return HIDDEN_NATIVE_MESSAGE_TYPES.has(message.messageType)
+      ? ''
+      : message.content;
+  } catch {
+    return line;
+  }
 }
 
 /** 从 Code Linter 标准输出中分离 JSON 报告和诊断文本。 */
@@ -50,6 +78,15 @@ export function extractJsonFromNativeStdout(
 
   if (isJsonText(filtered)) {
     return { jsonText: filtered, diagnostics: '' };
+  }
+
+  // Studio 6.0 为每个已检查文件输出一行独立 JSON。
+  const jsonLines = filtered.split('\n');
+  if (jsonLines.length > 1 && jsonLines.every(isJsonText)) {
+    return {
+      jsonText: JSON.stringify(jsonLines.map((line) => JSON.parse(line))),
+      diagnostics: '',
+    };
   }
 
   const jsonRange = findJsonRange(filtered);

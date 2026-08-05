@@ -6,7 +6,7 @@
     <a href="https://www.npmjs.com/package/@deveco/deveco-cli"><img src="https://img.shields.io/npm/dm/@deveco/deveco-cli.svg" alt="NPM Downloads" /></a>
     <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-%3E%3D18-green.svg" alt="Node.js" /></a>
     <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue.svg" alt="Platform" />
-    <a href="https://developer.huawei.com/consumer/cn/download/"><img src="https://img.shields.io/badge/DevEco%20Studio-%3E%3D6.1.0-orange.svg" alt="DevEco Studio" /></a>
+    <a href="https://developer.huawei.com/consumer/cn/download/"><img src="https://img.shields.io/badge/DevEco%20Studio-%3E%3D6.0.0-orange.svg" alt="DevEco Studio" /></a>
     <img src="https://img.shields.io/badge/Command%20Line%20Tools-%3E%3D26.0.0-orange.svg" alt="Command Line Tools" />
     <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" /></a>
   </p>
@@ -21,7 +21,7 @@
 
 - 操作系统为 `macOS` 、 `Windows` 或 `Linux`（需配置对应环境变量）
 - Node.js >= 18，推荐使用22及以上版本
-- [DevEco Studio](https://developer.huawei.com/consumer/cn/download/) >= 6.1.0 或 [Command Line Tools](https://developer.huawei.com/consumer/cn/download/)  >= 26.0.0
+- [DevEco Studio](https://developer.huawei.com/consumer/cn/download/) >= 6.0.0 或 [Command Line Tools](https://developer.huawei.com/consumer/cn/download/) >= 26.0.0
   - **macOS**：必须安装在 `~/Applications` 或 `/Applications` 目录下。
 
 ### 安装
@@ -73,7 +73,7 @@ DEVECO_CLI_STUDIO_PATH > DEVECO_CLI_CLT_PATH > Auto_Detect
 
 | 平台    | DevEco Studio Auto_Detect                     | Command Line Tools | 最低版本                      |
 | ------- | --------------------------------------------- | ------------------ | ----------------------------- |
-| Windows | 支持                                          | 可选               | Studio `6.1.0` / CLT `26.0.0` |
+| Windows | 支持                                          | 可选               | Studio `6.0.0` / CLT `26.0.0` |
 | macOS   | 支持                                          | 可选               | 同上                          |
 | Linux   | 不支持                                        | 必选               | CLT `26.0.0`                  |
 
@@ -409,6 +409,80 @@ devecocli build --product oversea --modules entry --build-mode release
 devecocli build clean
 ```
 
+### `check compat`
+
+基于 `DevEco Studio` 自带的 `apkanalyzer-apiscan` 插件，扫描源代码在两个 `SDK` 版本之间的 `API` 变更情况。
+
+**子命令：**
+
+| 子命令 | 说明 |
+| --- | --- |
+| `devecocli check compat` | 默认执行工程级扫描 |
+| `devecocli check compat --modules <m1> [m2...]` | 按模块扫描 |
+| `devecocli check compat <file1> [file2...]` | 按文件扫描（仅支持 `.ets`/`.c`/`.cpp`） |
+| `devecocli check compat versions` | 列出可用的目标 `SDK` 版本 |
+
+**命令格式：**
+
+```bash
+devecocli check compat [files...] --source-version <ver> --target-version <ver> [--modules <m...>] [--format <default|csv|json>] [--output-path <path>] [--limit <n>]
+```
+
+**参数：**
+
+| 参数名 | 说明 |
+| --- | --- |
+| `--source-version` | 必填，当前工程 `SDK` 版本 |
+| `--target-version` | 必填，目标 `SDK` 版本 |
+| `--modules` | 可选，指定扫描的模块（多个以空格分隔）。与文件参数互斥 |
+| `--format` | 可选，输出格式。`default`/`csv`/`json`。默认 `default`（控制台输出文本，文件输出 `csv`） |
+| `--output-path` | 可选，报告输出路径。目录或文件（扩展名必须与 `--format` 匹配） |
+| `--limit` | 可选，控制台显示的最大记录数，默认 `100` |
+
+**版本号说明：**
+
+- 可用版本可通过 `devecocli check compat versions` 查看
+- `zsh` 环境下版本号需用引号包裹（包含括号），例如 `"<source_version>"`、`"<target_version>"`
+
+**`compat versions` 参数：**
+
+| 参数名 | 说明 |
+| --- | --- |
+| `--format` | 可选，输出格式。`default` 或 `json`。默认 `default`（文本输出，每行一个版本号） |
+
+**格式与输出组合：**
+
+| 场景 | 允许的 `--format` | 行为 |
+| --- | --- | --- |
+| 控制台输出（无 `--output-path`） | `default` / `json` | `default` 输出文本表格，`json` 输出 `JSON` |
+| 文件输出（`--output-path <file>`，扩展名必须匹配 `--format`） | `default` / `csv` / `json` | `default`/`csv` 写 `.csv` 文件；`json` 写 `.json` 文件 |
+| 目录输出（`--output-path <dir>`，无扩展名） | `default` / `csv` / `json` | `default`/`csv` 生成 `apiChange-res{N}.csv`；`json` 生成 `apiChange-res{N}.json` |
+
+**示例：**
+
+```bash
+# 工程级扫描，输出到控制台
+devecocli check compat --source-version "<source_version>" --target-version "<target_version>"
+
+# 输出 JSON 到控制台
+devecocli check compat --format json --source-version "<source_version>" --target-version "<target_version>"
+
+# 输出报告到目录（默认 csv）
+devecocli check compat --output-path ./report --source-version "<source_version>" --target-version "<target_version>"
+
+# 输出 JSON 报告到目录（生成 apiChange-res{N}.json）
+devecocli check compat --output-path ./report --format json --source-version "<source_version>" --target-version "<target_version>"
+
+# 输出报告到指定文件
+devecocli check compat --output-path ./report.json --format json --source-version "<source_version>" --target-version "<target_version>"
+
+# 文件级扫描
+devecocli check compat ./entry/src/main/ets/pages/Index.ets --source-version "<source_version>" --target-version "<target_version>"
+
+# 模块级扫描
+devecocli check compat --modules entry har1 --source-version "<source_version>" --target-version "<target_version>"
+```
+
 ### `check lint`
 
 检查代码规范并输出实践建议与报告。
@@ -428,9 +502,11 @@ devecocli check lint [path]
 | `--fix`                      | 自动修复可修复的问题                                                  |
 | `--incremental`              | 仅检查 Git 未提交文件                                                 |
 | `--product <name>`           | `build-profile.json5` 中定义的 product，默认为 `default`              |
-| `--format <default\|json>`   | 完整报告格式；`default` 输出 Markdown，`json` 输出 JSON                |
-| `--output-path <path>`       | 完整报告文件或目录；目录形式会自动生成带时间戳的报告文件               |
+| `--format <default\|json>`   | 完整报告格式；`default` 输出 Markdown，`json` 输出 JSON；要求 DevEco Studio ≥ 6.1.0 |
+| `--output-path <path>`       | 完整报告文件或目录,目录形式会自动生成带时间戳的报告文件；要求 DevEco Studio ≥ 6.1.0                         |
 | `--limit <number>`           | 未指定 `--output-path` 时，限制终端显示的问题数量                      |
+
+`emulator` 版本要求： DevEco Studio ≥ 6.1.0
 
 ### `emulator list`
 
@@ -1430,80 +1506,6 @@ devecocli signature generate --force
 
 # 查询帮助信息
 devecocli signature generate --help
-```
-
-### `check compat`
-
-基于 `DevEco Studio` 自带的 `apkanalyzer-apiscan` 插件，扫描源代码在两个 `SDK` 版本之间的 `API` 变更情况。
-
-**子命令：**
-
-| 子命令 | 说明 |
-| --- | --- |
-| `devecocli check compat` | 默认执行工程级扫描 |
-| `devecocli check compat --modules <m1> [m2...]` | 按模块扫描 |
-| `devecocli check compat <file1> [file2...]` | 按文件扫描（仅支持 `.ets`/`.c`/`.cpp`） |
-| `devecocli check compat versions` | 列出可用的目标 `SDK` 版本 |
-
-**命令格式：**
-
-```bash
-devecocli check compat [files...] --source-version <ver> --target-version <ver> [--modules <m...>] [--format <default|csv|json>] [--output-path <path>] [--limit <n>]
-```
-
-**参数：**
-
-| 参数名 | 说明 |
-| --- | --- |
-| `--source-version` | 必填，当前工程 `SDK` 版本 |
-| `--target-version` | 必填，目标 `SDK` 版本 |
-| `--modules` | 可选，指定扫描的模块（多个以空格分隔）。与文件参数互斥 |
-| `--format` | 可选，输出格式。`default`/`csv`/`json`。默认 `default`（控制台输出文本，文件输出 `csv`） |
-| `--output-path` | 可选，报告输出路径。目录或文件（扩展名必须与 `--format` 匹配） |
-| `--limit` | 可选，控制台显示的最大记录数，默认 `100` |
-
-**版本号说明：**
-
-- 可用版本可通过 `devecocli check compat versions` 查看
-- `zsh` 环境下版本号需用引号包裹（包含括号），例如 `"<source_version>"`、`"<target_version>"`
-
-**`compat versions` 参数：**
-
-| 参数名 | 说明 |
-| --- | --- |
-| `--format` | 可选，输出格式。`default` 或 `json`。默认 `default`（文本输出，每行一个版本号） |
-
-**格式与输出组合：**
-
-| 场景 | 允许的 `--format` | 行为 |
-| --- | --- | --- |
-| 控制台输出（无 `--output-path`） | `default` / `json` | `default` 输出文本表格，`json` 输出 `JSON` |
-| 文件输出（`--output-path <file>`，扩展名必须匹配 `--format`） | `default` / `csv` / `json` | `default`/`csv` 写 `.csv` 文件；`json` 写 `.json` 文件 |
-| 目录输出（`--output-path <dir>`，无扩展名） | `default` / `csv` / `json` | `default`/`csv` 生成 `apiChange-res{N}.csv`；`json` 生成 `apiChange-res{N}.json` |
-
-**示例：**
-
-```bash
-# 工程级扫描，输出到控制台
-devecocli check compat --source-version "<source_version>" --target-version "<target_version>"
-
-# 输出 JSON 到控制台
-devecocli check compat --format json --source-version "<source_version>" --target-version "<target_version>"
-
-# 输出报告到目录（默认 csv）
-devecocli check compat --output-path ./report --source-version "<source_version>" --target-version "<target_version>"
-
-# 输出 JSON 报告到目录（生成 apiChange-res{N}.json）
-devecocli check compat --output-path ./report --format json --source-version "<source_version>" --target-version "<target_version>"
-
-# 输出报告到指定文件
-devecocli check compat --output-path ./report.json --format json --source-version "<source_version>" --target-version "<target_version>"
-
-# 文件级扫描
-devecocli check compat ./entry/src/main/ets/pages/Index.ets --source-version "<source_version>" --target-version "<target_version>"
-
-# 模块级扫描
-devecocli check compat --modules entry har1 --source-version "<source_version>" --target-version "<target_version>"
 ```
 
 ## 常见问题
