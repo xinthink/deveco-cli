@@ -12,6 +12,32 @@ import {
   SignatureResponseSignals,
 } from '../config/signature.js';
 
+function assertSafeDownloadUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Invalid download URL: ${JSON.stringify(url)}`);
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`Download URL must use HTTPS: ${parsed.protocol}`);
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  if (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    hostname.startsWith('169.254.') ||
+    hostname.startsWith('10.') ||
+    hostname.startsWith('192.168.') ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname) ||
+    hostname.endsWith('.internal') ||
+    hostname.endsWith('.local')
+  ) {
+    throw new Error(`Download URL points to internal/private address: ${hostname}`);
+  }
+}
+
 /**
  * 下载远端文件到本地。
  * - 4xx/5xx 不抛错：若 403 且 reason phrase = Openproxy 标记 → 网络错误（场景1）；
@@ -24,6 +50,7 @@ export async function downloadFile(
   downloadUrl: string,
   filePath: string
 ): Promise<void> {
+  assertSafeDownloadUrl(downloadUrl);
   const { statusCode, statusText, buffer } = await httpClient.getBinaryAllowFailure(
     downloadUrl,
     { timeout: CertConstants.DOWNLOAD_CONNECT_TIMEOUT_MS }
