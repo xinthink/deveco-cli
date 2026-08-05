@@ -171,7 +171,7 @@ async function readUniqueFile(dirPath: string): Promise<Buffer> {
 async function saveToRandomFile(dirPath: string, data: Uint8Array): Promise<string> {
   const filename = generateRandomHex(KEY_LENGTH); // 16字节 -> 32位 hex
   const filePath = join(dirPath, filename);
-  await fs.writeFile(filePath, data);
+  await fs.writeFile(filePath, data, { mode: 0o600 });
   return filename;
 }
 
@@ -192,11 +192,11 @@ export class KeyManager {
     // 2. 创建所需目录
     const acDir = join(materialDir, 'ac');
     const ceDir = join(materialDir, 'ce');
-    await fs.mkdir(acDir, { recursive: true });
-    await fs.mkdir(ceDir, { recursive: true });
+    await fs.mkdir(acDir, { recursive: true, mode: 0o700 });
+    await fs.mkdir(ceDir, { recursive: true, mode: 0o700 });
 
     for (let i = 0; i < COMPONENT_COUNT; i++) {
-      await fs.mkdir(join(materialDir, 'fd', String(i)), { recursive: true });
+      await fs.mkdir(join(materialDir, 'fd', String(i)), { recursive: true, mode: 0o700 });
     }
 
     // 3. 生成随机数
