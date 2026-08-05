@@ -10,7 +10,6 @@ import { Constants } from './Constants.js';
 import { ModuleModelDependency } from './ModuleModelDependency.js';
 import { logger } from '../logger.js';
 import { findJsonObject } from '../utils.js';
-import { CommonUtils } from '../../../../src/utils/common-utils.js';
 import { isRecord } from '../common/typeGuards.js';
 
 export class PackageJsonParser {
@@ -142,7 +141,7 @@ export class PackageJsonParser {
 
             if (!isParameter) {
                 const resolved = path.resolve(this.modulePath, filePathStr);
-                dependencyPath = CommonUtils.ensurePathWithinRoot(this.projectPath, resolved);
+                dependencyPath = resolved;
             }
 
             if (fs.existsSync(dependencyPath) && fs.statSync(dependencyPath).isDirectory()) {

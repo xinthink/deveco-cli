@@ -391,11 +391,6 @@ export class DevecoCliMcpServer {
       };
     }
 
-    const containmentResult = this.validateContainment(files);
-    if (containmentResult) {
-      return containmentResult;
-    }
-
     const { etsFiles, cppFiles, unsupported } = classifyFiles(files);
     if (unsupported.length > 0) {
       mcpLog.warn(`Unsupported file types in check request: ${unsupported.join(', ')}`);
@@ -466,11 +461,6 @@ export class DevecoCliMcpServer {
         content: [{ type: 'text', text: `Missing or invalid parameters. Required: file (string), line (number), character (number).` }],
         isError: true,
       };
-    }
-
-    const containmentResult = this.validateContainment([file]);
-    if (containmentResult) {
-      return containmentResult;
     }
 
     return this.routeLspRequest(file, feature, async () => {
@@ -621,11 +611,6 @@ export class DevecoCliMcpServer {
       };
     }
 
-    const containmentResult = this.validateContainment([file]);
-    if (containmentResult) {
-      return containmentResult;
-    }
-
     return this.routeLspRequest(file, 'documentSymbol', async () => {
       if (file.endsWith('.ets')) {
         return this.arktsCheckTool!.handleDocumentSymbol(file);
@@ -658,11 +643,6 @@ export class DevecoCliMcpServer {
       };
     }
 
-    const containmentResult = this.validateContainment([file]);
-    if (containmentResult) {
-      return containmentResult;
-    }
-
     return this.routeLspRequest(file, `callHierarchy(${direction})`, async () => {
       if (file.endsWith('.ets')) {
         return this.arktsCheckTool!.handleCallHierarchy({ file, line, character, direction });
@@ -679,10 +659,6 @@ export class DevecoCliMcpServer {
     if (!file) {
       return { content: [{ type: 'text', text: 'Missing or invalid parameters. Required: file (string), line (number), character (number).' }], isError: true };
     }
-    const containmentResult = this.validateContainment([file]);
-    if (containmentResult) { 
-      return containmentResult; 
-    }
     return this.routeArktsRequest('codeAction', () => this.arktsCheckTool!.handleCodeAction({ file, line, character }));
   }
 
@@ -694,10 +670,6 @@ export class DevecoCliMcpServer {
     const newName = (args as { newName?: unknown }).newName;
     if (!file || typeof newName !== 'string' || newName.trim().length === 0) {
       return { content: [{ type: 'text', text: 'Missing or invalid parameters. Required: file (string), line (number), character (number), newName (non-empty string).' }], isError: true };
-    }
-    const containmentResult = this.validateContainment([file]);
-    if (containmentResult) { 
-      return containmentResult; 
     }
     return this.routeArktsRequest('rename', () => this.arktsCheckTool!.handleRename({ file, line, character, newName }));
   }
@@ -713,10 +685,6 @@ export class DevecoCliMcpServer {
     }
     if (direction !== 'supertypes' && direction !== 'subtypes') {
       return { content: [{ type: 'text', text: 'Parameter direction must be "supertypes" or "subtypes".' }], isError: true };
-    }
-    const containmentResult = this.validateContainment([file]);
-    if (containmentResult) { 
-      return containmentResult; 
     }
     return this.routeArktsRequest(`typeHierarchy(${direction})`, () => this.arktsCheckTool!.handleTypeHierarchy({ file, line, character, direction }));
   }

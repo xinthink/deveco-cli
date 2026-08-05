@@ -6,7 +6,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
-import { CommonUtils } from '../../../src/utils/common-utils.js';
 import {
   cleanupOldSiblingDirs,
   detectStandardProtocol,
@@ -833,12 +832,6 @@ export class ArktsCheckTool {
     const workspacePath = path.resolve(this.projectPath);
     const validFiles: string[] = [];
     for (const fileArg of files) {
-      const containment = CommonUtils.isPathContained(fileArg, workspacePath);
-      if (!containment.contained) {
-        errors.push(`文件路径越权: ${containment.reason}`);
-        continue;
-      }
-
       const resolved = path.resolve(path.isAbsolute(fileArg) ? fileArg : path.join(workspacePath, fileArg));
 
       if (!fs.existsSync(resolved)) {

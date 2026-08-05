@@ -7,7 +7,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ModuleInfoParse } from '../parse/ModuleInfoParse.js';
 import { executeBuildCommand } from './buildProject.js';
-import { CommonUtils } from '../../../../src/utils/common-utils.js';
 import {
     compileCommandsPath,
     resolveHvigorPath,
@@ -62,16 +61,25 @@ export function hasCppFiles(modulePath: string): boolean {
 
 /** 查找项目中含有 C++ 文件的模块。 */
 export function findCppModules(projectPath: string): ModuleInfo[] {
-    const parser = new ModuleInfoParse(projectPath);
-    const allModules = parser.getAllModuleInfo();
-    const cppModules: ModuleInfo[] = [];
-    for (const module of allModules) {
-        const modulePath = CommonUtils.resolvePathWithinRoot(projectPath, module.srcPath);
-        if (hasCppFiles(modulePath)) {
-            cppModules.push(module);
+    try {
+        const parser = new ModuleInfoParse(projectPath);
+        const allModules = parser.getAllModuleInfo();
+        const cppModules: ModuleInfo[] = [];
+        for (const module of allModules) {
+            const modulePath = path.resolve(projectPath, module.srcPath);
+            if (hasCppFiles(modulePath)) {
+                cppModules.push(module);
+            }
         }
+        return cppModules;
+    } catch (err) {
+        mcpLog.error(
+            `[CppCompile] findCppModules threw: ${
+                err instanceof Error ? err.message : String(err)
+            }`,
+        );
+        throw err;
     }
-    return cppModules;
 }
 
 /* ---------- compile_commands.json helpers ---------- */
@@ -83,7 +91,7 @@ function findCompileCommandsFiles(projectPath: string): string[] {
     const modules = parser.getAllModuleInfo();
 
     for (const module of modules) {
-        const modulePath = CommonUtils.resolvePathWithinRoot(projectPath, module.srcPath);
+        const modulePath = path.resolve(projectPath, module.srcPath);
         const cxxPath = path.join(modulePath, '.cxx');
 
         if (!fs.existsSync(cxxPath)) {

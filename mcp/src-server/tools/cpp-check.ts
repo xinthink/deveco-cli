@@ -11,7 +11,6 @@ import {
   isSupportedCppFile,
   toFileUri,
 } from '../utils/common.js';
-import { CommonUtils } from '../../../src/utils/common-utils.js';
 import { ClangdLspManager } from '../lsp/ClangdLspManager.js';
 import { buildNotReadyResponse, type CppToolResult } from './cpp-lsp-shared.js';
 
@@ -130,12 +129,6 @@ export class CppCheckTool {
     const workspace = path.resolve(this.manager.projectRoot);
     const valid: string[] = [];
     for (const fileArg of files) {
-      const containment = CommonUtils.isPathContained(fileArg, workspace);
-      if (!containment.contained) {
-        errors.push(`Path traversal detected: ${containment.reason}`);
-        continue;
-      }
-
       const resolved = path.resolve(path.isAbsolute(fileArg) ? fileArg : path.join(workspace, fileArg));
 
       if (!fs.existsSync(resolved)) {
