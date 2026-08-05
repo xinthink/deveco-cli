@@ -2,10 +2,12 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import axios from 'axios';
-import { tokenStorage } from '../utils/token-storage.js';
-import { getRegionalizedBaseUrl } from '../utils/region.js';
+import { httpClient } from '../../utils/http-client.js';
+import { isDevecoCodeAuth, DefinedError } from '../index.js';
 import { DEFAULT_LOGIN_CONFIG } from '../auth-config.js';
+import { LanguageCode } from '../utils/region.js';
+import { tokenChecker } from '../utils/token-checker.js';
+import { ApiEndpoints } from '../auth-config.js';
 import {
   AGC_SUCCESS_CODE,
   type Team,
@@ -13,9 +15,12 @@ import {
   type LoginConfig,
   type AgcTeamListResponse,
 } from '../types/auth-types.js';
-import { debugLog } from '../../utils/logger.js';
 
-const MISSING_TOKEN_HINT = 'No JWT in local storage. Run `devecocli auth login` first.';
+function getLoginHint(): string {
+  return isDevecoCodeAuth()
+    ? 'Not logged in. Please login via DevEco Code first.'
+    : 'Please run `devecocli auth login` first.';
+}
 
 export function parseTeamListResponse(raw: unknown): Team[] {
   if (raw == null || typeof raw !== 'object') {
@@ -59,121 +64,72 @@ export class TeamListAdapter {
   }
 
   public async listTeams(): Promise<TeamListResult> {
-    const jwtToken = await tokenStorage.loadJwtToken();
-    if (!jwtToken) {
-      throw new Error(MISSING_TOKEN_HINT);
+    const userInfo = await tokenChecker.fetchUserInfo(ApiEndpoints.CN_LOGIN_URL, true);
+    if (!userInfo) {
+      throw new DefinedError(getLoginHint());
     }
 
-    const { accessToken, userId } = await this.fetchAccessToken(jwtToken);
-    if (!accessToken) {
-      throw new Error('Session expired. Run `devecocli auth login` again.');
-    }
-
-    const body = await this.fetchTeamList(accessToken, userId ?? '');
+    const body = await this.fetchTeamList(
+      userInfo.accessToken,
+      userInfo.userId
+    );
     const teamList = parseTeamListResponse(body);
     return {
-      userId: userId ?? '',
+      userId: userInfo.userId,
       teamList,
     };
   }
 
+  /**
+   * 从 AGC 获取团队列表
+   * @param accessToken 访问令牌
+   * @param userId 用户 ID
+   * @returns 团队列表原始数据
+   */
   private async fetchTeamList(
     accessToken: string,
     userId: string
   ): Promise<unknown> {
     const url = this.config.agcTeamListUrl;
-    debugLog(`Executing: GET ${url}`);
 
     let response;
     try {
-      response = await axios.request({
-        method: 'GET',
-        url,
+      response = await httpClient.get(url, {
         headers: {
           oauth2Token: accessToken,
           uid: userId,
           source: 'cli',
-          lang: 'zh_CN',
+          lang: LanguageCode.CHINA,
         },
         timeout: 15000,
-        transformResponse: [(data) => data],
-        proxy: false,
-        validateStatus: () => true,
       });
     } catch (err) {
+      const msg = (err as Error).message;
+      if (msg.includes('401')) {
+        throw new DefinedError('Token expired. Run `devecocli auth login` again.');
+      }
       throw new Error(
-        `Network error while listing teams: ${(err as Error).message}`,
+        `Network error while listing teams: ${msg}`,
         { cause: err }
       );
     }
 
-    if (response.status === 401) {
-      throw new Error('AGC rejected the AGC token. Run `devecocli auth login` again.');
-    }
-    if (response.status !== 200) {
-      throw new Error(`Failed to list teams: HTTP ${response.status}`);
+    if (response.statusCode !== 200) {
+      throw new Error(`Failed to list teams: HTTP ${response.statusCode}`);
     }
 
     return typeof response.data === 'string'
       ? JSON.parse(response.data)
       : response.data;
   }
-
-  private async fetchAccessToken(
-    jwtToken: string
-  ): Promise<{ accessToken?: string; userId?: string }> {
-    const baseUrl = this.getRegionalizedBaseUrl();
-    const url = `${baseUrl}/${this.config.jwtTokenCheckUrl}`;
-    debugLog(`Executing: GET ${url} (accessToken refresh)`);
-
-    let response;
-    try {
-      response = await axios.request({
-        method: 'GET',
-        url,
-        headers: { refresh: 'true', jwtToken: jwtToken },
-        timeout: 15000,
-        transformResponse: [(data) => data],
-        proxy: false,
-        validateStatus: () => true,
-      });
-    } catch (err) {
-      throw new Error(
-        `Network error while refreshing accessToken: ${(err as Error).message}`,
-        { cause: err }
-      );
-    }
-
-    if (response.status !== 200) {
-      throw new Error(
-        `Failed to refresh accessToken: HTTP ${response.status}. Run \`devecocli auth login\` again.`
-      );
-    }
-
-    const body =
-      typeof response.data === 'string'
-        ? JSON.parse(response.data)
-        : response.data;
-    const parsed = body as AgcJwtCheckResponse;
-    if (!parsed.status) {
-      throw new Error('JWT is invalid. Run `devecocli auth login` again.');
-    }
-    return {
-      accessToken: parsed.userInfo?.accessToken,
-      userId: parsed.userInfo?.userId,
-    };
-  }
-
-  private getRegionalizedBaseUrl(): string {
-    return getRegionalizedBaseUrl(
-      this.config.countryCode ?? '',
-      this.config.baseUrl
-    );
-  }
 }
 
 export const teamListAdapter = new TeamListAdapter();
 
+/**
+ * 获取团队列表
+ * @returns 团队列表结果
+ */
 export async function getTeamList(): Promise<TeamListResult> {
   return teamListAdapter.listTeams();
 }

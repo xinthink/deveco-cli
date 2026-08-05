@@ -3,17 +3,13 @@
  * SPDX-License-Identifier: MIT
  */
 import { httpClient } from '../../utils/http-client';
-import type { UserInfo, TokenCheckResponse, JwtPayload } from '../types/auth-types';
-import { parseJwtPayload, isValidJwtFormat } from '../utils/jwt';
-import {
-  getLanguageByCountryCode,
-  getCountryCodeBySiteId,
-} from '../utils/region';
+import { isValidJwtFormat } from '../utils/jwt';
+import { getCountryCodeBySiteId } from '../utils/region';
 import { AppConfig } from '../auth-config';
 
 /**
  * 用户信息获取服务
- * 负责从 JWT Token 获取用户信息和换取 JWT Token
+ * 负责从临时 Token 换取 JWT Token
  */
 export class UserInfoFetcher {
   /**
@@ -21,7 +17,7 @@ export class UserInfoFetcher {
    * 使用临时 Token 和站点 ID 从服务器换取 JWT Token
    * @param tempToken 临时 Token
    * @param siteId 站点 ID
-   * @param getRegionalizedBaseUrl 获取区域化基础 URL 的函数
+   * @param regionalizedBaseUrl 区域化基础 URL
    * @param tempTokenCheckUrl 临时 Token 检查 URL 路径
    * @param appId 应用 ID
    * @returns JWT Token 字符串
@@ -29,14 +25,13 @@ export class UserInfoFetcher {
   async getJwtToken(
     tempToken: string,
     siteId: string,
-    getRegionalizedBaseUrl: () => string,
+    regionalizedBaseUrl: string,
     tempTokenCheckUrl: string,
     appId: string
   ): Promise<string> {
     const actualTempToken = tempToken.split('&')[0];
 
     const countryCode = getCountryCodeBySiteId(siteId);
-    const regionalizedBaseUrl = getRegionalizedBaseUrl();
 
     const params = {
       tempToken: actualTempToken,
@@ -59,41 +54,6 @@ export class UserInfoFetcher {
     }
 
     return jwtToken;
-  }
-
-  /**
-   * 从 JWT Token 获取用户信息
-   * @param jwtToken JWT Token 字符串
-   * @param checkJwtToken 检查 JWT Token 的函数
-   * @returns 用户信息对象
-   */
-  async getUserInfoFromJwt(
-    jwtToken: string,
-    checkJwtToken: (jwtToken: string) => Promise<TokenCheckResponse>
-  ): Promise<UserInfo> {
-    const tokenInfo = await checkJwtToken(jwtToken);
-
-    if (!tokenInfo.status || !tokenInfo.userInfo) {
-      throw new Error('Invalid jwtToken');
-    }
-
-    const payload = parseJwtPayload<JwtPayload>(jwtToken);
-    if (!payload) {
-      throw new Error('Invalid jwtToken: failed to parse payload');
-    }
-
-    const userInfo: UserInfo = {
-      userId: payload.userId,
-      userName: payload.userName,
-      accessToken: tokenInfo.userInfo.accessToken,
-      refreshToken: tokenInfo.userInfo.refreshToken ?? '',
-      jwtToken: jwtToken,
-      countryCode: tokenInfo.userInfo.nationalCode,
-      language: getLanguageByCountryCode(tokenInfo.userInfo.nationalCode),
-      isRealName: String(tokenInfo.userInfo.realName) === 'true',
-    };
-
-    return userInfo;
   }
 }
 

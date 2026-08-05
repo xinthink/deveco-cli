@@ -7,6 +7,7 @@ import * as path from 'path';
 import { homedir } from 'os';
 import { LocalCrypto } from '../utils/local-crypto.js';
 import { AppConfig } from '../auth-config';
+import { debugLog } from '../../utils/logger';
 
 export function isDevecoCodeAuth(): boolean {
   return process.env.DEVECO_CLI_AUTH_SOURCE === AppConfig.AUTH_SOURCE_DEVECO_CODE;
@@ -111,7 +112,8 @@ export class TokenStorage {
    */
   public async clearToken(): Promise<void> {
     if (isDevecoCodeAuth()) {
-      throw new Error('Current session is managed by DevEco Code. Cannot modify via CLI.');
+      debugLog('clearToken: skipped, session managed by DevEco Code');
+      return;
     }
     const tokenFilePath = this.getLocalTokenFilePath();
     try {
