@@ -61,8 +61,8 @@ export class EnvChecker {
     };
     const chain: Array<() => Promise<CheckResult>> = [
       () => this.authChecker.checkLogin(bf),
-      () => this.authChecker.checkTeamInfo(bf),
       () => this.authChecker.checkRealname(bf),
+      () => this.authChecker.checkTeamInfo(bf),
     ];
     for (const c of chain) {
       if (!failFast(await c())) {
