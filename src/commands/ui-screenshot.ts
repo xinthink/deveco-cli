@@ -199,6 +199,14 @@ function formatHdcOutput(result: HdcCommandResult): string {
   return [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
 }
 
+function formatSnapshotDisplayOutput(output: string): string {
+  return output.replace(
+    /(Tips:\s*supported\s+displayIds)\s*:?[ \t]*(?:\r?\n[ \t]*)?(\d+(?:(?:[ \t]*,[ \t]*|[ \t]+|\r?\n[ \t]*)\d+)*)/gi,
+    (_match: string, label: string, ids: string) =>
+      `${label}: ${ids.match(/\d+/g)?.join(', ') ?? ids}`
+  );
+}
+
 function isInvalidDisplayOutput(output: string): boolean {
   const invalid = String.raw`invalid|not found|not exist|does not exist|out of range|unsupported`;
   return (
@@ -219,7 +227,7 @@ async function tryCreateRemoteScreenshot(
   const size = await getRemoteScreenshotSize(ctx);
   return {
     created: size !== undefined && size > 0,
-    output: formatHdcOutput(result),
+    output: formatSnapshotDisplayOutput(formatHdcOutput(result)),
   };
 }
 
