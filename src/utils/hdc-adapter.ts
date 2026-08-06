@@ -119,6 +119,7 @@ export class HdcAdapter {
     bundleName: string,
     mainAbility: string
   ): Promise<string> {
+    await this.wakeUpScreen(target);
     const args = [
       '-t',
       target,
@@ -136,5 +137,9 @@ export class HdcAdapter {
   public async forceStopApp(target: string, bundleName: string): Promise<string> {
     const args = ['-t', target, 'shell', 'aa', 'force-stop', bundleName];
     return await this.runHdc(args, false);
+  }
+
+  public async wakeUpScreen(target: string): Promise<string> {
+    return await this.runHdc(['-t', target, 'shell', 'power-shell', 'wakeup'], false);
   }
 }
