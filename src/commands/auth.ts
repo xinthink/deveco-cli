@@ -45,23 +45,24 @@ authCommand
       return;
     }
     try {
-      const isLoggedIn = await loginService.isLoggedIn();
-      if (isLoggedIn) {
-        const userInfo = await loginService.getUserInfo();
-        if (userInfo) {
-          console.log(cyan(`Already logged in, User Name:${userInfo.userName}`));
-          return;
-        }
+      const userInfo = await loginService.getUserInfo();
+      if (userInfo) {
+        console.log(cyan(`Already logged in, User Name:${userInfo.userName}`));
+        return;
       }
       console.log(cyan('Starting login process...'));
       console.log(cyan('Press Enter to open browser for login...'));
       await waitForEnter();
-      const userInfo = await loginService.login();
+      const newUserInfo = await loginService.login();
       console.log(
-        cyan(`Login successful. Logged in as ${userInfo.userName}.`)
+        cyan(`Login successful. Logged in as ${newUserInfo.userName}.`)
       );
     } catch (error) {
       if (error instanceof DefinedError) {
+        throw error;
+      }
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes('Network connection failed')) {
         throw error;
       }
       throw new Error('Login failed', { cause: error });
@@ -92,21 +93,12 @@ authCommand
   .command('status')
   .description('Show the currently logged-in user')
   .action(async () => {
-    try {
-      const isLoggedIn = await loginService.isLoggedIn();
-      if (!isLoggedIn) {
-        console.log(cyan('Not logged in'));
-        return;
-      }
-      const userInfo = await loginService.getUserInfo();
-      if (!userInfo) {
-        console.log(cyan('Not logged in'));
-        return;
-      }
-      console.log(cyan(`Current user: ${userInfo.userName}`));
-    } catch {
+    const userInfo = await loginService.getUserInfo();
+    if (!userInfo) {
       console.log(cyan('Not logged in'));
+      return;
     }
+    console.log(cyan(`Current user: ${userInfo.userName}`));
   });
 
 const teamCommand = authCommand
@@ -118,19 +110,14 @@ teamCommand
   .description('List team accounts the current user has joined')
   .action(async () => {
     try {
-      const isLoggedIn = await loginService.isLoggedIn();
-      if (!isLoggedIn) {
-        if (isDevecoCodeAuth()) {
-          console.log(red('Not logged in. Please login via DevEco Code first.'));
-        } else {
-          console.log(cyan('Please run `devecocli auth login` first.'));
-        }
-        return;
-      }
       const result = await getTeamList();
       console.log(renderTeamTable(result.teamList));
     } catch (error) {
-      throw new Error('Failed to list teams', { cause: error });
+      if (error instanceof DefinedError) {
+        console.log(red(error.message));
+        return;
+      }
+      throw error;
     }
   });
 

@@ -6,11 +6,10 @@ import * as crypto from 'crypto';
 import { LocalAuthServer } from './local-auth-server';
 import { tokenStorage, isDevecoCodeAuth } from '../utils/token-storage';
 import type { UserInfo, LoginConfig } from '../types/auth-types';
-import { getRegionalizedBaseUrl } from '../utils/region';
-import { DEFAULT_LOGIN_CONFIG } from '../auth-config';
+import { DEFAULT_LOGIN_CONFIG, ApiEndpoints } from '../auth-config';
 import { openBrowser } from './browser';
-import { tokenChecker } from '../utils/token-checker';
 import { userInfoFetcher } from './user-info-fetcher';
+import { tokenChecker } from '../utils/token-checker';
 import { httpClient } from '../../utils/http-client';
 import { DefinedError } from '../utils/errors.js';
 import { debugLog } from '../../utils/logger';
@@ -62,7 +61,7 @@ export class LoginService {
 
       this.server = new LocalAuthServer(
         clientSecret,
-        this.getRegionalizedBaseUrl(),
+        ApiEndpoints.CN_LOGIN_URL,
         this.config.successRedirectUrl,
         this.config.failedRedirectUrl
       );
@@ -85,21 +84,19 @@ export class LoginService {
       const jwtToken = await userInfoFetcher.getJwtToken(
         callbackData.tempToken,
         callbackData.siteId,
-        () => this.getRegionalizedBaseUrl(),
+        ApiEndpoints.CN_LOGIN_URL,
         this.config.tempTokenCheckUrl,
         this.config.appId
       );
       debugLog('JWT token received');
 
-      const userInfo = await userInfoFetcher.getUserInfoFromJwt(
+      const userInfo = await tokenChecker.getUserInfoFromJwt(
         jwtToken,
-        (token) =>
-          tokenChecker.checkJwtToken(
-            token,
-            () => this.getRegionalizedBaseUrl(),
-            this.config.jwtTokenCheckUrl
-          )
+        ApiEndpoints.CN_LOGIN_URL
       );
+      if (!userInfo) {
+        throw new DefinedError('Login failed: failed to get user info');
+      }
       debugLog(`User info received: ${userInfo.userName}`);
 
       // 保存 jwtToken 到磁盘
@@ -121,23 +118,8 @@ export class LoginService {
    * @returns 如果已登录返回 true，否则返回 false
    */
   public async isLoggedIn(): Promise<boolean> {
-    const jwtToken = await tokenStorage.loadJwtToken();
-    if (!jwtToken) {
-      return false;
-    }
-    const res = await tokenChecker.checkJwtToken(
-      jwtToken,
-      () => this.getRegionalizedBaseUrl(),
-      this.config.jwtTokenCheckUrl
-    );
-    if (res.status) {
-      return true;
-    }
-    // jwtToken失效，需要重新登录
-    if (!isDevecoCodeAuth()) {
-      await tokenStorage.clearToken();
-    }
-    return false;
+    const userInfo = await this.getUserInfo(true);
+    return userInfo !== null;
   }
 
   /**
@@ -150,10 +132,13 @@ export class LoginService {
     if (!jwtToken) {
       return false;
     }
-    const regionalizedBaseUrl = this.getRegionalizedBaseUrl();
+    const regionalizedBaseUrl = ApiEndpoints.CN_LOGIN_URL;
     const logoutUrl = `${regionalizedBaseUrl}/${this.config.logoutUrl}?jwtToken=${jwtToken}`;
     try {
       await httpClient.post(logoutUrl, { timeout: 5000 });
+    } catch {
+      // 网络异常，服务器通知失败，本地清除成功即可
+      debugLog('Logout: server notification failed, local token cleared');
     } finally {
       await tokenStorage.clearToken();
     }
@@ -163,20 +148,11 @@ export class LoginService {
   /**
    * 获取当前会话信息
    * 从磁盘的 JWT Token 解析用户信息
+   * @param refreshToken 是否刷新 accessToken，默认 true
    * @returns 会话信息对象，如果未登录则返回 null
    */
-  public async getUserInfo(): Promise<UserInfo | null> {
-    const jwtToken = await tokenStorage.loadJwtToken();
-    if (!jwtToken) {
-      return null;
-    }
-    return userInfoFetcher.getUserInfoFromJwt(jwtToken, (token) =>
-      tokenChecker.checkJwtToken(
-        token,
-        () => this.getRegionalizedBaseUrl(),
-        this.config.jwtTokenCheckUrl
-      )
-    );
+  public async getUserInfo(refreshToken: boolean = true): Promise<UserInfo | null> {
+    return tokenChecker.fetchUserInfo(ApiEndpoints.CN_LOGIN_URL, refreshToken);
   }
 
   /**
@@ -188,18 +164,6 @@ export class LoginService {
   }
 
   /**
-   * 获取区域化的基础 URL
-   * 根据国家代码返回对应的 API 端点
-   * @returns 区域化的基础 URL
-   */
-  private getRegionalizedBaseUrl(): string {
-    return getRegionalizedBaseUrl(
-      this.config.countryCode ?? '',
-      this.config.baseUrl
-    );
-  }
-
-  /**
    * 打开浏览器登录页面
    * @param port 本地认证服务器端口
    * @param clientSecret 客户端密钥
@@ -208,7 +172,7 @@ export class LoginService {
     port: number,
     clientSecret: string
   ): Promise<void> {
-    const regionalizedBaseUrl = this.getRegionalizedBaseUrl();
+    const regionalizedBaseUrl = ApiEndpoints.CN_LOGIN_URL;
     const loginUrl = `${regionalizedBaseUrl}/${this.config.authUrl}?port=${port}&appid=${this.config.appId}&code=${clientSecret}`;
     await openBrowser(loginUrl);
   }
@@ -221,10 +185,7 @@ export class LoginService {
     accessToken: string;
     refreshToken: string;
   } | null> {
-    return tokenChecker.refreshToken(
-      () => this.getRegionalizedBaseUrl(),
-      this.config.jwtTokenCheckUrl
-    );
+    return tokenChecker.refreshToken(ApiEndpoints.CN_LOGIN_URL);
   }
 }
 
