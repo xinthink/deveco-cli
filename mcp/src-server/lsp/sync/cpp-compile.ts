@@ -30,7 +30,7 @@ export interface CompileCommand {
 export function isCppFile(filePath: string): boolean {
     const ext = path.extname(filePath).replace(/^\./, '').toLowerCase();
     return [
-        'c', 'cpp', 'cxx', 'cc', 'h', 'hpp', 'hxx', 'hh', 'c++', 'h++',
+        'c', 'cpp', 'cxx', 'cc', 'h', 'hpp', 'hxx', 'hh',
     ].includes(ext);
 }
 
