@@ -69,8 +69,8 @@ Search/read local HarmonyOS docs.
 - `catalog`: List available catalogs.
 
 ### `devecocli device`
-- `list`: Show active real devices and running emulators.
-- `view`: Detailed info. Req `-t <name|serial>` on multi-device hosts.
+- `list`: Show active real devices and running emulators. Opt: `--format <table|json>` (default: `table`).
+- `view`: Detailed info. Req `-t <name|serial>` on multi-device hosts. Opt: `--format <table|json>` (default: `table`).
 
 ### `devecocli run` `[Outside sandbox]`
 Build, install, and launch.
