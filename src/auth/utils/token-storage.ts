@@ -69,8 +69,10 @@ export class TokenStorage {
       return null;
     }
 
+    const resolvedDir = path.resolve(configDir);
+
     try {
-      const tokenFilePath = path.join(configDir, AppConfig.TOKEN_FILE_NAME);
+      const tokenFilePath = path.join(resolvedDir, AppConfig.TOKEN_FILE_NAME);
       if (!fs.existsSync(tokenFilePath)) {
         return null;
       }
@@ -101,7 +103,11 @@ export class TokenStorage {
         return null;
       }
       return LocalCrypto.decryptForLocalStorage(tokenData);
-    } catch {
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'EACCES' || code === 'EPERM' || code === 'ENOENT') {
+        return null;
+      }
       await this.clearToken();
       return null;
     }

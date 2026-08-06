@@ -4,9 +4,8 @@
  */
 import { httpClient } from '../../utils/http-client';
 import { tokenStorage } from './token-storage';
-import type { TokenCheckResponse, UserInfo, JwtPayload } from '../types/auth-types';
+import type { TokenCheckResponse, UserInfo } from '../types/auth-types';
 import { ApiEndpoints } from '../auth-config';
-import { parseJwtPayload } from './jwt';
 import { getLanguageByCountryCode } from './region';
 import { debugLog } from '../../utils/logger';
 
@@ -109,22 +108,15 @@ export class TokenChecker {
    */
   async getUserInfoFromJwt(jwtToken: string, regionalizedBaseUrl: string, refresh: boolean = false): Promise<UserInfo | null> {
     const tokenInfo = await this.checkJwtToken(jwtToken, regionalizedBaseUrl, refresh);
-
     if (!tokenInfo.status || !tokenInfo.userInfo || !tokenInfo.userInfo.accessToken) {
       debugLog('jwtToken invalid.');
-      // JWT 失效，清除本地存储（网络异常时不清理）
       await tokenStorage.clearToken();
       return null;
     }
 
-    const payload = parseJwtPayload<JwtPayload>(jwtToken);
-    if (!payload) {
-      throw new Error('jwtToken parse failed.');
-    }
-
     const userInfo: UserInfo = {
-      userId: payload.userId,
-      userName: payload.userName,
+      userId: tokenInfo.userInfo.userId ?? '',
+      userName: tokenInfo.userInfo.name ?? '',
       accessToken: tokenInfo.userInfo.accessToken,
       refreshToken: tokenInfo.userInfo.refreshToken ?? '',
       jwtToken: jwtToken,
