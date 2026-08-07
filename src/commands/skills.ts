@@ -30,12 +30,15 @@ import {
   validateDirectoryPath,
   resolveInstallationTargets,
 } from '../skills/agents';
+import { isDevecoCodeAuth } from '../auth/utils/token-storage';
 import {
   AddOptions,
   RemoveOptions,
   SkillOperationResult,
   InstallationTargets,
 } from '../types/skills';
+
+const DEVECO_CODE_AGENT = 'deveco';
 
 /**
  * 获取要安装的技能名称列表
@@ -143,6 +146,18 @@ function validateAddOptions(options: AddOptions): {
   return { resolvedPath, resolvedProject };
 }
 
+function hasExplicitInstallTarget(
+  options: { path?: string; project?: string; agent?: string },
+  resolvedPath: string | undefined,
+  resolvedProject: string | undefined
+): boolean {
+  return !!(resolvedPath || resolvedProject || options.path || options.project || options.agent);
+}
+
+function devecoCodeOnlyTargets(): InstallationTargets {
+  return { agents: [DEVECO_CODE_AGENT], projectAgents: [], customPath: undefined };
+}
+
 /**
  * 获取安装目标（skill 名称列表和安装目标）
  */
@@ -154,11 +169,10 @@ async function getInstallationTargets(
   skillNames: string[];
   targets: InstallationTargets;
 }> {
-  const targets = await resolveInstallationTargets(
-    options,
-    resolvedPath,
-    resolvedProject
-  );
+  const targets =
+    isDevecoCodeAuth() && !hasExplicitInstallTarget(options, resolvedPath, resolvedProject)
+      ? devecoCodeOnlyTargets()
+      : await resolveInstallationTargets(options, resolvedPath, resolvedProject);
   const skillNames = await getSkillNames(options);
   return { skillNames, targets };
 }
@@ -376,6 +390,10 @@ async function removeSkill(
     return removeSkillFromTargets(skillName, targets);
   }
   // Case 5: No flags
+  if (isDevecoCodeAuth()) {
+    const result = await removeSkillFromAgent(skillName, DEVECO_CODE_AGENT);
+    return [result];
+  }
   const agents = await getAllExistingAgents();
   validateAgentsNotEmpty(agents, 'or use --path for a custom location.');
   const targets = agents.map((a) => ({ type: 'agent' as const, agent: a }));
