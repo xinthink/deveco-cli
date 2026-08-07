@@ -67,6 +67,8 @@ function normalizeNativeMessage(line: string): string {
   }
 }
 
+const MAX_CODELINTER_OUTPUT_LENGTH = 50 * 1024 * 1024;
+
 /** 从 Code Linter 标准输出中分离 JSON 报告和诊断文本。 */
 export function extractJsonFromNativeStdout(
   stdout: string | undefined
@@ -74,6 +76,10 @@ export function extractJsonFromNativeStdout(
   const filtered = filterCodelinterNativeText(stdout).trim();
   if (!filtered) {
     return { jsonText: undefined, diagnostics: '' };
+  }
+
+  if (filtered.length > MAX_CODELINTER_OUTPUT_LENGTH) {
+    return { jsonText: undefined, diagnostics: `${filtered.slice(0, 1024)}\n[output truncated: exceeded ${MAX_CODELINTER_OUTPUT_LENGTH} bytes]\n` };
   }
 
   if (isJsonText(filtered)) {
@@ -134,32 +140,55 @@ function findJsonRange(
   text: string
 ): { start: number; end: number } | undefined {
   for (let start = 0; start < text.length; start++) {
-    if (text[start] !== '[' && text[start] !== '{') {
+    const ch = text[start];
+    if (ch !== '[' && ch !== '{') {
       continue;
     }
-    const range = findJsonRangeFromStart(text, start);
-    if (range) {
-      return range;
+    const close = ch === '[' ? ']' : '}';
+    const end = findMatchingClose(text, start, ch, close);
+    if (end !== -1 && isJsonText(text.slice(start, end + 1))) {
+      return { start, end: end + 1 };
     }
   }
   return undefined;
 }
 
-function findJsonRangeFromStart(
+function findMatchingClose(
   text: string,
-  start: number
-): { start: number; end: number } | undefined {
-  for (let end = text.length; end > start; end--) {
-    const last = text[end - 1];
-    if (last !== ']' && last !== '}') {
+  start: number,
+  open: string,
+  close: string
+): number {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) {
+      escape = false;
       continue;
     }
-    const candidate = text.slice(start, end);
-    if (isJsonText(candidate)) {
-      return { start, end };
+    if (ch === '\\' && inString) {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) {
+      continue;
+    }
+    if (ch === open) {
+      depth++;
+    } else if (ch === close) {
+      depth--;
+      if (depth === 0) {
+        return i;
+      }
     }
   }
-  return undefined;
+  return -1;
 }
 
 type JsonObject = Record<string, unknown>;

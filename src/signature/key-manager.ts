@@ -180,6 +180,8 @@ async function saveToRandomFile(dirPath: string, data: Uint8Array): Promise<stri
 // ==========================================
 
 export class KeyManager {
+  private static keyChain: Promise<void> = Promise.resolve();
+
   /**
    * 生成模式：创建并持久化密钥材料，返回 16 字节 workKey
    */
@@ -263,12 +265,22 @@ export class KeyManager {
   private static async getStoreKey(
     storeFile: string
   ): Promise<Uint8Array> {
-    const baseDir = dirname(storeFile);
+    let release!: () => void;
+    const previous = this.keyChain;
+    this.keyChain = new Promise((resolve) => {
+      release = resolve;
+    });
+    await previous;
 
     try {
-      return await this.readMaterial(baseDir);
-    } catch {
-      return await this.generateMaterial(baseDir);
+      const baseDir = dirname(storeFile);
+      try {
+        return await this.readMaterial(baseDir);
+      } catch {
+        return await this.generateMaterial(baseDir);
+      }
+    } finally {
+      release();
     }
   }
 
