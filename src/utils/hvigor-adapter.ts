@@ -8,6 +8,14 @@ import { ToolProvider } from '../toolchain';
 import * as fs from 'fs';
 import * as os from 'os';
 import { debugLog } from './logger.js';
+import { startMemoryTracker, formatBytesMb } from './process-rss.js';
+
+interface DaemonInfo {
+  pid: number;
+  state: string;
+  cwdPath: string;
+  port: number;
+}
 
 interface DaemonInfo {
   pid: number;
@@ -42,7 +50,7 @@ export class HvigorAdapter {
     this.env = env as Record<string, string>;
   }
 
-  public async sync(productName: string, buildMode: string): Promise<void> {
+  public async sync(productName: string, buildMode: string): Promise<string> {
     const args: string[] = [
       '--sync',
       '-p',
@@ -54,13 +62,13 @@ export class HvigorAdapter {
       '--incremental',
     ];
 
-    await this.runHvigor(args);
+    return this.runHvigor(args);
   }
 
   public async buildProduct(
     productName: string,
     buildMode: string
-  ): Promise<void> {
+  ): Promise<string> {
     const args: string[] = [
       'assembleApp',
       '-p',
@@ -72,7 +80,7 @@ export class HvigorAdapter {
       '--incremental',
     ];
 
-    await this.runHvigor(args);
+    return this.runHvigor(args);
   }
 
   public async buildModules(
@@ -80,7 +88,7 @@ export class HvigorAdapter {
     buildMode: string,
     modules: string[],
     moduleTasks: Set<string>
-  ): Promise<void> {
+  ): Promise<string> {
     const args: string[] = [
       ...Array.from(moduleTasks),
       '--mode',
@@ -96,10 +104,10 @@ export class HvigorAdapter {
       '--incremental',
     ];
 
-    await this.runHvigor(args);
+    return this.runHvigor(args);
   }
 
-  public async clean(): Promise<void> {
+  public async clean(): Promise<string> {
     const args: string[] = [
       'clean',
       '--analyze=normal',
@@ -107,11 +115,11 @@ export class HvigorAdapter {
       '--no-daemon',
     ];
 
-    await this.runHvigor(args);
+    return this.runHvigor(args);
   }
 
-  public async stopDaemon(): Promise<void> {
-    await this.runHvigor(['--stop-daemon']);
+  public async stopDaemon(): Promise<string> {
+    return this.runHvigor(['--stop-daemon']);
   }
 
   public async ensureDaemonRunning(): Promise<void> {
@@ -170,16 +178,16 @@ export class HvigorAdapter {
   /**
    * 只触发 native（c/c++）编译，不生成 hap/har。
    */
-  public async compileNative(productName: string, moduleName?: string): Promise<void> {
+  public async compileNative(productName: string, moduleName?: string): Promise<string> {
     const args: string[] = ['--mode', 'module'];
     if (moduleName) {
       args.push('-p', `module=${moduleName}`);
     }
     args.push('-p', `product=${productName}`, 'compileNative', '--analyze=normal');
-    await this.runHvigor(args);
+    return this.runHvigor(args);
   }
 
-  private async runHvigor(args: string[]): Promise<void> {
+  private async runHvigor(args: string[]): Promise<string> {
     const cmd = this.toolProvider.nodePath;
     const cmdArgs = [this.toolProvider.hvigorJsPath, ...args];
 
@@ -187,11 +195,25 @@ export class HvigorAdapter {
 
     const stdioOpt = this.silent && !process.env.DEVECO_CLI_DEBUG ? 'pipe' : 'inherit';
 
-    await execa(cmd, cmdArgs, {
+    const child = execa(cmd, cmdArgs, {
       cwd: this.projectRoot,
       env: this.env,
       stdout: stdioOpt,
       stderr: stdioOpt,
     });
+
+    const tracker = startMemoryTracker(child.pid, 500, true);
+    let peakMemoryMb = '';
+
+    try {
+      await child;
+    } finally {
+      const peakBytes = await tracker.stop();
+      if (peakBytes > 0) {
+        peakMemoryMb = formatBytesMb(peakBytes);
+        debugLog(`Hvigor peak memory: ${peakMemoryMb}`);
+      }
+    }
+    return peakMemoryMb;
   }
 }

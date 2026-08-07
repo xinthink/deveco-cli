@@ -12,7 +12,9 @@
   </p>
 </div>
 
-`DevEco CLI` 将 `DevEco Studio` 工具链统一封装为一个 `CLI`，内置 `ohpm`、`hvigor`、`hdc`、`emulator`、`hilog`，同时集成 HarmonyOS 技能安装、项目脚手架、本地  HarmonyOS 文档检索和 `MCP` 服务。
+`DevEco CLI` 将 `DevEco Studio` 工具链统一封装为一个 `CLI`，内置 `ohpm`、`hvigor`、`hdc`、`emulator`、`hilog`，同时集成 HarmonyOS 技能安装、项目脚手架、本地 HarmonyOS 文档检索和 `MCP` 服务。
+
+> 关于数据采集与隐私（遥测打点内容、存储加密、上报及关闭方式），请参阅 [PRIVACY.md](./PRIVACY.md)。
 
 
 ## 快速开始

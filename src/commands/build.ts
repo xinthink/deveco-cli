@@ -11,11 +11,19 @@ import { OhpmAdapter } from '../utils/ohpm-adapter.js';
 import { withBuildLock } from '../utils/build-lock.js';
 import { checkSyncRequired } from '../utils/project-check.js';
 import { findCppModules, findAndMergeCompileCommands } from '../../mcp/src-server/lsp/sync/cpp-compile.js';
+import { telemetry, EventType, type CommandExecuted, type TrackMeasurement, TraceError } from '../trace/index.js';
 
 interface BuildOptions {
   product?: string;
   modules?: string[];
   buildMode?: string;
+}
+
+interface BuildResult {
+  bundleName: string;
+  ohpmMemoryMb: string;
+  syncMemoryMb: string;
+  buildMemoryMb: string;
 }
 
 function validateProjectConfig(project: Project, options: BuildOptions) {
@@ -75,14 +83,16 @@ function determineModulesToBuild(
     } else if (entryModules.length === 1) {
       initialModules = [entryModules[0].name];
     } else if (entryModules.length > 1) {
-      throw new Error(
+      throw new TraceError(
         `Multiple entry modules found (${entryModules.map((m) => m.name).join(', ')}). ` +
-          `Please specify which module to build with --modules.`
+          `Please specify which module to build with --modules.`,
+        'Multiple entry modules found.'
       );
     } else {
-      throw new Error(
+      throw new TraceError(
         `No entry module found and multiple modules available (${allModules.map((m) => m.name).join(', ')}). ` +
-          `Please specify which module to build with --modules.`
+          `Please specify which module to build with --modules.`,
+        'No entry module found and multiple modules available.'
       );
     }
   }
@@ -153,7 +163,7 @@ export async function executeBuildSteps(
   buildMode: string,
   buildTarget: BuildTarget,
   projectRoot: string
-) {
+): Promise<{ ohpmMemoryMb: string; syncMemoryMb: string; buildMemoryMb: string }> {
   // ohpm install always runs; hvigor sync is skipped when configurations are unchanged
   const checkResult = checkSyncRequired(projectRoot);
 
@@ -164,10 +174,11 @@ export async function executeBuildSteps(
     logAdapterFailureAndThrow('ohpm install', error);
   }
 
+  let syncMemoryMb = '';
   if (checkResult.required) {
     console.log('\n[hvigor sync] Running...');
     try {
-      await hvigorAdapter.sync(productName, buildMode);
+      syncMemoryMb = await hvigorAdapter.sync(productName, buildMode);
     } catch (error) {
       logAdapterFailureAndThrow('hvigor sync', error);
     }
@@ -176,11 +187,12 @@ export async function executeBuildSteps(
   }
 
   console.log('\n[hvigor build] Running...');
+  let buildMemoryMb = '';
   try {
     if (buildTarget.type === 'product') {
-      await hvigorAdapter.buildProduct(productName, buildMode);
+      buildMemoryMb = await hvigorAdapter.buildProduct(productName, buildMode);
     } else {
-      await hvigorAdapter.buildModules(
+      buildMemoryMb = await hvigorAdapter.buildModules(
         productName,
         buildMode,
         buildTarget.modulesToBuild,
@@ -193,6 +205,7 @@ export async function executeBuildSteps(
 
   // 构建成功后合并中央 compile_commands.json（供 clangd 使用）。
   mergeCppCompileCommands(projectRoot);
+  return { ohpmMemoryMb: ohpmAdapter.peakMemoryMb, syncMemoryMb, buildMemoryMb };
 }
 
 /**
@@ -214,6 +227,155 @@ function mergeCppCompileCommands(projectRoot: string): void {
   }
 }
 
+async function withTrace(
+  event: CommandExecuted,
+  action: () => Promise<void>
+): Promise<void> {
+  const start = Date.now();
+  let success = true;
+  let errorCode: string | null = null;
+
+  try {
+    await action();
+  } catch (error) {
+    success = false;
+    if (error instanceof TraceError) {
+      errorCode = (error as TraceError).traceMessage;
+    } else {
+      errorCode = (error as Error).message;
+    }
+    console.error(red((error as Error).message));
+    process.exitCode = 1;
+  } finally {
+    const measurement: TrackMeasurement = {
+      duration_ms: Date.now() - start,
+      success,
+      error_code: errorCode,
+    };
+    await telemetry.track(event, measurement);
+  }
+}
+
+function buildBuildEvent(options: BuildOptions): CommandExecuted {
+  const event: CommandExecuted = {
+    event: EventType.CommandExecuted,
+    args: [
+      'build',
+      ...(options.product ? ['--product'] : []),
+      ...(options.modules ? ['--modules'] : []),
+      ...(options.buildMode ? ['--build-mode'] : []),
+    ],
+  };
+  if (options.buildMode) {
+    event.build_mode = options.buildMode;
+  }
+  if (options.modules) {
+    event.module_count = options.modules.length;
+  }
+  return event;
+}
+
+function buildCleanEvent(): CommandExecuted {
+  return {
+    event: EventType.CommandExecuted,
+    args: ['build', 'clean'],
+  };
+}
+
+async function handleBuild(
+  options: BuildOptions
+): Promise<BuildResult> {
+  const currentDir = process.cwd();
+  const project = Project.discover(currentDir);
+  console.warn(yellow('Ensure the project source is trustworthy before proceeding.'));
+  const toolProvider = await ToolProvider.new();
+  toolProvider.assertJava();
+
+  validateProjectConfig(project, options);
+
+  const productName = options.product || 'default';
+  const buildMode = options.buildMode || 'debug';
+
+  let buildTarget:
+    | { type: 'product' }
+    | { type: 'modules'; modulesToBuild: string[]; moduleTasks: Set<string> };
+
+  if (options.product && !options.modules) {
+    // If product is specified without modules, build the whole product
+    buildTarget = { type: 'product' };
+  } else {
+    // Build specific modules or auto-detect modules
+    const modulesToBuild = determineModulesToBuild(project, options);
+    const moduleTasks = processModuleTasks(project, modulesToBuild);
+    buildTarget = { type: 'modules', modulesToBuild, moduleTasks };
+  }
+
+  const ohpmAdapter = new OhpmAdapter(toolProvider, project.rootDir);
+  const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
+
+  const memStats = await withBuildLock(
+    project.rootDir,
+    async () =>
+      executeBuildSteps(
+        ohpmAdapter,
+        hvigorAdapter,
+        productName,
+        buildMode,
+        buildTarget,
+        project.rootDir
+      ),
+    () => {
+      console.log(
+        'Another build is already running for this project. Waiting for completion...'
+      );
+    }
+  );
+
+  console.log('\n' + green('Build completed successfully'));
+  return {
+    bundleName: project.getBundleName(),
+    ohpmMemoryMb: memStats.ohpmMemoryMb,
+    syncMemoryMb: memStats.syncMemoryMb,
+    buildMemoryMb: memStats.buildMemoryMb,
+  };
+}
+
+async function handleClean(): Promise<string> {
+  const currentDir = process.cwd();
+  const project = Project.discover(currentDir);
+  console.warn(yellow('Ensure the project source is trusted before proceeding.'));
+  const toolProvider = await ToolProvider.new();
+  toolProvider.assertJava();
+
+  const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
+  await withBuildLock(
+    project.rootDir,
+    async () => {
+      console.log('\n[1/2] Running hvigor clean...');
+      try {
+        await hvigorAdapter.clean();
+      } catch (error) {
+        logAdapterFailureAndThrow('hvigor clean', error);
+      }
+
+      console.log('\n[2/2] Running hvigor --stop-daemon...');
+      try {
+        await hvigorAdapter.stopDaemon();
+      } catch (error) {
+        logAdapterFailureAndThrow('hvigor --stop-daemon', error);
+      }
+    },
+    () => {
+      console.log(
+        'Another build is already running for this project. Waiting for it to finish...'
+      );
+    }
+  );
+
+  console.log('\n' + green('Clean completed successfully.'));
+  return project.getBundleName();
+}
+
 const buildCommand = new Command('build')
   .description('Build HarmonyOS project')
   .option(
@@ -229,106 +391,30 @@ const buildCommand = new Command('build')
     'Build mode (buildModeSet in build-profile.json5; e.g. debug, release; default: debug)'
   )
   .action(async (options: BuildOptions) => {
-    try {
-      const currentDir = process.cwd();
-      const project = Project.discover(currentDir);
-      console.warn(yellow('Ensure the project source is trustworthy before proceeding.'));
-
-      validateProjectConfig(project, options);
-
-      const productName = options.product || 'default';
-      const buildMode = options.buildMode || 'debug';
-
-      let buildTarget:
-        | { type: 'product' }
-        | {
-            type: 'modules';
-            modulesToBuild: string[];
-            moduleTasks: Set<string>;
-          };
-
-      if (options.product && !options.modules) {
-        // If product is specified without modules, build the whole product
-        buildTarget = { type: 'product' };
-      } else {
-        // Build specific modules or auto-detect modules
-        const modulesToBuild = determineModulesToBuild(project, options);
-        const moduleTasks = processModuleTasks(project, modulesToBuild);
-        buildTarget = { type: 'modules', modulesToBuild, moduleTasks };
+    const event = buildBuildEvent(options);
+    await withTrace(event, async () => {
+      const result = await handleBuild(options);
+      event.bundle_name = result.bundleName;
+      if (result.ohpmMemoryMb) {
+        event.ohpm_install_memory = result.ohpmMemoryMb;
       }
-
-      const toolProvider = await ToolProvider.new();
-      toolProvider.assertJava();
-
-      const ohpmAdapter = new OhpmAdapter(toolProvider, project.rootDir);
-      const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
-
-      await withBuildLock(
-        project.rootDir,
-        async () =>
-          executeBuildSteps(
-            ohpmAdapter,
-            hvigorAdapter,
-            productName,
-            buildMode,
-            buildTarget,
-            project.rootDir
-          ),
-        () => {
-          console.log(
-            'Another build is already running for this project. Waiting for completion...'
-          );
-        }
-      );
-
-      console.log('\n' + green('Build completed successfully'));
-    } catch (error) {
-      console.error(red((error as Error).message));
-      process.exit(1);
-    }
+      if (result.syncMemoryMb) {
+        event.hvigor_sync_memory = result.syncMemoryMb;
+      }
+      if (result.buildMemoryMb) {
+        event.hvigor_build_memory = result.buildMemoryMb;
+      }
+    });
   });
 
 buildCommand
   .command('clean')
   .description('Clean HarmonyOS project build outputs')
   .action(async () => {
-    try {
-      const currentDir = process.cwd();
-      const project = Project.discover(currentDir);
-      console.warn(yellow('Ensure the project source is trusted before proceeding.'));
-      const toolProvider = await ToolProvider.new();
-      toolProvider.assertJava();
-
-      const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
-      await withBuildLock(
-        project.rootDir,
-        async () => {
-          console.log('\n[1/2] Running hvigor clean...');
-          try {
-            await hvigorAdapter.clean();
-          } catch (error) {
-            logAdapterFailureAndThrow('hvigor clean', error);
-          }
-
-          console.log('\n[2/2] Running hvigor --stop-daemon...');
-          try {
-            await hvigorAdapter.stopDaemon();
-          } catch (error) {
-            logAdapterFailureAndThrow('hvigor --stop-daemon', error);
-          }
-        },
-        () => {
-          console.log(
-            'Another build is already running for this project. Waiting for it to finish...'
-          );
-        }
-      );
-
-      console.log('\n' + green('Clean completed successfully.'));
-    } catch (error) {
-      console.error(red((error as Error).message));
-      process.exit(1);
-    }
+    const event = buildCleanEvent();
+    await withTrace(event, async () => {
+      event.bundle_name = await handleClean();
+    });
   });
 
 export default buildCommand;

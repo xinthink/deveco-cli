@@ -23,7 +23,18 @@ import {
   summarizeMcpResults,
 } from '../skills/mcp-installer';
 import { AGENT_MCP_CONFIG } from '../config/mcp';
-import { InitOptions, SkillOperationResult } from '../types/skills';
+import {
+  InitOptions,
+  SkillOperationResult,
+  type InstallationTargets,
+} from '../types/skills';
+import {
+  telemetry,
+  EventType,
+  type McpConfigOperation,
+  type SkillConfigOperation,
+  type TrackMeasurement,
+} from '../trace/index.js';
 
 const DEVECO_CLI_SKILL_NAME = 'deveco-cli';
 
@@ -57,6 +68,68 @@ async function executeSkillInstallations(
     results.push(...(await Promise.all(batch.map((fn) => fn()))));
   }
   return results;
+}
+
+function resolveTraceAgents(targets: InstallationTargets): string[] {
+  return [
+    ...new Set([
+      ...targets.agents,
+      ...targets.projectAgents.map(({ agent }) => agent),
+    ]),
+  ];
+}
+
+async function recordSkillConfigEvent(
+  event: SkillConfigOperation,
+  start: number,
+  success: boolean,
+  errorCode: string | null
+): Promise<void> {
+  await telemetry
+    .track(event, {
+      duration_ms: Date.now() - start,
+      success,
+      error_code: errorCode,
+    })
+    .catch(() => {});
+}
+
+async function trackSkillConfigInstall(
+  targets: InstallationTargets,
+  sourceFile: string,
+  options: InitOptions,
+  resolvedPath: string | undefined,
+  resolvedProject: string | undefined
+): Promise<SkillOperationResult[]> {
+  const event: SkillConfigOperation = {
+    event: EventType.SkillConfigOperation,
+    subAction: 'install',
+    targetType: resolvedPath ? 'path' : resolvedProject ? 'project' : 'global',
+    agents: resolveTraceAgents(targets),
+  };
+  const start = Date.now();
+  try {
+    const results = await executeSkillInstallations(
+      targets,
+      sourceFile,
+      options
+    );
+    const success = results.every((result) => result.success || result.skipped);
+    await recordSkillConfigEvent(
+      event,
+      start,
+      success,
+      success ? null : 'SKILL_INSTALL_FAILED'
+    );
+    return results;
+  } catch (error) {
+    const errorCode =
+      error instanceof Error
+        ? ((error as NodeJS.ErrnoException).code ?? error.name)
+        : 'UnknownError';
+    await recordSkillConfigEvent(event, start, false, errorCode);
+    throw error;
+  }
 }
 
 /**
@@ -144,6 +217,44 @@ async function executeMcpInstallations(
 }
 
 /**
+ * 执行 MCP 配置安装并打点 devecocli_mcp_config_operation（action=install）。
+ * 用 §3.3 手动测量重载记录耗时与成败：executeMcpInstallations 抛错时记
+ * success=false + error_code（之前写死 success=true 是 bug），再 rethrow。
+ */
+async function trackMcpConfigInstall(
+  targets: Awaited<ReturnType<typeof resolveInstallationTargets>>,
+  resolvedProject: string | undefined,
+  options: InitOptions,
+): Promise<void> {
+  const mcpEvent: McpConfigOperation = {
+    event: EventType.Init,
+    subAction: 'install',
+    targetType: resolvedProject ? 'project' : 'global',
+    agentName: options.agent,
+  };
+  const start = Date.now();
+  let success = true;
+  let errorCode: string | null = null;
+  try {
+    await executeMcpInstallations(targets, resolvedProject, options);
+  } catch (e) {
+    success = false;
+    errorCode =
+      e instanceof Error
+        ? (e as NodeJS.ErrnoException).code ?? e.name
+        : 'UnknownError';
+    throw e;
+  } finally {
+    const measurement: TrackMeasurement = {
+      duration_ms: Date.now() - start,
+      success,
+      error_code: errorCode,
+    };
+    await telemetry.track(mcpEvent, measurement);
+  }
+}
+
+/**
  * devecocli init 入口
  * - 不带标志 / --skill：只安装 skill
  * - 带 --mcp：只配置 MCP（不安装 skill）
@@ -176,13 +287,19 @@ async function handleInitCommand(options: InitOptions): Promise<void> {
 
   // --mcp 时只配置 MCP，不安装 skill
   if (options.mcp) {
-    await executeMcpInstallations(targets, resolvedProject, options);
+    await trackMcpConfigInstall(targets, resolvedProject, options);
     return;
   }
 
   // 默认或 --skill：只安装 skill
   const sourceFile = resolveBundledSkillMdPath();
-  const skillResults = await executeSkillInstallations(targets, sourceFile, options);
+  const skillResults = await trackSkillConfigInstall(
+    targets,
+    sourceFile,
+    options,
+    resolvedPath,
+    resolvedProject
+  );
 
   console.log();
   if (skillResults.length > 0) {

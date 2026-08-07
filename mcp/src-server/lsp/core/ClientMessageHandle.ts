@@ -48,6 +48,11 @@ export class ClientMessageHandle {
     public readonly diagnosticMap = new Map<string, Diagnostic>();
     private initProgressReset: (() => void) | null = null;
 
+    /** 底层 LspClient（ace-server 子进程）的 pid；未启动为 null。 */
+    public get lspPid(): number | null {
+        return this.client.pid;
+    }
+
     constructor(config: LspClientConfig) {
         this.client = new LspClient(config);
         this.client.on('message', (raw: string) => this.handleRawMessage(raw));

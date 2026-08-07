@@ -33,6 +33,11 @@ export class LspClient extends EventEmitter {
         super();
     }
 
+    /** ace-server 子进程 pid；未启动时为 null。 */
+    public get pid(): number | null {
+        return this.process?.pid ?? null;
+    }
+
     /** 确保 log/index 目录存在，返回 lspLog 子目录路径。 */
     private ensureDirectories(): string {
         const lspLogPath = path.join(this.config.logPath, 'lspLog');

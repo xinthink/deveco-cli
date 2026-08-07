@@ -20,9 +20,52 @@ import { HvigorAdapter } from '../utils/hvigor-adapter.js';
 import { cyan, yellow } from 'colorette';
 import { debugLog } from '../utils/logger.js';
 import ora from 'ora';
+import { telemetry, EventType } from '../trace/index.js';
+import type { CheckCommand, TrackMeasurement } from '../trace/index.js';
+import { readProcessRss, formatBytesMb } from '../utils/process-rss.js';
+
+class ValidationError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'ValidationError';
+    this.code = code;
+  }
+}
+
+function deriveCompatErrorCode(error: unknown): string {
+  const e = error as NodeJS.ErrnoException;
+  return error instanceof ValidationError
+    ? (error as ValidationError).code
+    : (e.code ?? e.name ?? 'UnknownError');
+}
+
+async function trackCompat(
+  start: number,
+  success: boolean,
+  errorCode: string | null,
+  cmdArgs: string[]
+): Promise<void> {
+  const rssKb = await readProcessRss(process.pid);
+  const mcpMemory =
+    rssKb !== null ? formatBytesMb(Number(rssKb) * 1024) : 'unknown';
+  const event: CheckCommand = {
+    event: EventType.CheckCommand,
+    args: cmdArgs,
+    mcpMemory,
+    lspMemory: 'unknown',
+  };
+  const measurement: TrackMeasurement = {
+    duration_ms: Date.now() - start,
+    success,
+    error_code: errorCode,
+  };
+  await telemetry.track(event, measurement).catch(() => {});
+}
 
 const FORMAT_VALUES = ['default', 'csv', 'json'] as const;
-type FormatValue = typeof FORMAT_VALUES[number];
+type FormatValue = (typeof FORMAT_VALUES)[number];
 
 const VERSIONS_FORMAT_VALUES = ['default', 'json'] as const;
 
@@ -40,11 +83,15 @@ function sortVersions(versions: string[]): string[] {
   });
 }
 
-function parseSdkVersion(version: string): { apiVersion: number; suffix: string } {
+function parseSdkVersion(version: string): {
+  apiVersion: number;
+  suffix: string;
+} {
   const parenMatch = version.match(/\((\d+)\)/);
   const apiVersion = parenMatch ? Number(parenMatch[1]) : 0;
   const lastUnderscore = version.lastIndexOf('_');
-  const suffix = lastUnderscore >= 0 ? version.slice(lastUnderscore + 1) : version;
+  const suffix =
+    lastUnderscore >= 0 ? version.slice(lastUnderscore + 1) : version;
   return { apiVersion, suffix };
 }
 
@@ -71,20 +118,30 @@ async function handleVersionsCommand(format?: string): Promise<void> {
   if (!VERSIONS_FORMAT_VALUES.includes(format)) {
     throw new Error(`--format must be ${VERSIONS_FORMAT_VALUES.join(' or ')}. got "${format}"`);
   }
-  const toolProvider = await ToolProvider.new();
-  const { apiChangeDir } = toolProvider.getApiscanPaths();
-  debugLog(cyan(`[compat:versions] apiChangeDir: "${apiChangeDir}"`));
+  const start = Date.now();
+  const cmdArgs = ['check', 'compat', 'versions'];
+  try {
+    const toolProvider = await ToolProvider.new();
+    const { apiChangeDir } = toolProvider.getApiscanPaths();
+    debugLog(cyan(`[compat:versions] apiChangeDir: "${apiChangeDir}"`));
 
-  const versions = listApiChangeVersions(apiChangeDir);
+    const versions = listApiChangeVersions(apiChangeDir);
 
-  if (format === 'json') {
-    console.log(JSON.stringify({ versions, count: versions.length }, null, 2));
-  } else {
-    if (versions.length === 0) {
-      console.log('No SDK versions available.');
-      return;
+    if (format === 'json') {
+      console.log(JSON.stringify({ versions, count: versions.length }, null, 2));
+    } else {
+      if (versions.length === 0) {
+        console.log('No SDK versions available.');
+        await trackCompat(start, true, null, cmdArgs);
+        return;
+      }
+      console.log(versions.join('\n'));
     }
-    console.log(versions.join('\n'));
+    await trackCompat(start, true, null, cmdArgs);
+  } catch (error) {
+    const errorCode = deriveCompatErrorCode(error);
+    await trackCompat(start, false, errorCode, cmdArgs);
+    throw error;
   }
 }
 
@@ -127,7 +184,8 @@ function validateModulesExist(project: Project, modules: string[]): void {
   }
   const knownList = project.profile.modules.map((m) => m.name).join(', ');
   const verb = missing.length > 1 ? 'are' : 'is';
-  throw new Error(
+  throw new ValidationError(
+    'errorCode',
     `Module ${missing.map((m) => `"${m}"`).join(', ')} ${verb} not defined in ` +
       `build-profile.json5. Available modules: ${knownList}.`
   );
@@ -140,12 +198,13 @@ function validateFiles(files: string[]): void {
   for (const raw of files) {
     const f = path.resolve(raw);
     if (!existsSync(f)) {
-      throw new Error(`File "${raw}" does not exist.`);
+      throw new ValidationError('errorCode', `File "${raw}" does not exist.`);
     }
     const ext = path.extname(f).toLowerCase();
     if (!SUPPORTED_FILE_EXTS.has(ext)) {
       const supportedList = Array.from(SUPPORTED_FILE_EXTS).join(', ');
-      throw new Error(
+      throw new ValidationError(
+        'errorCode',
         `Unsupported file extension "${ext}" for "${raw}". ` +
           `Supported: ${supportedList}.`
       );
@@ -236,7 +295,7 @@ function stepQuotedChar(
  * 表头和行转为 ApiChangeRecord 数组。
  */
 function rowsToRecords(header: string[], rows: string[][]): ApiChangeRecord[] {
-  return rows.map(cols => {
+  return rows.map((cols) => {
     const get = (name: string): string => {
       const idx = header.indexOf(name);
       return idx >= 0 && idx < cols.length ? cols[idx] : '';
@@ -273,7 +332,10 @@ function parseApiChangeCsv(csvPath: string): ApiChangeRecord[] {
 /**
  * 从工具输出中按 `CSV saved to:` 关键字解析结果文件路径。
  */
-function extractCsvPathFromOutput(stdout: string, outputDir: string): string | null {
+function extractCsvPathFromOutput(
+  stdout: string,
+  outputDir: string
+): string | null {
   const m = stdout.match(/CSV saved to:\s*([^\r\n]+\.csv)/);
   if (!m) {
     return null;
@@ -285,7 +347,10 @@ function extractCsvPathFromOutput(stdout: string, outputDir: string): string | n
 /**
  * 打印扫描汇总信息（按 Change Type 分组统计）。
  */
-function printSummary(records: ApiChangeRecord[], csvPath: string | null): void {
+function printSummary(
+  records: ApiChangeRecord[],
+  csvPath: string | null
+): void {
   const counts = new Map<string, number>();
   for (const r of records) {
     const t = r.changeType || '(unknown)';
@@ -372,16 +437,16 @@ function printDetailsJson(records: ApiChangeRecord[], limit: number): void {
 /**
  * 把模块名解析为绝对路径。
  */
-function resolveModulePaths(
-  project: Project,
-  moduleNames: string[]
-): string[] {
+function resolveModulePaths(project: Project, moduleNames: string[]): string[] {
   const result: string[] = [];
   for (const name of moduleNames) {
     const mod = project.profile.modules.find((m) => m.name === name);
     if (!mod) {
       // 理论上 `validateModulesExist` 已经拦过，这里再兜底一次
-      throw new Error(`Module "${name}" not found in build-profile.json5.`);
+      throw new ValidationError(
+        'errorCode',
+        `Module "${name}" not found in build-profile.json5.`
+      );
     }
     result.push(path.resolve(project.rootDir, mod.srcPath));
   }
@@ -398,7 +463,10 @@ function buildToolArgs(
   options: CheckOptions
 ): string[] {
   if (!options.sourceVersion || !options.targetVersion) {
-    throw new Error('source-version and target-version are required.');
+    throw new ValidationError(
+      'errorCode',
+      'source-version and target-version are required.'
+    );
   }
   const args: string[] = [
     scriptPath,
@@ -464,7 +532,8 @@ async function runScanTool(
       }
       console.log(cyan('[compat:check] === end stdout ==='));
     }
-    const message = new Error(
+    const message = new ValidationError(
+      'errorCode',
       `Compatibility scan failed: ${e.message}` +
         (e.stderr ? `\n${e.stderr}` : '')
     );
@@ -485,19 +554,21 @@ function validateCheckOptions(files: string[], options: CheckOptions): void {
     );
   }
   if (files.length > 0 && options.modules && options.modules.length > 0) {
-    throw new Error(
+    throw new ValidationError(
+      'errorCode',
       'Cannot use `--modules` together with file arguments. ' +
         'Use either file-level scanning (with files) or module-level scanning (with --modules).'
     );
   }
   if (!options.sourceVersion) {
-    throw new Error('--source-version is required.');
+    throw new ValidationError('errorCode', '--source-version is required.');
   }
   if (!options.targetVersion) {
-    throw new Error('--target-version is required.');
+    throw new ValidationError('errorCode', '--target-version is required.');
   }
   if (!options.outputPath && options.format === 'csv') {
-    throw new Error(
+    throw new ValidationError(
+      'errorCode',
       '--format csv requires --output-path. ' +
         'For console output, use --format json or --format default (or omit the flag).'
     );
@@ -512,15 +583,22 @@ function validateVersionsInCatalog(
   availableVersions: string[]
 ): void {
   const missing: string[] = [];
-  if (options.sourceVersion && !availableVersions.includes(options.sourceVersion)) {
+  if (
+    options.sourceVersion &&
+    !availableVersions.includes(options.sourceVersion)
+  ) {
     missing.push(`--source-version "${options.sourceVersion}"`);
   }
-  if (options.targetVersion && !availableVersions.includes(options.targetVersion)) {
+  if (
+    options.targetVersion &&
+    !availableVersions.includes(options.targetVersion)
+  ) {
     missing.push(`--target-version "${options.targetVersion}"`);
   }
   if (missing.length > 0) {
     const verb = missing.length > 1 ? 'are' : 'is';
-    throw new Error(
+    throw new ValidationError(
+      'errorCode',
       `${missing.join(' and ')} ${verb} not in the available SDK version list.\n` +
         `Run \`devecocli compat versions\` to see all available versions.`
     );
@@ -530,7 +608,8 @@ function validateVersionsInCatalog(
     const sourceIdx = availableVersions.indexOf(options.sourceVersion);
     const targetIdx = availableVersions.indexOf(options.targetVersion);
     if (sourceIdx >= targetIdx) {
-      throw new Error(
+      throw new ValidationError(
+        'errorCode',
         `--target-version "${options.targetVersion}" must be later than ` +
           `--source-version "${options.sourceVersion}". ` +
           `Run \`devecocli compat versions\` to see the available order.`
@@ -630,8 +709,12 @@ function resolveOutputTarget(
   }
 
   const isCsvFormat = format === 'default' || format === 'csv';
-  if ((ext === '.csv' && !isCsvFormat) || (ext === '.json' && format !== 'json')) {
-    throw new Error(
+  if (
+    (ext === '.csv' && !isCsvFormat) ||
+    (ext === '.json' && format !== 'json')
+  ) {
+    throw new ValidationError(
+      'errorCode',
       `The --output-path file extension '${ext}' does not match --format ${format}. ` +
         `Use --format ${ext === '.json' ? 'json' : 'default'}, or rename the file.`
     );
@@ -645,21 +728,24 @@ function resolveOutputTarget(
 function validateOutputTarget(target: OutputTarget): void {
   if (target.kind === 'file') {
     if (existsSync(target.filePath)) {
-      throw new Error(
+      throw new ValidationError(
+        'errorCode',
         `Target file "${target.filePath}" already exists. ` +
           `Remove it first, or choose a different --output-path.`
       );
     }
     const parentDir = path.dirname(target.filePath);
     if (!existsSync(parentDir)) {
-      throw new Error(
+      throw new ValidationError(
+        'errorCode',
         `Target directory "${parentDir}" does not exist. ` +
           `Create it first, or choose a different --output-path.`
       );
     }
   } else if (target.kind === 'dir') {
     if (!existsSync(target.dirPath)) {
-      throw new Error(
+      throw new ValidationError(
+        'errorCode',
         `Target directory "${target.dirPath}" does not exist. ` +
           `Create it first, or choose a different --output-path.`
       );
@@ -730,7 +816,8 @@ async function runHvigorCompileNative(
   try {
     await hvigor.compileNative('default', compileModule);
   } catch (cause) {
-    throw new Error(
+    throw new ValidationError(
+      'errorCode',
       `hvigorw compileNative failed (module=${compileModule ?? '<project>'}): ` +
         (cause as Error).message,
       { cause }
@@ -773,51 +860,93 @@ async function prepareCheckContext(files: string[], options: CheckOptions) {
 /**
  * `compat` 命令入口。
  */
-async function handleCheckCommand(
+function writeScanOutput(
+  tmpCsvPath: string,
+  records: ApiChangeRecord[],
+  target: OutputTarget,
+  format: FormatValue
+): string | null {
+  if (target.kind === 'file') {
+    writeReportFile(tmpCsvPath, records, target.filePath, target.ext);
+    return target.filePath;
+  }
+  if (target.kind === 'dir') {
+    return persistReportToDir(tmpCsvPath, records, target.dirPath, format);
+  }
+  if (target.kind === 'none') {
+    return null;
+  }
+  throw new ValidationError(
+    'errorCode',
+    `Unexpected output target kind: ${(target as { kind: string }).kind}`
+  );
+}
+
+async function runCheckAndReport(
+  ctx: Awaited<ReturnType<typeof prepareCheckContext>>,
   files: string[],
-  options: CheckOptions
+  options: CheckOptions,
+  start: number,
+  cmdArgs: string[]
 ): Promise<void> {
-  // [1] 参数校验、项目发现、版本校验、输出目标解析
-  const { project, scriptPath, target, toolProvider } = await prepareCheckContext(files, options);
-
-  const spinner = ora({ text: 'Running compatibility check...', color: 'cyan' }).start();
-
+  const spinner = ora({
+    text: 'Running compatibility check...',
+    color: 'cyan',
+  }).start();
   try {
-    // [2] 执行 hvigor compileNative 生成 native 产物
-    await runHvigorCompileNative(toolProvider, options);
+    await runHvigorCompileNative(ctx.toolProvider, options);
 
-    // [3] 执行 API 变更扫描
-    const args = buildToolArgs(scriptPath, files, project, options);
-    debugLogRunnableCommand(scriptPath, args);
-    const stdout = await runScanTool(toolProvider, args);
+    const args = buildToolArgs(ctx.scriptPath, files, ctx.project, options);
+    debugLogRunnableCommand(ctx.scriptPath, args);
+    const stdout = await runScanTool(ctx.toolProvider, args);
 
-    // [4] 解析扫描结果
     const tmpCsvPath = extractCsvPathFromOutput(stdout, os.tmpdir());
     if (!tmpCsvPath) {
-      throw new Error('Scanner output format unexpected: missing report path.');
+      throw new ValidationError(
+        'errorCode',
+        'Scanner output format unexpected: missing report path.'
+      );
     }
     debugLog(cyan(`[compat:check] tmp csv: "${tmpCsvPath}"`));
     const records = parseApiChangeCsv(tmpCsvPath);
 
-    // 输出结果文件
-    let finalPath: string | null = null;
-    if (target.kind === 'file') {
-      writeReportFile(tmpCsvPath, records, target.filePath, target.ext);
-      finalPath = target.filePath;
-    } else if (target.kind === 'dir') {
-      finalPath = persistReportToDir(tmpCsvPath, records, target.dirPath, options.format);
-    } else if (target.kind === 'none') {
-      // 不输出文件
-    } else {
-      throw new Error(`Unexpected output target kind: ${(target as { kind: string }).kind}`);
-    }
+    const finalPath = writeScanOutput(
+      tmpCsvPath,
+      records,
+      ctx.target,
+      options.format
+    );
     cleanupTmpReport(tmpCsvPath);
 
-    // [5] 输出结果到控制台
     spinner.stop();
-    outputRecords(records, finalPath, options.format, options.limit, target.kind);
+    outputRecords(
+      records,
+      finalPath,
+      options.format,
+      options.limit,
+      ctx.target.kind
+    );
+    await trackCompat(start, true, null, cmdArgs);
   } catch (error) {
     spinner.fail('Compatibility check failed');
+    const errorCode = deriveCompatErrorCode(error);
+    await trackCompat(start, false, errorCode, cmdArgs);
+    throw error;
+  }
+}
+
+async function handleCheckCommand(
+  files: string[],
+  options: CheckOptions
+): Promise<void> {
+  const start = Date.now();
+  const cmdArgs = ['check', 'compat'];
+  try {
+    const ctx = await prepareCheckContext(files, options);
+    await runCheckAndReport(ctx, files, options, start, cmdArgs);
+  } catch (error) {
+    const errorCode = deriveCompatErrorCode(error);
+    await trackCompat(start, false, errorCode, cmdArgs);
     throw error;
   }
 }

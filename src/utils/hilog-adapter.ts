@@ -18,6 +18,7 @@ import {
   runHdcWithRetry,
   type HdcCommandResult,
 } from './hdc-param.js';
+import { TraceError } from '../trace/index.js';
 
 function detectHdcSentinel(
   result: HdcCommandResult,
@@ -135,8 +136,9 @@ export class HilogAdapter {
         return found.serial;
       }
       const list = this.formatConnectedDeviceList(connectedDevices);
-      throw new Error(
-        `Device '${deviceArg}' not found.\nAvailable devices:\n${list}`
+      throw new TraceError(
+        `Device '${deviceArg}' not found.\nAvailable devices:\n${list}`,
+        'Device not found.'
       );
     }
 
@@ -146,9 +148,10 @@ export class HilogAdapter {
       return device.serial;
     }
 
-    throw new Error(
+    throw new TraceError(
       'Multiple devices found. Specify a target device using `--device <name>` or `--device <serial>`.\nAvailable devices:\n' +
-      this.formatConnectedDeviceList(connectedDevices)
+      this.formatConnectedDeviceList(connectedDevices),
+      'Multiple devices found.'
     );
   }
 
@@ -512,8 +515,9 @@ export class HilogAdapter {
       : undefined;
 
     if (options.bundleName && !pid) {
-      throw new Error(
-        `No running process found for bundle '${options.bundleName}'. Ensure the app is launched on the device before fetching logs.`
+      throw new TraceError(
+        `No running process found for bundle '${options.bundleName}'. Ensure the app is launched on the device before fetching logs.`,
+        `No running process found for bundle.`
       );
     }
 

@@ -20,6 +20,7 @@ import {
   parseDownloadedOsVersionsFromImageList,
   type DownloadedImageEntry,
 } from '../utils/emulator-image-list-parse.js';
+import { TraceError } from '../trace/index.js';
 
 const EMULATOR_UNINSTALL_NO_IMAGE_RE = /no images are available/i;
 const EMULATOR_FOLDED_STATE_ERROR_RE =
@@ -149,7 +150,7 @@ export class EmulatorManager {
     );
 
     if (!targetEmulator) {
-      throw new Error(`Emulator "${name}" not found.`);
+      throw new TraceError(`Emulator "${name}" not found.`, 'Emulator not found.');
     }
 
     const listName = targetEmulator.name;
@@ -174,8 +175,9 @@ export class EmulatorManager {
       return 'already-running';
     }
 
-    throw new Error(
-      `Unable to start emulator "${name}". All methods failed.\nLast error: ${outcome.lastError.message || 'unknown'}`
+    throw new TraceError(
+      `Unable to start emulator "${name}". All methods failed.\nLast error: ${outcome.lastError.message || 'unknown'}`,
+      `Unable to start emulator. All methods failed.\nLast error: ${outcome.lastError.message || 'unknown'}`
     );
   }
 
@@ -207,7 +209,7 @@ export class EmulatorManager {
       (e) => normalizeListNameKey(e.name) === nameKey
     );
     if (!target) {
-      throw new Error(`Emulator "${name}" not found.`);
+      throw new TraceError(`Emulator "${name}" not found.`, 'Emulator not found.');
     }
     const listName = target.name;
     const running = await this.isAlreadyRunning(listName, target);
@@ -226,10 +228,10 @@ export class EmulatorManager {
     const emulators = await this.listEmulators();
     const target = emulators.find((item) => item.name === instance);
     if (!target) {
-      throw new Error(`Emulator "${instance}" not found.`);
+      throw new TraceError(`Emulator "${instance}" not found.`, 'Emulator instance not found.');
     }
     if (!(await this.isAlreadyRunning(target.name, target))) {
-      throw new Error(`Emulator "${instance}" is not running.`);
+      throw new TraceError(`Emulator "${instance}" is not running.`, 'Emulator instance is not running.');
     }
     if (action.type === 'battery') {
       const charging = await getEmulatorBatteryChargingState(
@@ -592,8 +594,9 @@ export class EmulatorManager {
       if (force) {
         await this.deleteVirtualDevice(existing.name);
       } else {
-        throw new Error(
-          `Emulator "${name}" already exists. Use \`--force\` to overwrite.`
+        throw new TraceError(
+          `Emulator "${name}" already exists. Use \`--force\` to overwrite.`,
+          'Emulator already exists.'
         );
       }
     }
@@ -641,8 +644,9 @@ export class EmulatorManager {
 
     const created = await this.waitForEmulatorPresenceByList(nameKey);
     if (!created) {
-      throw new Error(
-          `Emulator "${opts.name}" was reported as created, but it did not appear in the emulator list within the waiting period. Open the device manager list in DevEco Studio, then run this command again.`
+      throw new TraceError(
+          `Emulator "${opts.name}" was reported as created, but it did not appear in the emulator list within the waiting period. Open the device manager list in DevEco Studio, then run this command again.`,
+          'Emulator was reported as created, but it did not appear in the emulator list within the waiting period.'
       );
     }
   }
@@ -673,7 +677,7 @@ export class EmulatorManager {
       (e) => normalizeListNameKey(e.name) === nameKey
     );
     if (!target) {
-      throw new Error(`Emulator "${userInputName}" not found.`);
+      throw new TraceError(`Emulator "${userInputName}" not found.`, 'Emulator not found.');
     }
     const listName = target.name;
 
@@ -681,8 +685,9 @@ export class EmulatorManager {
       target.isRunning === true ||
       (await this.isAlreadyRunning(listName, target))
     ) {
-      throw new Error(
-        `Failed to delete device: ${listName}\nThe device may be running.`
+      throw new TraceError(
+        `Failed to delete device: ${listName}\nThe device may be running.`, 
+        'Failed to delete device, The device may be running.'
       );
     }
 

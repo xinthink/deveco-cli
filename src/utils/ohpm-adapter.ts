@@ -5,10 +5,12 @@
 import { execa } from 'execa';
 import { ToolProvider } from '../toolchain/index.js';
 import { debugLog } from './logger.js';
+import { startMemoryTracker, formatBytesMb } from './process-rss.js';
 
 export class OhpmAdapter {
   private toolProvider: ToolProvider;
   private projectRoot: string;
+  peakMemoryMb = '';
 
   constructor(toolProvider: ToolProvider, projectRoot: string) {
     this.toolProvider = toolProvider;
@@ -21,7 +23,7 @@ export class OhpmAdapter {
 
     debugLog(`Executing: ${cmd} ${args.join(' ')}`);
 
-    await execa(cmd, args, {
+    const child = execa(cmd, args, {
       cwd: this.projectRoot,
       env: {
         ...process.env,
@@ -30,5 +32,15 @@ export class OhpmAdapter {
       stdout: 'inherit',
       stderr: 'inherit',
     });
+
+    const tracker = startMemoryTracker(child.pid);
+    try {
+      await child;
+    } finally {
+      const peakBytes = await tracker.stop();
+      if (peakBytes > 0) {
+        this.peakMemoryMb = formatBytesMb(peakBytes);
+      }
+    }
   }
 }

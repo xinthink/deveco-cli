@@ -6,6 +6,7 @@ import { execa } from 'execa';
 import { ToolProvider } from '../toolchain/index.js';
 import { tryGetHdcShellParams } from '../utils/hdc-param.js';
 import { debugLog } from '../utils/logger.js';
+import { TraceError } from '../trace/index.js';
 
 /**
  * `hdc list targets` shows local emulators as `127.0.0.1:<port>`. This is the
@@ -171,14 +172,16 @@ export class DeviceManager {
         return matches[0].device;
       }
       if (matches.length > 1) {
-        throw new Error(
+        throw new TraceError(
           `Multiple devices match "${deviceSelector}". Use a serial instead:\n` +
-            matches.map((m) => `  - ${m.name} (${m.device.serial})`).join('\n')
+            matches.map((m) => `  - ${m.name} (${m.device.serial})`).join('\n'),
+          'Multiple devices match.'
         );
       }
 
-      throw new Error(
-        `Device "${deviceSelector}" not found. Use \`devecocli device list\` to see available targets.`
+      throw new TraceError(
+        `Device "${deviceSelector}" not found. Use \`devecocli device list\` to see available targets.`,
+        'Device not found.'
       );
     }
 

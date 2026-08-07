@@ -30,6 +30,35 @@ import {
   runEmulatorLicenseView,
 } from '../utils/emulator-license.js';
 import { ToolProvider } from '../toolchain/index.js';
+import { telemetry, EventType, type CommandExecuted, type TrackMeasurement, TraceError } from '../trace/index.js';
+
+async function withEmulatorTrace(
+  event: CommandExecuted,
+  action: () => Promise<void>
+): Promise<void> {
+  const start = Date.now();
+  let success = true;
+  let errorCode: string | null = null;
+  try {
+    await action();
+  } catch (error) {
+    success = false;
+    if (error instanceof TraceError) {
+      errorCode = (error as TraceError).traceMessage;
+    } else {
+      errorCode = (error as Error).message;
+    }
+    console.error(red((error as Error).message));
+    process.exitCode = 1;
+  } finally {
+    const measurement: TrackMeasurement = {
+      duration_ms: Date.now() - start,
+      success,
+      error_code: errorCode,
+    };
+    await telemetry.track(event, measurement);
+  }
+}
 
 const SERIAL_PARAM_KEYS = [
   'ohos.qemu.hvd.name',
@@ -548,11 +577,7 @@ async function startAction(
     names.map((name) => startOneEmulator(emulatorManager, hdcPath, name))
   );
 
-  const anyFailed = reportSettledFailures(results, names, 'start');
-
-  if (anyFailed) {
-    process.exit(1);
-  }
+  reportSettledFailures(results, names, 'start');
 }
 
 async function resolveEmulatorListName(
@@ -606,35 +631,28 @@ async function stopAction(
     identifiers.map((id) => stopOneEmulator(emulatorManager, hdcPath, id))
   );
 
-  const anyFailed = reportSettledFailures(results, identifiers, 'stop');
-
-  if (anyFailed) {
-    process.exit(1);
-  }
+  reportSettledFailures(results, identifiers, 'stop');
 }
 
 async function initEmulatorManager(): Promise<{
   manager: EmulatorManager;
   toolProvider: ToolProvider;
 }> {
-  try {
-    const toolProvider = await ToolProvider.new();
-    const manager = EmulatorManager.from(toolProvider);
-    return { manager, toolProvider };
-  } catch (error) {
-    console.error(
-      red(`Failed to initialize emulator: ${(error as Error).message}`)
-    );
-    process.exit(1);
-    return undefined as never;
-  }
+  const toolProvider = await ToolProvider.new();
+  const manager = EmulatorManager.from(toolProvider);
+  return { manager, toolProvider };
 }
 
 async function runEmulatorControlAction(
   options: EmulatorTargetOptions,
-  actionFactory: () => EmulatorControlAction
+  actionFactory: () => EmulatorControlAction,
+  subCommand: string
 ): Promise<void> {
-  try {
+  const event: CommandExecuted = {
+    event: EventType.CommandExecuted,
+    args: ['emulator', subCommand, '--target'],
+  };
+  await withEmulatorTrace(event, async () => {
     const target = assertTarget(options.target);
     const action = actionFactory();
     const { manager, toolProvider } = await initEmulatorManager();
@@ -644,13 +662,7 @@ async function runEmulatorControlAction(
     );
     await manager.controlEmulator(instanceName, action);
     console.log(green(`Emulator "${target}" operation completed.`));
-  } catch (error) {
-    const target = options.target?.trim() || '<unknown>';
-    console.error(
-      red(`Failed to operate emulator "${target}": ${(error as Error).message}`)
-    );
-    process.exit(1);
-  }
+  });
 }
 
 function firstGeolocationAction(
@@ -952,50 +964,52 @@ imageCommand
       osVersion?: string;
       force?: boolean;
     }) => {
-      const { manager, toolProvider } = await initEmulatorManager();
-      try {
-        await ensureEmulatorSdkAgreementForImageDownload(
-          toolProvider.emulatorPath,
-          toolProvider.sdkPath
-        );
-      } catch (error) {
-        if (error instanceof EmulatorLicenseBlockedError) {
-          console.error(red(error.message));
-          process.exit(1);
+      const event: CommandExecuted = {
+        event: EventType.CommandExecuted,
+        args: [
+          'emulator', 'image', 'download',
+          ...(opts.deviceType ? ['--device-type'] : []),
+          ...(opts.osVersion ? ['--os-version'] : []),
+          ...(opts.force ? ['--force'] : []),
+        ],
+      };
+      await withEmulatorTrace(event, async () => {
+        const { manager, toolProvider } = await initEmulatorManager();
+        try {
+          await ensureEmulatorSdkAgreementForImageDownload(
+            toolProvider.emulatorPath,
+            toolProvider.sdkPath
+          );
+        } catch (error) {
+          if (error instanceof EmulatorLicenseBlockedError) {
+            console.error(red(error.message));
+            process.exitCode = 1;
+            return;
+          }
+          throw error;
         }
-        throw error;
-      }
 
-      if (!opts.deviceType?.trim()) {
-        console.error(
-          red("Error: missing required option '--device-type <type>'")
-        );
-        process.exit(1);
-      }
-      if (!opts.osVersion?.trim()) {
-        console.error(
-          red("Error: misssing required option '--os-version <version>'")
-        );
-        process.exit(1);
-      }
-      await assertImageDownloadAvailable(
-        manager,
-        opts.deviceType.trim(),
-        opts.osVersion.trim()
-      );
+        const deviceType = opts.deviceType?.trim();
+        const osVersion = opts.osVersion?.trim();
+        if (!deviceType || !osVersion) {
+          console.error(
+            red(
+              !deviceType
+                ? "Error: missing required option '--device-type <type>'"
+                : "Error: misssing required option '--os-version <version>'"
+            )
+          );
+          process.exitCode = 1;
+          return;
+        }
+        await assertImageDownloadAvailable(manager, deviceType, osVersion);
 
-      try {
         await manager.installEmulatorImage({
-          deviceType: opts.deviceType.trim(),
-          osVersion: opts.osVersion.trim(),
+          deviceType,
+          osVersion,
           force: opts.force === true,
         });
-      } catch (error) {
-        console.error(
-          red(`Failed to download system image: ${(error as Error).message}`)
-        );
-        process.exit(1);
-      }
+      });
     }
   );
 
@@ -1008,18 +1022,17 @@ imageCommand
     'Supports both image label (HarmonyOS x.y.z(n)) and softwareVersion'
   )
   .action(async (opts: { deviceType: string; osVersion: string }) => {
-    const { manager } = await initEmulatorManager();
-    try {
+    const event: CommandExecuted = {
+      event: EventType.CommandExecuted,
+      args: ['emulator', 'image', 'remove', '--device-type', '--os-version'],
+    };
+    await withEmulatorTrace(event, async () => {
+      const { manager } = await initEmulatorManager();
       await manager.uninstallEmulatorImage({
         deviceType: opts.deviceType,
         osVersion: opts.osVersion,
       });
-    } catch (error) {
-      console.error(
-        red(`Failed to remove system image: ${(error as Error).message}`)
-      );
-      process.exit(1);
-    }
+    });
   });
 
 imageCommand
@@ -1038,8 +1051,17 @@ imageCommand
       all?: boolean;
       format?: ImageListFormat;
     }) => {
-      const { manager } = await initEmulatorManager();
-      try {
+      const event: CommandExecuted = {
+        event: EventType.CommandExecuted,
+        args: [
+          'emulator', 'image', 'list',
+          ...(opts.deviceType ? ['--device-type'] : []),
+          ...(opts.all ? ['--all'] : []),
+          ...(opts.format !== 'table' ? ['--format'] : []),
+        ],
+      };
+      await withEmulatorTrace(event, async () => {
+        const { manager } = await initEmulatorManager();
         let downloaded: boolean | undefined;
         if (opts.all) {
           downloaded = undefined;
@@ -1060,12 +1082,7 @@ imageCommand
         }
         const table = formatImageListTable(out, opts.all === true);
         console.log(table);
-      } catch (error) {
-        console.error(
-          red(`Failed to list emulator images: ${(error as Error).message}`)
-        );
-        process.exit(1);
-      }
+      });
     }
   );
 
@@ -1079,12 +1096,18 @@ licenseCommand
   .command('view')
   .description('Review agreement text (read-only, no changes)')
   .action(async () => {
-    const { toolProvider } = await initEmulatorManager();
-    const code = await runEmulatorLicenseView(
-      toolProvider.emulatorPath,
-      toolProvider.sdkPath
-    );
-    process.exit(code);
+    const event: CommandExecuted = {
+      event: EventType.CommandExecuted,
+      args: ['emulator', 'license', 'view'],
+    };
+    await withEmulatorTrace(event, async () => {
+      const { toolProvider } = await initEmulatorManager();
+      const code = await runEmulatorLicenseView(
+        toolProvider.emulatorPath,
+        toolProvider.sdkPath
+      );
+      process.exitCode = code;
+    });
   });
 
 licenseCommand
@@ -1093,21 +1116,33 @@ licenseCommand
     'Accept all emulator license agreements non-interactively (skips review and prompt)'
   )
   .action(async () => {
-    const { toolProvider } = await initEmulatorManager();
-    const code = await runEmulatorLicenseAcceptDirectly(
-      toolProvider.emulatorPath,
-      toolProvider.sdkPath
-    );
-    process.exit(code);
+    const event: CommandExecuted = {
+      event: EventType.CommandExecuted,
+      args: ['emulator', 'license', 'accept'],
+    };
+    await withEmulatorTrace(event, async () => {
+      const { toolProvider } = await initEmulatorManager();
+      const code = await runEmulatorLicenseAcceptDirectly(
+        toolProvider.emulatorPath,
+        toolProvider.sdkPath
+      );
+      process.exitCode = code;
+    });
   });
 
 licenseCommand.action(async () => {
-  const { toolProvider } = await initEmulatorManager();
-  const code = await runEmulatorLicenseAccept(
-    toolProvider.emulatorPath,
-    toolProvider.sdkPath
-  );
-  process.exit(code);
+  const event: CommandExecuted = {
+    event: EventType.CommandExecuted,
+    args: ['emulator', 'license'],
+  };
+  await withEmulatorTrace(event, async () => {
+    const { toolProvider } = await initEmulatorManager();
+    const code = await runEmulatorLicenseAccept(
+      toolProvider.emulatorPath,
+      toolProvider.sdkPath
+    );
+    process.exitCode = code;
+  });
 });
 
 emulatorCommand.addCommand(licenseCommand);
@@ -1117,7 +1152,7 @@ emulatorCommand
   .description('Trigger shake event')
   .requiredOption('--target <nameOrSerial>', 'Target emulator name or serial')
   .action((options: EmulatorTargetOptions) =>
-    runEmulatorControlAction(options, () => ({ type: 'shake' }))
+    runEmulatorControlAction(options, () => ({ type: 'shake' }), 'shake')
   );
 
 emulatorCommand
@@ -1125,7 +1160,7 @@ emulatorCommand
   .description('Press power button (toggle screen on/off)')
   .requiredOption('--target <nameOrSerial>', 'Target emulator name or serial')
   .action((options: EmulatorTargetOptions) =>
-    runEmulatorControlAction(options, () => ({ type: 'power' }))
+    runEmulatorControlAction(options, () => ({ type: 'power' }), 'power')
   );
 
 emulatorCommand
@@ -1137,7 +1172,7 @@ emulatorCommand
   )
   .addArgument(new Argument('<direction>').choices(['left', 'right']))
   .action((direction: 'left' | 'right', options: EmulatorTargetOptions) =>
-    runEmulatorControlAction(options, () => ({ type: 'rotation', direction }))
+    runEmulatorControlAction(options, () => ({ type: 'rotation', direction }), 'rotate')
   );
 
 emulatorCommand
@@ -1149,7 +1184,7 @@ emulatorCommand
   )
   .addArgument(new Argument('<direction>').choices(['up', 'down']))
   .action((direction: 'up' | 'down', options: EmulatorTargetOptions) =>
-    runEmulatorControlAction(options, () => ({ type: 'volume', direction }))
+    runEmulatorControlAction(options, () => ({ type: 'volume', direction }), 'volume')
   );
 
 emulatorCommand
@@ -1161,7 +1196,7 @@ emulatorCommand
     runEmulatorControlAction(options, () => ({
       type: 'folded-state',
       state: parseFoldedState(state),
-    }))
+    }), 'fold')
   );
 
 emulatorCommand
@@ -1179,7 +1214,7 @@ emulatorCommand
     ])
   )
   .action((options: BatteryOptions) =>
-    runEmulatorControlAction(options, () => batteryAction(options))
+    runEmulatorControlAction(options, () => batteryAction(options), 'battery')
   );
 
 emulatorCommand
@@ -1191,7 +1226,7 @@ emulatorCommand
   .option('--altitude <value>', 'Altitude (-10000.0 to 10000.0)')
   .option('--direction <value>', 'Heading direction in degrees (0.00 to 359.99)')
   .action((options: GeolocationOptions) =>
-    runEmulatorControlAction(options, () => firstGeolocationAction(options))
+    runEmulatorControlAction(options, () => firstGeolocationAction(options), 'geolocation')
   );
 
 emulatorCommand
@@ -1211,7 +1246,7 @@ emulatorCommand
       outdoorCycling: { type: 'outdoor-cycling' },
       drivingNavigation: { type: 'driving-navigation' },
     };
-    return runEmulatorControlAction(options, () => sceneActions[type]);
+    return runEmulatorControlAction(options, () => sceneActions[type], 'scene');
   });
 
 emulatorCommand
@@ -1224,7 +1259,7 @@ emulatorCommand
   .option('--steps <value>', 'Steps sensor (integer 0 to 10000)')
   .option('--heartrate <value>', 'Heart rate sensor (integer 0 to 255)')
   .action((options: SensorOptions) =>
-    runEmulatorControlAction(options, () => firstSensorAction(options))
+    runEmulatorControlAction(options, () => firstSensorAction(options), 'sensor')
   );
 
 emulatorCommand
@@ -1236,39 +1271,53 @@ emulatorCommand
       .default('table')
   )
   .action(async (options: EmulatorListOptions) => {
-    const { manager, toolProvider } = await initEmulatorManager();
-    const spinner =
-      options.format === 'table'
-        ? ora({
-            text: 'Listing emulators…',
-            color: 'cyan',
-          }).start()
-        : undefined;
-    await listAction(manager, toolProvider.hdcPath, options.format, spinner);
+    const event: CommandExecuted = {
+      event: EventType.CommandExecuted,
+      args: ['emulator', 'list'],
+    };
+    await withEmulatorTrace(event, async () => {
+      const { manager, toolProvider } = await initEmulatorManager();
+      const spinner =
+        options.format === 'table'
+          ? ora({
+              text: 'Listing emulators…',
+              color: 'cyan',
+            }).start()
+          : undefined;
+      await listAction(manager, toolProvider.hdcPath, options.format, spinner);
+    });
   });
 
 emulatorCommand
   .command('start [names...]')
   .description('Start one or more emulator instances')
   .action(async (names: string[]) => {
-    const { manager, toolProvider } = await initEmulatorManager();
-    try {
-      await ensureEmulatorServiceAgreementConfig(
-        toolProvider.emulatorPath,
-        toolProvider.sdkPath
-      );
-    } catch (e) {
-      if (e instanceof EmulatorLicenseBlockedError) {
-        console.error(red(e.message));
-        process.exit(1);
+    const event: CommandExecuted = {
+      event: EventType.CommandExecuted,
+      args: ['emulator', 'start'],
+    };
+    await withEmulatorTrace(event, async () => {
+      const { manager, toolProvider } = await initEmulatorManager();
+      try {
+        await ensureEmulatorServiceAgreementConfig(
+          toolProvider.emulatorPath,
+          toolProvider.sdkPath
+        );
+      } catch (e) {
+        if (e instanceof EmulatorLicenseBlockedError) {
+          console.error(red(e.message));
+          process.exitCode = 1;
+          return;
+        }
+        throw e;
       }
-      throw e;
-    }
-    if (!names?.length) {
-      console.error(red("Error: missing required argument 'names'"));
-      process.exit(1);
-    }
-    await startAction(manager, toolProvider.hdcPath, names);
+      if (!names?.length) {
+        console.error(red("Error: missing required argument 'names'"));
+        process.exitCode = 1;
+        return;
+      }
+      await startAction(manager, toolProvider.hdcPath, names);
+    });
   });
 
 emulatorCommand
@@ -1277,12 +1326,19 @@ emulatorCommand
     'Stop one or more emulator instances (by name or serial,e.g.,127.0.0.1:<port>)'
   )
   .action(async (names: string[]) => {
-    const { manager, toolProvider } = await initEmulatorManager();
-    if (!names?.length) {
-      console.error(red("Error: missing required argument 'names'"));
-      process.exit(1);
-    }
-    await stopAction(manager, toolProvider.hdcPath, names);
+    const event: CommandExecuted = {
+      event: EventType.CommandExecuted,
+      args: ['emulator', 'stop'],
+    };
+    await withEmulatorTrace(event, async () => {
+      const { manager, toolProvider } = await initEmulatorManager();
+      if (!names?.length) {
+        console.error(red("Error: missing required argument 'names'"));
+        process.exitCode = 1;
+        return;
+      }
+      await stopAction(manager, toolProvider.hdcPath, names);
+    });
   });
 
 const createEmulatorCmd = emulatorCommand
@@ -1319,7 +1375,11 @@ createEmulatorCmd.action(
       force?: boolean;
     }
   ) => {
-    try {
+    const event: CommandExecuted = {
+      event: EventType.CommandExecuted,
+      args: ['emulator', 'create', '--device-type', '--os-version', ...(opts.force ? ['--force'] : [])],
+    };
+    await withEmulatorTrace(event, async () => {
       validateVirtualDeviceName(name);
       validateEmulatorOsVersionArg(opts.osVersion);
       const { manager } = await initEmulatorManager();
@@ -1333,12 +1393,7 @@ createEmulatorCmd.action(
         force: opts.force === true,
       });
       console.log(green(`Emulator "${name}" created successfully.`));
-    } catch (error) {
-      console.error(
-        red(`${(error as Error).message}`)
-      );
-      process.exit(1);
-    }
+    });
   }
 );
 
@@ -1346,22 +1401,16 @@ emulatorCommand
   .command('delete <name>')
   .description('Delete a local emulator instance')
   .action(async (name: string) => {
-    const { manager } = await initEmulatorManager();
-    console.log(cyan(`Deleting emulator "${name}"...`));
-    try {
+    const event: CommandExecuted = {
+      event: EventType.CommandExecuted,
+      args: ['emulator', 'delete'],
+    };
+    await withEmulatorTrace(event, async () => {
+      const { manager } = await initEmulatorManager();
+      console.log(cyan(`Deleting emulator "${name}"...`));
       const deletedName = await manager.deleteVirtualDevice(name);
       console.log(green(`Emulator "${deletedName}" deleted successfully.`));
-    } catch (error) {
-      const e = error as Error & { stdout?: string; stderr?: string };
-      console.error(red(e.message));
-      if (e.stdout) {
-        console.error(gray(e.stdout));
-      }
-      if (e.stderr) {
-        console.error(gray(e.stderr));
-      }
-      process.exit(1);
-    }
+    });
   });
 
 export default emulatorCommand;

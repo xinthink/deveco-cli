@@ -19,6 +19,8 @@ import { ModuleInfoParse } from '../../mcp/src-server/lsp/parse/ModuleInfoParse.
 import type { ModuleModel } from '../../mcp/src-server/lsp/model/ModuleModel.js';
 import { DependencyMapParseStatus } from '../../mcp/src-server/lsp/constant.js';
 import { initMcpLogger, mcpLog } from '../../mcp/src-server/utils/mcp-logger.js';
+import { telemetry, EventType, type ServeLspOperation } from '../trace/index.js';
+import { readProcessRss, formatBytesMb } from '../utils/process-rss.js';
 
 export interface ArktsLspOptions {
   projectPath?: string;
@@ -40,6 +42,29 @@ export async function startArktsLspServer(options: ArktsLspOptions): Promise<voi
 
   mcpLog.info('ace-server started, bridging stdio (initialize is left to the client)');
   setupBridge(child);
+
+  await trackServeLspStart(child.pid);
+}
+
+/**
+ * 落盘一条 `devecocli_serve_lsp` 事件：event_detail 含 `devecocli serve lsp` 之后的
+ * 命令行参数（args，如 --arkts）与 ace-server 子进程内存（lspMemory）。
+ * 用 §3.1 无被测函数重载——仅记录发生，duration=0 / success=true。
+ */
+async function trackServeLspStart(childPid: number | null): Promise<void> {
+  let lspMemory = 'unknown';
+  if (childPid !== null) {
+    const rssKb = await readProcessRss(childPid);
+    if (rssKb !== null) {
+      lspMemory = formatBytesMb(Number(rssKb) * 1024);
+    }
+  }
+  const event: ServeLspOperation = {
+    event: EventType.ServeLsp,
+    args: process.argv.slice(2),
+    lspMemory,
+  };
+  await telemetry.track(event);
 }
 
 async function resolvePaths(options: ArktsLspOptions): Promise<{

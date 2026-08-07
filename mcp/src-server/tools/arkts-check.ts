@@ -37,6 +37,11 @@ type DiagnosticWaiter = {
 export class ArktsCheckTool {
   private manager: ArktsLspManager | null = null;
 
+  /** ace-server 子进程 pid；manager 未初始化时为 null。 */
+  public get aceServerPid(): number | null {
+    return this.manager?.aceServerPid ?? null;
+  }
+
   private initialized: boolean = false;
   private initializing: boolean = false;
   private initPromise: Promise<void> | null = null;

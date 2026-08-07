@@ -35,7 +35,7 @@ There is **no test framework** (no vitest/jest, no `*.test.ts`). Verification = 
 
 - `DEVECO_CLI_DEBUG=1` — log raw `node` / `ohpm` / `hvigor` / `hdc` / `emulator` invocations via `utils/logger.ts → debugLog`. Also prints stack traces on error from `cli.ts`.
 - `DEVECO_CLI_SKIP_VERSION_CHECK=1` — bypass the DevEco Studio 6.1.0+ version check on startup. (`update` is the only command exempt by default; see `TOOLCHAIN_FREE_COMMANDS` in `src/cli.ts`.)
-- `DEVECO_CLI_DATA_DIR` — override user data root (default `~/.local/share/deveco-cli`). Derives `docs/.index/search.db`, `logs/doc-init.log`, etc.
+- `DEVECO_CLI_DATA_DIR` — override user data root (default `~/.local/share/deveco-cli`). Derives `docs/.index/search.db`, `logs/doc-init.log`, `TraceLogData/upload-state.json`, etc.
 - `HTTP_PROXY` / `HTTPS_PROXY` — honoured by `global-agent` bootstrapped in `src/cli.ts`.
 
 ## Architecture
@@ -53,7 +53,7 @@ src/
 ├── data/                     # Bundled data files (e.g. emulator-privacy-bundled.ts)
 ├── types/                    # Shared type defs
 ├── toolchain/                # DevEco Studio toolchain resolution (ToolProvider: node/ohpm/hvigor/java/hdc/emulator/sdk)
-└── internal/                 # Internal entry points (e.g. doc-init-background.ts, also a tsup entry)
+└── internal/                 # Internal entry points (e.g. doc-init-background.ts, telemetry-upload-background.ts — all tsup entries)
 
 mcp/src-server/               # Bundled stdio MCP server (ArkTS/C++ syntax checking via LSP)
 templates/application/        # Project scaffold copied by `devecocli create`
@@ -61,7 +61,7 @@ scripts/                      # postinstall + docs index bootstrap
 index/                        # Source for `npm run build:index` (regenerates index.zip)
 ```
 
-**Real entrypoints**: `src/cli.ts` is the user-facing bin. `src/internal/doc-init-background.ts` is a second tsup entry spawned after install to populate the docs search index. `mcp/src-server/index.ts → createMcpServer` is the MCP orchestrator started by `devecocli serve mcp`.
+**Real entrypoints**: `src/cli.ts` is the user-facing bin. `src/internal/doc-init-background.ts` is a tsup entry spawned after install to populate the docs search index. `src/internal/telemetry-upload-background.ts` is a tsup entry spawned (detached) by the CLI when `isUploadDue` is true, to flush telemetry events for non-MCP commands. `mcp/src-server/index.ts → createMcpServer` is the MCP orchestrator started by `devecocli serve mcp`.
 **Toolchain resolution**: `toolchain/tool-provider.ts` finds DevEco Studio (Win: registry → `C:\Program Files\Huawei\DevEco Studio`; macOS: `~/Applications` + `/Applications` for `*DevEco*.app`; **Linux unsupported**). It resolves `nodePath` / `ohpmJsPath` / `hvigorJsPath` / `javaPath` / `hdcPath` / `emulatorPath` / `sdkPath`. hilog is not a separate binary — it runs through `hdc shell hilog`.
 **Build pipeline**: `commands/build.ts` runs `ohpm install --all → hvigor --sync → hvigor assemble*`. The artifact path resolver lives in `utils/project.ts → findArtifactPath`.
 **Apply**: `commands/run.ts --apply <fileName>` fast-incremental-deploys changed files — writes the list to `.hvigor/<fileName>`, drives hvigor `assembleDevHqf` to produce signed hqf, installs via `bm quickfix -a -f -o`, then restarts. Modules auto-detected from file paths. Requires DevEco Studio ≥6.1.1 (hvigor `assembleDevHqf`); below is rejected with an upgrade hint. Prereq: `devecocli run` once first (generates `buildConfig.json` cache); on failure falls back to a full `devecocli run`.
