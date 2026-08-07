@@ -712,8 +712,14 @@ devecocli emulator license accept
 **命令格式：**
 
 ```bash
-devecocli device list
+devecocli device list [--format <table|json>]
 ```
+
+**参数：**
+
+| 参数名 | 说明 |
+| --- | --- |
+| --format | 可选，输出格式。可选值：`table`、`json`，默认 `table` |
 
 ### `device view`
 
@@ -722,7 +728,7 @@ devecocli device list
 **命令格式：**
 
 ```bash
-devecocli device view --target <serialOrName>
+devecocli device view [--target <serialOrName>] [--format <table|json>]
 ```
 
 **参数：**
@@ -730,6 +736,7 @@ devecocli device view --target <serialOrName>
 | 参数名         | 说明                                    |
 | ----------- | ------------------------------------- |
 | -t，--target | 可选，目标设备名称或序列号。多设备缺省时，会列出所有已连接设备序列号和名称 |
+| --format | 可选，输出格式。可选值：`table`、`json`，默认 `table` |
 
 **示例：**
 
@@ -737,6 +744,7 @@ devecocli device view --target <serialOrName>
 devecocli device view
 devecocli device view --target 127.0.0.1:5555
 devecocli device view -t "My Device Name"
+devecocli device view -t 127.0.0.1:5555 --format json
 ```
 
 ### `ui screenshot`

@@ -2,13 +2,14 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { ToolProvider } from '../toolchain/index.js';
 import { EmulatorManager } from '../service/emulator-manager.js';
 import { normalizeListNameKey } from '../service/emulator-types.js';
 import {
   DeviceManager,
   type ConnectedDeviceEntry,
+  isLocalEmulatorSerial,
 } from '../service/device-manager.js';
 import { red, yellow, gray } from 'colorette';
 import ora, { type Ora } from 'ora';
@@ -39,6 +40,16 @@ const DEVICE_LIST_TABLE_HEADERS = [
   'Kind',
   'Device Type',
 ] as const;
+
+type DeviceOutputFormat = 'table' | 'json';
+
+interface DeviceJsonDto {
+  name: string;
+  serial: string;
+  kind: 'device' | 'emulator';
+  deviceType?: string;
+  osVersion?: string;
+}
 
 function buildDeviceListRow(entry: ConnectedDeviceEntry): TableRow {
   return {
@@ -77,6 +88,20 @@ function printDeviceListTable(entries: ConnectedDeviceEntry[]): void {
   console.log(renderTable(DEVICE_LIST_TABLE_HEADERS, rows));
 }
 
+function buildDeviceListJsonDto(entry: ConnectedDeviceEntry): DeviceJsonDto {
+  return {
+    name: entry.name ?? entry.serial,
+    serial: entry.serial,
+    kind: entry.isEmulator ? 'emulator' : 'device',
+    deviceType: entry.deviceType,
+  };
+}
+
+function printDeviceListJson(entries: ConnectedDeviceEntry[]): void {
+  const sorted = [...entries].sort(compareDeviceEntries);
+  console.log(JSON.stringify(sorted.map(buildDeviceListJsonDto), null, 2));
+}
+
 async function applyEmulatorOverridesIfNeeded(
   entries: ConnectedDeviceEntry[],
   toolProvider: ToolProvider
@@ -85,22 +110,27 @@ async function applyEmulatorOverridesIfNeeded(
   if (!hasEmulator || !toolProvider.emulatorPath) {
     return;
   }
-  const overrides = await EmulatorManager.from(
-    toolProvider
-  ).getDeviceTypeByName();
+  const overrides =
+    await EmulatorManager.from(toolProvider).getDeviceTypeByName();
   applyEmulatorDeviceTypeOverrides(entries, overrides);
 }
 
 async function listAction(
   deviceManager: DeviceManager,
   toolProvider: ToolProvider,
-  spinner?: Ora
+  spinner?: Ora,
+  format: DeviceOutputFormat = 'table'
 ) {
   try {
     const entries = await deviceManager.getConnectedEntries();
     await applyEmulatorOverridesIfNeeded(entries, toolProvider);
 
     spinner?.stop();
+    if (format === 'json') {
+      printDeviceListJson(entries);
+      return;
+    }
+
     if (entries.length === 0) {
       printNoDevicesHint();
     } else {
@@ -122,9 +152,7 @@ async function checkMultiDevice(
   if (devices.length < 2) {
     return;
   }
-  console.error(
-    red('Multiple devices connected. Specify a device with:')
-  );
+  console.error(red('Multiple devices connected. Specify a device with:'));
   for (const device of devices) {
     const deviceName = await deviceManager.getDeviceName(device.serial);
     console.error(
@@ -136,7 +164,8 @@ async function checkMultiDevice(
 
 async function viewAction(
   deviceManager: DeviceManager,
-  deviceSelector?: string
+  deviceSelector?: string,
+  format: DeviceOutputFormat = 'table'
 ) {
   try {
     if (!deviceSelector) {
@@ -146,12 +175,28 @@ async function viewAction(
     const devices = await deviceManager.listDevices();
     const info = await deviceManager.getDeviceInfo(devices, deviceSelector);
     if (!info) {
-      console.log(yellow('No connected device found.'));
+      if (format === 'json') {
+        console.error('No connected device found.');
+      } else {
+        console.log(yellow('No connected device found.'));
+      }
       process.exit(1);
     }
 
     const detail = await deviceManager.getDeviceDetail(info.serial);
     const deviceName = await deviceManager.getDeviceName(info.serial);
+    if (format === 'json') {
+      const json: DeviceJsonDto = {
+        name: deviceName,
+        serial: info.serial,
+        kind: isLocalEmulatorSerial(info.serial) ? 'emulator' : 'device',
+        deviceType: detail.deviceType,
+        osVersion: detail.osVersion,
+      };
+      console.log(JSON.stringify(json, null, 2));
+      return;
+    }
+
     console.log(`  Serial:      ${info.serial}`);
     console.log(`  Device Name: ${deviceName}`);
     if (detail.deviceType) {
@@ -192,22 +237,37 @@ const deviceCommand = new Command('device').description(
 deviceCommand
   .command('list')
   .description('List all connected devices')
-  .action(async () => {
+  .addOption(
+    new Option('--format <format>', 'Output format')
+      .choices(['table', 'json'])
+      .default('table')
+  )
+  .action(async (options: { format: DeviceOutputFormat }) => {
     const { manager, toolProvider } = await initDeviceManager();
+    if (options.format === 'json') {
+      await listAction(manager, toolProvider, undefined, 'json');
+      return;
+    }
+
     const spinner = ora({
       text: 'Querying connected devices…',
       color: 'cyan',
     }).start();
-    await listAction(manager, toolProvider, spinner);
+    await listAction(manager, toolProvider, spinner, 'table');
   });
 
 deviceCommand
   .command('view')
   .description('Show detailed device information')
   .option('-t, --target <serialOrName>', 'Target device serial or device name')
-  .action(async (options: { target?: string }) => {
+  .addOption(
+    new Option('--format <format>', 'Output format')
+      .choices(['table', 'json'])
+      .default('table')
+  )
+  .action(async (options: { target?: string; format: DeviceOutputFormat }) => {
     const { manager } = await initDeviceManager();
-    await viewAction(manager, options.target);
+    await viewAction(manager, options.target, options.format);
   });
 
 export default deviceCommand;

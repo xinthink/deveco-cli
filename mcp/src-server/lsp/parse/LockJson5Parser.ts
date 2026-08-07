@@ -9,7 +9,6 @@ import JSON5 from 'json5';
 import { DependencyInfo } from './DependencyInfo.js';
 import { Constants } from './Constants.js';
 import { logger } from '../logger.js';
-import { CommonUtils } from '../../../../src/utils/common-utils.js';
 import { isRecord } from '../common/typeGuards.js';
 
 export class LockJson5Parser {
@@ -315,7 +314,7 @@ export class LockJson5Parser {
         specifier: string,
         version: string,
     ): void {
-        const defaultDepPath = CommonUtils.resolvePathWithinRoot(
+        const defaultDepPath = path.resolve(
             this.projectPath,
             path.join(relativeModulePath, Constants.OH_MODULES_PATH, dependencyKey),
         );
@@ -326,8 +325,8 @@ export class LockJson5Parser {
                 : version;
 
             const resolved = path.isAbsolute(fileDepPath)
-                ? CommonUtils.ensurePathWithinRoot(this.projectPath, fileDepPath)
-                : CommonUtils.resolvePathWithinRoot(this.projectPath, fileDepPath);
+                ? fileDepPath
+                : path.resolve(this.projectPath, fileDepPath);
 
             if (fs.existsSync(resolved)) {
                 dependencyInfo.path = specifier;

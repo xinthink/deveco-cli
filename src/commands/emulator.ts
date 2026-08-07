@@ -831,7 +831,7 @@ async function assertImageDownloadAvailable(
     return;
   }
   throw new Error(
-    `Option '--os-version <version>' argument '${osVersion}' is invalid. The version entered is incorrect; download is not possible.`
+    `Invalid --os-version value "${osVersion}".\nRun \`devecocli emulator image list --all\` and use an exact OS Version value.`
   );
 }
 

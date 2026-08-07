@@ -77,8 +77,17 @@ export class ArktsLspManager {
      */
     async start(editorOpenFiles: EtsFileItem[] = []): Promise<void> {
         this.lastEditorOpenFiles = editorOpenFiles;
-        this.startConfigWatcher();
-        this.startLspProxy(editorOpenFiles);
+        try {
+            this.startConfigWatcher();
+            this.startLspProxy(editorOpenFiles);
+        } catch (err) {
+            logger.error(
+                `[ArktsLspManager] start() synchronous failure: ${
+                    err instanceof Error ? err.message : String(err)
+                }`,
+            );
+            throw err;
+        }
     }
 
     /** 上行通知（如 textDocument/didOpen / didChange / didClose） */
