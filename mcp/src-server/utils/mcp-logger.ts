@@ -235,8 +235,10 @@ class McpServerLogger {
       return;
     }
 
-    const formattedArgs = args.map(a => 
-      typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)
+    const formattedArgs = args.map(a =>
+      a instanceof Error
+        ? `${a.name}: ${a.message}`
+        : typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)
     ).join(' ');
     const fullMessage = formattedArgs ? `${message} ${formattedArgs}` : message;
 
