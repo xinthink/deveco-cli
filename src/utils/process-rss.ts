@@ -109,6 +109,23 @@ export function formatBytesMb(bytes: number): string {
 }
 
 /**
+ * 采样一次 RSS(字节):有 pid 时读目标进程(可选进程树),否则读当前 Node 进程。
+ */
+async function sampleProcessRss(
+  pid: number | undefined,
+  trackTree: boolean
+): Promise<number> {
+  if (!pid) {
+    return process.memoryUsage().rss;
+  }
+  if (trackTree) {
+    return sumProcessTreeRss(pid);
+  }
+  const rssKb = await readProcessRss(pid);
+  return rssKb ? Number(rssKb) * 1024 : 0;
+}
+
+/**
  * 启动内存采样器，按固定间隔轮询指定进程（或当前进程）的 RSS 峰值。
  * @param pid 目标进程 PID；省略则采样当前 Node.js 进程
  * @param intervalMs 采样间隔，默认 500ms
@@ -124,18 +141,10 @@ export function startMemoryTracker(
   let isStopping = false;
 
   const interval = setInterval(async () => {
-    if (isStopping) { return; }
-    let currentBytes = 0;
-    if (pid) {
-      if (trackTree) {
-        currentBytes = await sumProcessTreeRss(pid);
-      } else {
-        const rssKb = await readProcessRss(pid);
-        if (rssKb) { currentBytes = Number(rssKb) * 1024; }
-      }
-    } else {
-      currentBytes = process.memoryUsage().rss;
+    if (isStopping) {
+      return;
     }
+    const currentBytes = await sampleProcessRss(pid, trackTree);
     if (currentBytes > peakBytes) {
       peakBytes = currentBytes;
     }
@@ -145,17 +154,7 @@ export function startMemoryTracker(
     stop: async () => {
       isStopping = true;
       clearInterval(interval);
-      let finalBytes = 0;
-      if (pid) {
-        if (trackTree) {
-          finalBytes = await sumProcessTreeRss(pid);
-        } else {
-          const rssKb = await readProcessRss(pid);
-          if (rssKb) { finalBytes = Number(rssKb) * 1024; }
-        }
-      } else {
-        finalBytes = process.memoryUsage().rss;
-      }
+      const finalBytes = await sampleProcessRss(pid, trackTree);
       return Math.max(peakBytes, finalBytes);
     },
   };

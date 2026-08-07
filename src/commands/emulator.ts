@@ -30,7 +30,7 @@ import {
   runEmulatorLicenseView,
 } from '../utils/emulator-license.js';
 import { ToolProvider } from '../toolchain/index.js';
-import { telemetry, EventType, type CommandExecuted, type TrackMeasurement, TraceError } from '../trace/index.js';
+import { telemetry, EventType, toTraceErrorCode, type CommandExecuted, type TrackMeasurement } from '../trace/index.js';
 
 async function withEmulatorTrace(
   event: CommandExecuted,
@@ -43,11 +43,7 @@ async function withEmulatorTrace(
     await action();
   } catch (error) {
     success = false;
-    if (error instanceof TraceError) {
-      errorCode = (error as TraceError).traceMessage;
-    } else {
-      errorCode = (error as Error).message;
-    }
+    errorCode = toTraceErrorCode(error);
     console.error(red((error as Error).message));
     process.exitCode = 1;
   } finally {

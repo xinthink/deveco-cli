@@ -16,7 +16,7 @@ import {
   runHdcShell,
 } from '../ui/input/index.js';
 import type { ClickOptions, SwipeOptions, TextOptions } from '../ui/input/index.js';
-import { telemetry, EventType, type CommandExecuted, type TrackMeasurement, TraceError } from '../trace/index.js';
+import { telemetry, EventType, toTraceErrorCode, type CommandExecuted, type TrackMeasurement } from '../trace/index.js';
 
 function buildUiInputEvent(subCommand: string, options: ClickOptions | SwipeOptions | TextOptions | { device?: string }): CommandExecuted {
   const flags: string[] = [];
@@ -61,11 +61,7 @@ async function withSpinner(
   } catch (error) {
     spinner.stop();
     success = false;
-    if (error instanceof TraceError) {
-      errorCode = (error as TraceError).traceMessage;
-    } else {
-      errorCode = (error as Error).message;
-    }
+    errorCode = toTraceErrorCode(error);
     throw new Error(`${failLabel}: ${(error as Error).message}`, { cause: error });
   } finally {
     const measurement: TrackMeasurement = {

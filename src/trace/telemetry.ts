@@ -10,9 +10,9 @@ import path from 'node:path';
 import { TraceUploader } from './trace-uploader.js';
 import { eventSerializer } from './json-serializer.js';
 import {
-  createTraceFileKey,
   decryptTraceLine,
   encryptTraceLine,
+  resolveTraceFileKey,
 } from './file-crypto.js';
 import { mcpLog } from '../../mcp/src-server/utils/mcp-logger.js';
 import type { BaseEvent, TrackMeasurement, TraceEvent } from './events.js';
@@ -22,7 +22,7 @@ import {
   markFirstEventIfPending,
   markUploadComplete,
 } from './upload-state.js';
-import { resolveDeviceId } from './device-id.js';
+import { resolveInstallId } from './install-id.js';
 
 export class Telemetry {
   private static readonly MAX_BATCH = 200;
@@ -36,10 +36,10 @@ export class Telemetry {
   private readonly uploader = new TraceUploader();
   private storageDir = '';
   private failedDir = '';
-  private deviceId = '';
+  private installId = '';
   /** 打点总开关：关闭后不采集/不落盘/不上传（upload-state.ts isTelemetryDisabled） */
   private readonly disabled = isTelemetryDisabled();
-  /** 落盘加密密钥，由 deviceId 派生（file-crypto.ts） */
+  /** 落盘加密密钥，由本机独立随机密钥派生，不随事件上报（file-crypto.ts） */
   private traceFileKey: Buffer = Buffer.alloc(0);
   private readonly sessionId = crypto.randomUUID();
   private cliVersion = '';
@@ -59,8 +59,8 @@ export class Telemetry {
     this.failedDir = path.join(storageDir, 'failed');
     this.cliVersion = process.env.npm_package_version || '0.0.0';
     this.nodeVersion = process.version;
-    this.deviceId = resolveDeviceId(storageDir).replace(/-/g, '');
-    this.traceFileKey = createTraceFileKey(this.deviceId);
+    this.installId = resolveInstallId(storageDir).replace(/-/g, '');
+    this.traceFileKey = resolveTraceFileKey(storageDir);
     fs.mkdirSync(storageDir, { recursive: true });
     fs.mkdirSync(this.failedDir, { recursive: true });
     mcpLog.info(
@@ -184,7 +184,7 @@ export class Telemetry {
       event: wireEvent,
       eventtime: String(Date.now()),
       properties: {
-        uid: this.deviceId,
+        uid: this.installId,
         trace_uuid: crypto.randomUUID(),
         trace_os_version: Telemetry.TRACE_OS_VERSION,
         os_arch: this.resolveOsArch(),
@@ -402,7 +402,7 @@ export class Telemetry {
       );
       let ok = false;
       try {
-        ok = await this.uploader.upload(payload, this.deviceId);
+        ok = await this.uploader.upload(payload, this.installId);
       } catch (e) {
         mcpLog.error('[telemetry] build/upload error:', e);
       }

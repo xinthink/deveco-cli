@@ -265,7 +265,7 @@ async function handleAddCommand(
   }
 }
 
-/** add/remove 共用：从 results 派生操作结果计数 + 失败原因（去重）。 */
+/** add/remove 共用：从 results 派生操作结果计数 + 失败原因（去重、脱敏）。 */
 function computeOpCounts(results: SkillOperationResult[]): Record<string, unknown> {
   const opTotal = results.length;
   const opSuccess = results.filter((r) => r.success && !r.skipped).length;
@@ -275,7 +275,7 @@ function computeOpCounts(results: SkillOperationResult[]): Record<string, unknow
     ...new Set(
       results
         .filter((r) => !r.success && typeof r.error === 'string')
-        .map((r) => r.error as string),
+        .map((r) => sanitizeFailedError(r.error as string)),
     ),
   ];
   return {
@@ -285,6 +285,12 @@ function computeOpCounts(results: SkillOperationResult[]): Record<string, unknow
     opSkipped,
     ...(failedErrors.length > 0 ? { failedErrors } : {}),
   };
+}
+
+/** 失败原因脱敏：仅取首词（如 Unknown / Failed / Installation），剔除路径、技能名等细节。 */
+function sanitizeFailedError(text: string): string {
+  const match = /^([A-Za-z_][A-Za-z0-9_-]*)/.exec(text.trim());
+  return match ? match[1].slice(0, 32) : 'error';
 }
 
 /**

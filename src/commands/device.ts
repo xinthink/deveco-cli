@@ -17,6 +17,7 @@ import { renderTable, type TableRow } from '../utils/text-table.js';
 import {
   telemetry,
   EventType,
+  toTraceErrorCode,
   type CommandExecuted,
   type TrackMeasurement,
   TraceError,
@@ -33,10 +34,7 @@ async function withDeviceTrace(
     await action();
   } catch (error) {
     success = false;
-    errorCode =
-      error instanceof TraceError
-        ? error.traceMessage
-        : (error as Error).message;
+    errorCode = toTraceErrorCode(error);
     console.error(red((error as Error).message));
     process.exitCode = 1;
   } finally {

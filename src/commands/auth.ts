@@ -12,7 +12,7 @@ import {
   DefinedError,
   type Team,
 } from '../auth';
-import { telemetry, EventType, type CommandExecuted, type TrackMeasurement } from '../trace/index.js';
+import { telemetry, EventType, toTraceErrorCode, type CommandExecuted, type TrackMeasurement } from '../trace/index.js';
 
 async function withAuthTrace(
   event: CommandExecuted,
@@ -26,7 +26,7 @@ async function withAuthTrace(
     await action();
   } catch (error) {
     success = false;
-    errorCode = (error as Error).message;
+    errorCode = toTraceErrorCode(error);
     const wrapped = onError?.(error as Error);
     if (wrapped) {
       throw wrapped;
@@ -144,7 +144,9 @@ authCommand
         return;
       }
       console.log(cyan(`Current user: ${userInfo.userName}`));
-    }, () => { console.log(cyan('Not logged in')); });
+    }, () => {
+      console.log(cyan('Not logged in'));
+    });
   });
 
 const teamCommand = authCommand

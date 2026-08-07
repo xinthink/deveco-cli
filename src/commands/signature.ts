@@ -23,7 +23,7 @@ import { generateTestProfileFile } from '../signature/generate-profile.js';
 import { aclPermissionsUsingWarn } from '../signature/acl-permission-warn.js';
 import { EnvChecker } from '../signature/env-checker.js';
 import { loginService } from '../auth';
-import { telemetry, EventType, type CommandExecuted, type TrackMeasurement } from '../trace/index.js';
+import { telemetry, EventType, toTraceErrorCode, type CommandExecuted, type TrackMeasurement } from '../trace/index.js';
 
 interface SignatureGenerateOptions {
   force?: boolean;
@@ -278,7 +278,7 @@ signatureCommand
       await handleSignatureCommand(options);
     } catch (error) {
       success = false;
-      errorCode = (error as Error).message;
+      errorCode = toTraceErrorCode(error);
       console.error(red((error as Error).message));
       process.exitCode = 1;
     } finally {

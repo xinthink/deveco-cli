@@ -11,7 +11,7 @@ import { OhpmAdapter } from '../utils/ohpm-adapter.js';
 import { withBuildLock } from '../utils/build-lock.js';
 import { checkSyncRequired } from '../utils/project-check.js';
 import { findCppModules, findAndMergeCompileCommands } from '../../mcp/src-server/lsp/sync/cpp-compile.js';
-import { telemetry, EventType, type CommandExecuted, type TrackMeasurement, TraceError } from '../trace/index.js';
+import { telemetry, EventType, toTraceErrorCode, type CommandExecuted, type TrackMeasurement, TraceError } from '../trace/index.js';
 
 interface BuildOptions {
   product?: string;
@@ -239,11 +239,7 @@ async function withTrace(
     await action();
   } catch (error) {
     success = false;
-    if (error instanceof TraceError) {
-      errorCode = (error as TraceError).traceMessage;
-    } else {
-      errorCode = (error as Error).message;
-    }
+    errorCode = toTraceErrorCode(error);
     console.error(red((error as Error).message));
     process.exitCode = 1;
   } finally {

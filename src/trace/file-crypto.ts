@@ -4,16 +4,69 @@
  */
 
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 
 /**
  * 打点文件落盘加密：AES-256-GCM，每条事件一行一个密文 blob。
- * 密钥由设备 ID（device-id.ts，MAC 哈希 / 随机 UUID 落盘缓存）派生，
- * 不额外落盘密钥文件，本机任意进程可重算，跨进程解密（CLI 调度器 / 后台上传进程）一致。
+ * 密钥由本机独立随机密钥（trace-file-secret，与上传的安装标识 uid 完全无关）派生，
+ * 该密钥文件仅存在于本机数据目录、永不随事件上报；跨进程解密
+ * （CLI 调度器 / 后台上传进程）通过读取同一密钥文件保持一致。
  */
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
 const KEY_SALT = 'deveco-cli-trace-file';
+const SECRET_FILENAME = 'trace-file-secret';
+const SECRET_BYTES = 32;
+
+/** 读取落盘的本地密钥（base64，32 字节）；文件缺失或损坏返回 null。 */
+function readStoredSecret(file: string): string | null {
+  try {
+    const value = fs.readFileSync(file, 'utf8').trim();
+    if (!value) {
+      return null;
+    }
+    const raw = Buffer.from(value, 'base64');
+    return raw.length === SECRET_BYTES ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 解析本机打点文件密钥（不随事件上报）：
+ * 初始化时随机生成 32 字节密钥并写入 `<storageDir>/trace-file-secret`；
+ * 已存在则复用；并发竞争（wx 失败）时复用先写入者的密钥；写盘失败返回进程内密钥，下次进程重试。
+ */
+export function resolveTraceFileKey(storageDir: string): Buffer {
+  const file = path.join(storageDir, SECRET_FILENAME);
+  const existing = readStoredSecret(file);
+  if (existing) {
+    return createTraceFileKey(existing);
+  }
+  const secret = crypto.randomBytes(SECRET_BYTES).toString('base64');
+  try {
+    fs.mkdirSync(storageDir, { recursive: true });
+    try {
+      fs.writeFileSync(file, secret, { flag: 'wx' });
+    } catch {
+      // 并发进程已先写入：复用其密钥；内容损坏则覆盖重写
+      const winner = readStoredSecret(file);
+      if (winner) {
+        return createTraceFileKey(winner);
+      }
+      fs.writeFileSync(file, secret);
+    }
+  } catch {
+    // 目录或写盘失败（只读 fs 等）：返回进程内密钥，本次不落盘，下次进程重新生成
+  }
+  return createTraceFileKey(secret);
+}
+
+export function createTraceFileKey(secret: string): Buffer {
+  return crypto.createHash('sha256').update(KEY_SALT).update(secret).digest();
+}
 
 export interface TraceFileCipherBlob {
   version: 1;
@@ -24,10 +77,6 @@ export interface TraceFileCipherBlob {
   iv: string;
   /** Base64 */
   authTag: string;
-}
-
-export function createTraceFileKey(deviceId: string): Buffer {
-  return crypto.createHash('sha256').update(KEY_SALT).update(deviceId).digest();
 }
 
 /** 加密单行明文事件，返回一行密文 blob 的 JSON 字符串。 */

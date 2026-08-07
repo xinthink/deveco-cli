@@ -11,6 +11,7 @@ import { resolveDeviceSerial } from '../utils/device-selector.js';
 import {
   telemetry,
   EventType,
+  toTraceErrorCode,
   type CommandExecuted,
   type TrackMeasurement,
 } from '../trace/index.js';
@@ -163,7 +164,7 @@ async function trackLayoutCommand(options: LayoutOptions): Promise<void> {
     event.outputSize = await handleLayoutCommand(options);
   } catch (error) {
     success = false;
-    errorCode = (error as Error).message;
+    errorCode = toTraceErrorCode(error);
     throw error;
   } finally {
     const measurement: TrackMeasurement = {

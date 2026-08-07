@@ -125,8 +125,8 @@ export type DocSubAction = 'search' | 'read' | 'catalog';
 export interface DocOperation extends BaseEvent {
   /** 文档操作类型，落 event_detail.sub_action */
   subAction: DocSubAction;
-  /** search：归一化后的搜索关键词 */
-  keywords?: string[];
+  /** search：归一化后的搜索词总长度（不存关键词原文） */
+  queryLen?: number;
   /** search：最终生效的文档分类，未指定时为 all */
   catalog?: string;
   /** read：归一化后的文档 ID */
@@ -160,6 +160,7 @@ export interface TrackMeasurement {
 
 /** 上报事件 properties 中的明细字段 */
 export interface TraceEventProperties {
+  /** 安装标识（codeGenie 契约字段名，值为随机安装 ID，与硬件无关） */
   uid: string;
   trace_uuid: string;
   trace_os_version: string;

@@ -14,6 +14,7 @@ import { debugLog } from '../utils/logger.js';
 import {
   telemetry,
   EventType,
+  toTraceErrorCode,
   type CommandExecuted,
   type TrackMeasurement,
 } from '../trace/index.js';
@@ -395,7 +396,7 @@ async function screenshotAction(options: ScreenshotOptions): Promise<void> {
     console.log(green(`Screenshot saved to ${localPath}`));
   } catch (error) {
     success = false;
-    errorCode = (error as Error).message;
+    errorCode = toTraceErrorCode(error);
     throw error;
   } finally {
     const measurement: TrackMeasurement = {

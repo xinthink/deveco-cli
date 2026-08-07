@@ -20,3 +20,21 @@ export class TraceError extends Error {
     this.traceMessage = traceMessage ?? message;
   }
 }
+
+/**
+ * 从任意异常派生打点上报用的 error_code（脱敏）：
+ * TraceError 使用其脱敏信息 traceMessage；
+ * 其余 Error 优先取字符串形式的 code（覆盖 errno 码（ENOENT/EACCES 等）及带 code 的校验/业务错误
+ * ——如各模块的 ValidationError），无 code 时回退为错误类型名；
+ * 不上报原始 message（可能含路径、标识符等敏感内容）。
+ */
+export function toTraceErrorCode(error: unknown): string {
+  if (error instanceof TraceError) {
+    return error.traceMessage;
+  }
+  if (error instanceof Error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return typeof code === 'string' && code !== '' ? code : error.name;
+  }
+  return 'UnknownError';
+}

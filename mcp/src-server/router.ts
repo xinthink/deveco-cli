@@ -185,7 +185,7 @@ function classifyMcpToolError(result: ToolCallResult): string {
   ) {
     return 'NotReady';
   }
-  if (/No HarmonyOS project detected|PROJECT_PATH|工程路径/i.test(text)) {
+  if (/No project detected|PROJECT_PATH|工程路径/i.test(text)) {
     return 'NoProject';
   }
   if (

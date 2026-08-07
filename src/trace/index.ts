@@ -7,7 +7,7 @@ export { Telemetry } from './telemetry.js';
 export { telemetry } from './telemetry-instance.js';
 export { maybeSpawnTelemetryUpload } from './telemetry-upload-spawner.js';
 export { isTelemetryDisabled } from './upload-state.js';
-export { TraceError } from './trace-error.js';
+export { TraceError, toTraceErrorCode } from './trace-error.js';
 export { EventType } from './events.js';
 export type {
   BaseEvent,

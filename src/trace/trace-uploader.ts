@@ -4,6 +4,7 @@
  */
 
 import https from 'node:https';
+import Endpoints from '../config/endpoints.json';
 import { mcpLog } from '../../mcp/src-server/utils/mcp-logger.js';
 
 interface HttpResponse {
@@ -20,15 +21,14 @@ interface HttpResponse {
 export class TraceUploader {
   private static readonly DEBUG = true;
 
-  static readonly ENDPOINT =
-    'https://cn.devecostudio.huawei.com/codeGenie/cli/trace/upload';
+  static readonly ENDPOINT = Endpoints.devecoApiTraceUpload;
   static readonly SENDER = 'deveco-cli';
 
-  public async upload(payload: string, deviceId: string): Promise<boolean> {
+  public async upload(payload: string, installId: string): Promise<boolean> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       sender: TraceUploader.SENDER,
-      deviceid: deviceId.replace(/-/g, ''),
+      deviceid: installId.replace(/-/g, ''),
       'Content-Length': String(Buffer.byteLength(payload, 'utf8')),
     };
     TraceUploader.log(`upload request: URL=${TraceUploader.ENDPOINT}`);
@@ -50,11 +50,18 @@ export class TraceUploader {
     }
   }
 
-  /** 服务端返回体解析：errorCode 为 200 视为成功（兼容 number / string 两种类型）。 */
+  /**
+   * 服务端返回体解析：`code` 或 `errorCode` 为 200 视为成功（兼容 number / string 两种类型）。
+   * 实测响应格式为 `{"code":200,"message":"success"}`，故以 `code` 优先，`errorCode` 兜底。
+   */
   private static isSuccess(body: string): boolean {
     try {
-      const parsed = JSON.parse(body) as { errorCode?: unknown };
-      return String(parsed?.errorCode) === '200';
+      const parsed = JSON.parse(body) as {
+        code?: unknown;
+        errorCode?: unknown;
+      };
+      const resultCode = parsed?.code ?? parsed?.errorCode;
+      return String(resultCode) === '200';
     } catch {
       return false;
     }

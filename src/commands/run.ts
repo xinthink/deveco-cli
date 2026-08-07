@@ -24,7 +24,7 @@ import {
 } from '../apply/hotreload/hotreload-manager.js';
 import { withBuildLock } from '../utils/build-lock.js';
 import { executeBuildSteps, processModuleTasks } from './build.js';
-import { telemetry, EventType, type CommandExecuted, type TrackMeasurement, TraceError } from '../trace/index.js';
+import { telemetry, EventType, toTraceErrorCode, type CommandExecuted, type TrackMeasurement, TraceError } from '../trace/index.js';
 
 interface RunOptions {
   module?: string[];
@@ -226,11 +226,7 @@ const runCommand = new Command('run')
       }
     } catch (error) {
       success = false;
-      if (error instanceof TraceError) {
-        errorCode = (error as TraceError).traceMessage;
-      } else {
-        errorCode = (error as Error).message;
-      }
+      errorCode = toTraceErrorCode(error);
       console.error(red((error as Error).message));
       process.exitCode = 1;
     } finally {
@@ -291,12 +287,12 @@ async function runActionImpl(options: RunOptions, event: CommandExecuted): Promi
 
   if (options.hotreloadApply) {
     await runHotReloadApplyFlow(options, project, toolProvider);
-    return;
+    return undefined;
   }
 
   if (options.hotreload) {
     await runHotReloadFlow(options, project, toolProvider);
-    return;
+    return undefined;
   }
 
   if (options.apply) {
@@ -304,7 +300,7 @@ async function runActionImpl(options: RunOptions, event: CommandExecuted): Promi
     return undefined;
   }
 
-  return await runNormalFlow(options, project, toolProvider);
+  return runNormalFlow(options, project, toolProvider);
 }
 
 async function runHotReloadFlow(
