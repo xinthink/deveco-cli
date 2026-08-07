@@ -246,6 +246,13 @@ export async function runCompileNative(
     mcpLog.info(`[CppCompile] sdkPath: ${sdkPath}, hvigorPath: ${hvigorPath}`);
 
     for (const module of cppModules) {
+        const moduleName = module.name;
+        try {
+          CommonUtils.assertModuleName(moduleName);
+        } catch {
+          mcpLog.warn(`[CppCompile] Skipping module with invalid name: ${moduleName}`);
+          continue;
+        }
         const hvigorArgs = [
             '--mode', 'module',
             '-p', `module=${module.name}`,

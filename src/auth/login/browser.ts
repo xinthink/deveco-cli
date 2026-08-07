@@ -2,35 +2,65 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 
-const execAsync = promisify(exec);
+function isValidUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return false;
+    }
+    if (parsed.hostname === '') {
+      return false;
+    }
+    if (url.includes('"')) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-/**
- * 打开浏览器
- * @param url 要打开的 URL
- * @throws Error 如果打开浏览器失败
- */
+function escapeForCmd(s: string): string {
+  return s.replace(/[&|<>()^%!]/g, (c) => `^${c}`);
+}
+
 export async function openBrowser(url: string): Promise<void> {
-  const platform = process.platform;
-  let command: string;
+  if (!isValidUrl(url)) {
+    throw new Error(`Invalid URL: ${JSON.stringify(url)}`);
+  }
 
-  switch (platform) {
+  let command: string;
+  let args: string[];
+
+  switch (process.platform) {
     case 'win32':
-      command = `start "" "${url}"`;
+      command = 'cmd';
+      args = ['/c', 'start', '""', escapeForCmd(url)];
       break;
     case 'darwin':
-      command = `open "${url}"`;
+      command = 'open';
+      args = [url];
       break;
     default:
-      command = `xdg-open "${url}"`;
+      command = 'xdg-open';
+      args = [url];
       break;
   }
 
-  try {
-    await execAsync(command);
-  } catch (err) {
-    throw new Error('Failed to open browser', { cause: err });
-  }
+  const child = spawn(command, args, { stdio: 'ignore', shell: false, windowsHide: true });
+
+  return new Promise((resolve, reject) => {
+    child.on('error', (err) => {
+      reject(new Error('Failed to open browser', { cause: err }));
+    });
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`Browser process exited with code ${code}`));
+      }
+    });
+  });
 }
