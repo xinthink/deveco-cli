@@ -38,6 +38,10 @@ export const AGENT_SKILLS_CONFIG = {
     path: '.config/opencode/skills',
     displayName: 'opencode',
   },
+  deveco: {
+    path: '.config/deveco/skills',
+    displayName: 'deveco',
+  },
   cursor: {
     path: '.cursor/skills',
     displayName: 'cursor',
