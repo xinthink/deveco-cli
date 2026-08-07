@@ -7,6 +7,7 @@ import fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ToolProvider } from '../toolchain/index.js';
+import { readStudioVersion } from '../toolchain/studio-version.js';
 import { debugLog } from '../utils/logger.js';
 import { Project } from '../utils/project.js';
 import {
@@ -22,6 +23,8 @@ interface CodelinterResolution {
   command: string;
   argsPrefix: string[];
   env: NodeJS.ProcessEnv;
+  /** 是否使用IDE 内部旧参数协议Studio 6.0 使用 IDE 内部旧参数协议。 */
+  isLegacyStudioArgs: boolean;
   workingDirectory?: string;
   runtimeDirectories?: string[];
 }
@@ -39,14 +42,18 @@ interface ResolvedLintTarget {
 
 const TEMP_DIRECTORY_PREFIX = 'deveco-codelinter-';
 const SUPPORTED_LINT_FILE_EXTENSIONS = ['.ets', '.ts', '.js'] as const;
+/** Studio 6.1 起支持标准报告参数。 */
+const MODERN_CODELINTER_STUDIO_VERSION = '6.1.0';
 
 /** 封装 Code Linter 工具链解析、命令执行和报告标准化。 */
 export class CodelinterAdapter {
   private readonly resolution: CodelinterResolution;
   private readonly cwd: string;
+  private readonly toolProvider: ToolProvider;
 
   /** 使用指定工具链和工作目录创建 Code Linter 适配器。 */
   constructor(toolProvider: ToolProvider, cwd: string) {
+    this.toolProvider = toolProvider;
     this.resolution = CodelinterAdapter.resolveWithToolProvider(toolProvider);
     this.cwd = cwd;
   }
@@ -77,7 +84,9 @@ export class CodelinterAdapter {
         request,
         lintTarget.path,
         configPath,
-        tempReportPath
+        tempReportPath,
+        tempDir,
+        lintTarget.projectRoot ?? projectRoot
       );
       const result = await this.run(args);
       const extracted = extractJsonFromNativeStdout(result.stdout);
@@ -198,8 +207,20 @@ export class CodelinterAdapter {
     request: CodelinterCheckRequest,
     lintPath: string,
     configPath: string,
-    outputPath: string
+    outputPath: string,
+    tempDir: string,
+    projectRoot: string
   ): string[] {
+    if (this.resolution.isLegacyStudioArgs) {
+      return this.buildLegacyNativeArgs(
+        request,
+        lintPath,
+        configPath,
+        tempDir,
+        projectRoot
+      );
+    }
+
     const args = ['--config', configPath];
     if (request.fix) {
       args.push('--fix');
@@ -219,8 +240,58 @@ export class CodelinterAdapter {
     return args;
   }
 
+  /** 构造 Studio 6.0 Code Linter 内部协议参数。 */
+  private buildLegacyNativeArgs(
+    request: CodelinterCheckRequest,
+    lintPath: string,
+    configPath: string,
+    tempDir: string,
+    projectRoot: string
+  ): string[] {
+    const apiVersion = String(this.toolProvider.getMaxApiLevel());
+    const platformVersion = this.toolProvider.getSdkPlatformVersion();
+
+    // 旧入口通过 JSON 文件接收一个或多个检查目标。
+    const checkPathsFile = path.join(tempDir, 'check-paths.json');
+    fs.writeFileSync(checkPathsFile, JSON.stringify([lintPath]), 'utf8');
+
+    const args = [
+      '--dir',
+      checkPathsFile,
+      '--isTooManyFiles',
+      'true',
+      '--config',
+      configPath,
+      '--product',
+      request.product,
+      '--sdkPath',
+      this.toolProvider.sdkPath,
+      '--sdkNumberVersion',
+      apiVersion,
+      '--sdkStringVersion',
+      platformVersion,
+      '--project',
+      projectRoot,
+      '--logPath',
+      path.join(tempDir, 'codelinter.log'),
+      '--workdir',
+      path.dirname(this.toolProvider.codelinterPath),
+      '--inIde',
+      'true',
+    ];
+    if (request.fix) {
+      args.push('--fix', 'true');
+    }
+    if (request.incremental) {
+      args.push('--incremental', 'true');
+    }
+    return args;
+  }
+
   private async run(nativeArgs: string[]): Promise<CodelinterRunResult> {
-    const args = [...this.resolution.argsPrefix, ...nativeArgs];
+    const args = this.resolution.isLegacyStudioArgs
+      ? [this.resolution.argsPrefix[0], ...nativeArgs]
+      : [...this.resolution.argsPrefix, ...nativeArgs];
     const cwd = this.resolution.workingDirectory ?? this.cwd;
     this.prepareRuntimeDirectories();
     debugLog(`Executing: ${this.resolution.command} ${args.join(' ')}`);
@@ -289,7 +360,11 @@ export class CodelinterAdapter {
     const pathEntries = CodelinterAdapter.getPathEntries(toolProvider, source);
     const displayName =
       source === 'ide' ? 'DevEco Studio' : 'DevEco Command Line Tools';
-
+    const isLegacyStudioArgs =
+      source === 'ide' &&
+      ToolProvider.compareVersion(
+        readStudioVersion(toolProvider.toolchainRoot) ?? '0.0.0',
+        MODERN_CODELINTER_STUDIO_VERSION) < 0;
     const resolution: CodelinterResolution = {
       command: toolProvider.nodePath,
       argsPrefix: [codelinterEntry, sdkPath],
@@ -298,6 +373,7 @@ export class CodelinterAdapter {
         PATH: [...pathEntries, process.env.PATH || ''].join(path.delimiter),
         DEVECO_SDK_HOME: sdkPath,
       },
+      isLegacyStudioArgs,
     };
 
     if (source === 'command-line-tools') {

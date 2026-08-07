@@ -102,6 +102,9 @@ interface SensorOptions extends EmulatorTargetOptions {
   heartrate?: string;
 }
 
+/** Emulator CLI 从 Studio 6.1 起完整可用。 */
+const MIN_EMULATOR_STUDIO_VERSION = '6.1.0';
+
 function assertTarget(input: string): string {
   const target = input.trim();
   if (!target) {
@@ -757,6 +760,11 @@ function batteryAction(options: BatteryOptions): EmulatorControlAction {
 const emulatorCommand = new Command('emulator').description(
   'Manage emulator instances'
 );
+
+emulatorCommand.hook('preAction', async () => {
+  const toolProvider = await ToolProvider.new();
+  toolProvider.require({ studio: MIN_EMULATOR_STUDIO_VERSION });
+});
 
 const EMULATOR_IMAGE_DEVICE_TYPES = [
   'phone',
