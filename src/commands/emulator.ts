@@ -1280,7 +1280,7 @@ emulatorCommand
 const createEmulatorCmd = emulatorCommand
   .command('create <name>')
   .description(
-    'Create a local emulator by running emulator -create <name> …; --os-version must match a downloaded image from `emulator image list`.'
+    'Run the emulator -create <name> command to create a local emulator.'
   )
   .addOption(deviceTypeOption(true))
   .requiredOption(
