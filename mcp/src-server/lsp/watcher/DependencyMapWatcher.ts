@@ -11,6 +11,8 @@ import { logger } from '../logger.js';
 import { Constants, DEPENDENCY_MAP_PATH, DEPENDENCY_MAP_JSON5 } from '../parse/Constants.js';
 import { findJsonObject, toUnixPath } from '../utils.js';
 
+import { CommonUtils } from '../../../../src/utils/common-utils.js';
+
 /**
  * 模块变更的语义类型
  */
@@ -241,7 +243,7 @@ export class DependencyMapWatcher extends EventEmitter {
             { path: rootOhPackage, tag: 'root-oh-package' },
             { path: depMapJson, tag: 'dep-map-json' },
             ...newModules.map((m) => ({
-                path: path.join(this.depMapDir, m.name, Constants.OH_PACKAGE_JSON5),
+                path: (CommonUtils.assertModuleName(m.name), path.join(this.depMapDir, m.name, Constants.OH_PACKAGE_JSON5)),
                 tag: `module:${m.name}` as string,
             })),
         ];
@@ -488,7 +490,7 @@ export class DependencyMapWatcher extends EventEmitter {
             });
             handledOldNames.add(oldMod.name);
             handledNewNames.add(newMod.name);
-            const oldModulePath = path.join(this.depMapDir, oldMod.name, Constants.OH_PACKAGE_JSON5);
+            const oldModulePath = (CommonUtils.assertModuleName(oldMod.name), path.join(this.depMapDir, oldMod.name, Constants.OH_PACKAGE_JSON5));
             this.contentHashes.delete(this.canonicalPath(oldModulePath));
             logger.info(`[DependencyMapWatcher] Module renamed: ${oldMod.name} → ${newMod.name} (srcPath=${srcPath})`);
         }
@@ -552,7 +554,7 @@ export class DependencyMapWatcher extends EventEmitter {
             if (!newByName.has(name)) {
                 this.pendingTags.push(`dep-removed:${name}`);
                 handledOldNames.add(name);
-                const removedModulePath = path.join(this.depMapDir, name, Constants.OH_PACKAGE_JSON5);
+                const removedModulePath = (CommonUtils.assertModuleName(name), path.join(this.depMapDir, name, Constants.OH_PACKAGE_JSON5));
                 this.contentHashes.delete(this.canonicalPath(removedModulePath));
             }
         }

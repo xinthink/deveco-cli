@@ -318,6 +318,9 @@ async function runHotReloadApplyFlow(
   if (!applyFileName) {
     throw new Error('hotreload-apply requires --hotreload-apply <fileName> (under .hvigor/)');
   }
+  if (path.basename(applyFileName) !== applyFileName) {
+    throw new Error(`apply file must be a plain file name (under .hvigor/), got: ${applyFileName}`);
+  }
 
   const moduleArgs = identifyModules(project, options.module);
   const { moduleName } = parseModuleArg(moduleArgs[0]);

@@ -5,6 +5,7 @@
 import * as path from 'path';
 import { existsSync, statSync } from 'fs';
 import type { EmulatorInfo } from './emulator-types.js';
+import { CommonUtils } from '../utils/common-utils.js';
 
 function pickStringField(
   item: Record<string, unknown>,
@@ -81,7 +82,7 @@ function hydrateMissingInstancePaths(emulators: EmulatorInfo[]): void {
     if (e.instancePath?.trim()) {
       continue;
     }
-    const candidate = path.join(deployRoot, e.name);
+    const candidate = CommonUtils.ensurePathWithinRoot(deployRoot, path.join(deployRoot, e.name));
     if (existsSync(candidate) && statSync(candidate).isDirectory()) {
       e.instancePath = candidate.replace(/\\/g, '/');
     }

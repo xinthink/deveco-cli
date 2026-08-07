@@ -12,12 +12,3 @@ export const PROJECT_ROOT = path.resolve(INDEX_DIR, '..');
 export const LEXICON_DIR = path.join(INDEX_DIR, 'data');
 export const CACHE_DIR = path.join(PROJECT_ROOT, 'scripts', '.cache');
 export const DOCS_ZIP = path.join(PROJECT_ROOT, 'docs.zip');
-
-export function ensureCacheDir(): void {
-  fs.mkdirSync(CACHE_DIR, { recursive: true });
-}
-
-export function candidatePath(name: string): string {
-  ensureCacheDir();
-  return path.join(CACHE_DIR, name);
-}

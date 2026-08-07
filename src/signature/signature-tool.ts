@@ -39,7 +39,7 @@ const MAX_FILE_NAME_PART_LEN = 64;
  * 过滤 Windows/macOS/Linux 系统中不允许出现在文件名中的字符
  * - \ : * ? " < > | = -
  */
-const ILLEGAL_FILE_NAME_CHARS_REGEX = /[\\:*?"<>|=-]/g;
+const ILLEGAL_FILE_NAME_CHARS_REGEX = /[\\/:*?"<>|=-]/g;
 
 /** 默认全局配置 */
 export const DEFAULT_CFG = {
@@ -160,7 +160,7 @@ function sanitizeName(rawName?: string): string {
         return DEFAULT_CFG.productName;
     }
     // 全平台通用非法字符过滤
-    const safeStr = trimmed.replace(ILLEGAL_FILE_NAME_CHARS_REGEX, '_');
+    const safeStr = trimmed.replace(ILLEGAL_FILE_NAME_CHARS_REGEX, '_').replace(/\.+/g, '_');
     // 截断超长
     const shortStr = safeStr.slice(0, MAX_FILE_NAME_PART_LEN);
     return shortStr || DEFAULT_CFG.productName;
