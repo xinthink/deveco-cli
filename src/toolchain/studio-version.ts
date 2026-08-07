@@ -44,10 +44,10 @@ function macStudioVersion(root: string): string | undefined {
     plist(root, 'CFBundleGetInfoString')?.match(/DS-[\d.]+/)?.[0],
   ];
   for (const build of builds) {
-    const suffix = build
+      const suffix = build
       ?.split('.')
       .at(-1)
-      ?.replace(new RegExp(`^${prefix}`), '');
+      ?.replace(new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`), '');
     if (suffix && /^\d+$/.test(suffix)) {
       return `${short}.${suffix}`;
     }

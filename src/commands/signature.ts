@@ -46,17 +46,27 @@ interface SigningConfig {
   material: SigningConfigMaterial;
 }
 
+const MAX_PROFILE_SIZE = 5 * 1024 * 1024;
+
 function readOrCreateProfile(profilePath: string): {
   app?: {
     signingConfigs?: SigningConfig[];
     products?: Array<{ name: string; signingConfig?: string }>;
   };
 } {
-  if (fs.existsSync(profilePath)) {
+  try {
+    const stat = fs.statSync(profilePath);
+    if (stat.size > MAX_PROFILE_SIZE) {
+      throw new Error(`Profile file too large: ${stat.size} bytes (max ${MAX_PROFILE_SIZE} bytes): ${profilePath}`);
+    }
     const content = fs.readFileSync(profilePath, 'utf-8');
     return json5.parse(content);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { app: { signingConfigs: [], products: [] } };
+    }
+    throw new Error(`Failed to read profile: ${profilePath}`, { cause: error });
   }
-  return { app: { signingConfigs: [], products: [] } };
 }
 
 function ensureProfileStructure(profile: {

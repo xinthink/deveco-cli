@@ -7,6 +7,7 @@ import { execa } from 'execa';
 import { ToolProvider } from '../toolchain/index.js';
 import { debugLog } from './logger.js';
 import { DeviceManager } from '../service/device-manager.js';
+import { CommonUtils } from './common-utils.js';
 
 export interface DeviceInfo {
   name: string;
@@ -53,6 +54,7 @@ export class HdcAdapter {
     target: string,
     bundleName: string
   ): Promise<boolean> {
+    CommonUtils.assertBundleNameStrict(bundleName);
     const stdout = await this.runHdc(
       ['-t', target, 'shell', 'bm', 'uninstall', '-n', bundleName],
       false
@@ -119,6 +121,8 @@ export class HdcAdapter {
     bundleName: string,
     mainAbility: string
   ): Promise<string> {
+    CommonUtils.assertBundleNameStrict(bundleName);
+    CommonUtils.assertAbilityName(mainAbility);
     const args = [
       '-t',
       target,
@@ -134,6 +138,7 @@ export class HdcAdapter {
   }
 
   public async forceStopApp(target: string, bundleName: string): Promise<string> {
+    CommonUtils.assertBundleNameStrict(bundleName);
     const args = ['-t', target, 'shell', 'aa', 'force-stop', bundleName];
     return await this.runHdc(args, false);
   }

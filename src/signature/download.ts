@@ -4,6 +4,7 @@
  */
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { createHash } from 'node:crypto';
 import { httpClient } from '../utils/http-client.js';
 import {
   CertConstants,
@@ -11,6 +12,32 @@ import {
   SignatureHttpStatusCode,
   SignatureResponseSignals,
 } from '../config/signature.js';
+
+function assertSafeDownloadUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Invalid download URL: ${JSON.stringify(url)}`);
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`Download URL must use HTTPS: ${parsed.protocol}`);
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  if (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    hostname.startsWith('169.254.') ||
+    hostname.startsWith('10.') ||
+    hostname.startsWith('192.168.') ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname) ||
+    hostname.endsWith('.internal') ||
+    hostname.endsWith('.local')
+  ) {
+    throw new Error(`Download URL points to internal/private address: ${hostname}`);
+  }
+}
 
 /**
  * 下载远端文件到本地。
@@ -22,8 +49,10 @@ import {
  */
 export async function downloadFile(
   downloadUrl: string,
-  filePath: string
+  filePath: string,
+  expectedSha256?: string
 ): Promise<void> {
+  assertSafeDownloadUrl(downloadUrl);
   const { statusCode, statusText, buffer } = await httpClient.getBinaryAllowFailure(
     downloadUrl,
     { timeout: CertConstants.DOWNLOAD_CONNECT_TIMEOUT_MS }
@@ -36,6 +65,14 @@ export async function downloadFile(
       throw new Error(SignatureErrorMessages.ERR_CERT_NETWORK_ERROR);
     }
     throw new Error(SignatureErrorMessages.ERR_DOWNLOAD_CER);
+  }
+  if (expectedSha256) {
+    const actual = createHash('sha256').update(buffer).digest('hex');
+    if (actual !== expectedSha256.toLowerCase()) {
+      throw new Error(
+        `SHA-256 mismatch for ${filePath}: expected ${expectedSha256.toLowerCase()}, got ${actual}`
+      );
+    }
   }
   const dir = dirname(filePath);
   if (!existsSync(dir)) {

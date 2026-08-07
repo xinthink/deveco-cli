@@ -126,7 +126,7 @@ export async function runHdcShell(
   deviceId: string,
   shellArgs: string[]
 ): Promise<void> {
-  const args = ['-t', deviceId, 'shell', shellArgs.join(' ')];
+  const args = ['-t', deviceId, 'shell', ...shellArgs];
   debugLog(`Executing: ${hdcPath} ${args.join(' ')}`);
   const result = await runHdcWithRetry(hdcPath, args);
 

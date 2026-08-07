@@ -6,6 +6,7 @@ import { InvalidArgumentError } from 'commander';
 import * as path from 'path';
 import * as os from 'os';
 import { Project } from '../utils/project.js';
+import { CommonUtils } from '../utils/common-utils.js';
 import {
   readdirSync,
   existsSync,
@@ -279,7 +280,11 @@ function extractCsvPathFromOutput(stdout: string, outputDir: string): string | n
     return null;
   }
   const raw = m[1].trim();
-  return path.isAbsolute(raw) ? raw : path.join(outputDir, raw);
+  if (path.isAbsolute(raw)) {
+    return raw;
+  }
+  const resolved = path.join(outputDir, raw);
+  return CommonUtils.ensurePathWithinRoot(outputDir, resolved);
 }
 
 /**

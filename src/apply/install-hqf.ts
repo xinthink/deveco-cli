@@ -19,6 +19,7 @@ import { randomUUID } from 'node:crypto';
 import { execa } from 'execa';
 import { ToolProvider } from '../toolchain/index.js';
 import { debugLog } from '../utils/logger.js';
+import { CommonUtils } from '../utils/common-utils.js';
 
 /** hqf 安装结果 */
 export interface InstallHqfResult {
@@ -56,6 +57,8 @@ export class InstallHqf {
         return { success: false, message: msg };
       }
     }
+
+    CommonUtils.assertBundleName(bundleName);
 
     const uuid = randomUUID();
     const remoteDir = `/data/local/tmp/${uuid}`;

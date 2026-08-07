@@ -8,6 +8,8 @@ import { homedir } from 'os';
 import { httpClient } from '../utils/http-client';
 import type { HttpResponse } from '../types/http';
 import { SkillsApiConstants, AGENT_SKILLS_CONFIG } from '../config/constants';
+import { assertSafeSkillName } from './validation.js';
+import { CommonUtils } from '../utils/common-utils';
 import type {
   TagsResponse,
   SkillsResponse,
@@ -178,12 +180,16 @@ export async function searchSkills(
  * @returns 已安装该 skill 的 agent 显示名称数组（按字母排序）
  */
 export function getInstalledAgents(skillName: string): string[] {
+  assertSafeSkillName(skillName);
   const installedAgents: string[] = [];
 
   // 遍历所有 agent 配置
   for (const [, agentConfig] of Object.entries(AGENT_SKILLS_CONFIG)) {
     // 构建完整的 skill 路径
-    const skillPath = path.join(homedir(), agentConfig.path, skillName);
+    const skillPath = CommonUtils.ensurePathWithinRoot(
+      path.join(homedir(), agentConfig.path),
+      path.join(homedir(), agentConfig.path, skillName),
+    );
 
     // 检查该路径是否存在
     if (fs.existsSync(skillPath)) {
@@ -242,6 +248,8 @@ export function validateApiResponse<T extends ApiResponseBase>(
  * @throws 如果 API 调用失败或数据格式不正确
  */
 export async function fetchSkillChecksum(skillName: string): Promise<ChecksumData> {
+  assertSafeSkillName(skillName);
+  
   // 构建 Checksum API URL
   const url = `${SkillsApiConstants.SKILL_API_BASE}/${skillName}/checksum`;
 
