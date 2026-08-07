@@ -8,6 +8,7 @@ import { homedir } from 'os';
 import { httpClient } from '../utils/http-client';
 import type { HttpResponse } from '../types/http';
 import { SkillsApiConstants, AGENT_SKILLS_CONFIG } from '../config/constants';
+import { assertSafeSkillName } from './validation.js';
 import type {
   TagsResponse,
   SkillsResponse,
@@ -178,6 +179,7 @@ export async function searchSkills(
  * @returns 已安装该 skill 的 agent 显示名称数组（按字母排序）
  */
 export function getInstalledAgents(skillName: string): string[] {
+  assertSafeSkillName(skillName);
   const installedAgents: string[] = [];
 
   // 遍历所有 agent 配置
@@ -242,6 +244,8 @@ export function validateApiResponse<T extends ApiResponseBase>(
  * @throws 如果 API 调用失败或数据格式不正确
  */
 export async function fetchSkillChecksum(skillName: string): Promise<ChecksumData> {
+  assertSafeSkillName(skillName);
+  
   // 构建 Checksum API URL
   const url = `${SkillsApiConstants.SKILL_API_BASE}/${skillName}/checksum`;
 

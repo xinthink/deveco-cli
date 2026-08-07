@@ -11,7 +11,7 @@ import {
   SignatureHttpStatusCode,
   SignatureResponseSignals,
 } from '../config/signature.js';
-import type { AuthInfo, CertInfo, CertListResponse, DownloadUrlList } from './types.js';
+import type { AuthInfo, CertInfo, CertListResponse, DownloadUrlList, DownloadUrlInfo } from './types.js';
 
 function buildHeaders(auth: AuthInfo): Record<string, string> {
   return {
@@ -162,7 +162,7 @@ export async function addCertificate(
 export async function getDownloadUrl(
   auth: AuthInfo,
   certObjectId: string
-): Promise<string | null> {
+): Promise<DownloadUrlInfo | null> {
   const url = `${SignatureEndpoints.BASE_URL}${SignatureEndpoints.CERT_DOWNLOAD_URL_PATH}`;
   const response: HttpResponse = await httpClient.postAllowFailure(url, {
     headers: buildHeaders(auth),
@@ -172,5 +172,5 @@ export async function getDownloadUrl(
     throw mapCloudError(response.statusCode, response.statusText, response.data);
   }
   const data = parseResponseData<DownloadUrlList>(response.data);
-  return data?.urlsInfo?.[0]?.newUrl ?? null;
+  return data?.urlsInfo?.[0] ?? null;
 }

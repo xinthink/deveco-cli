@@ -57,13 +57,13 @@ export async function generateCertificate(
     throw new Error(SignatureErrorMessages.ERR_DOWNLOAD_CER);
   }
 
-  const downloadUrl = await getDownloadUrl(auth, newCert.certObjectId);
-  if (!downloadUrl) {
+  const downloadUrlInfo = await getDownloadUrl(auth, newCert.certObjectId);
+  if (!downloadUrlInfo) {
     throw new Error(SignatureErrorMessages.ERR_DOWNLOAD_CER);
   }
 
   const cerFilePath = await getAutoSignFilePath(product, projectRoot, 'cer');
-  await downloadFile(downloadUrl, cerFilePath);
+  await downloadFile(downloadUrlInfo.newUrl, cerFilePath, downloadUrlInfo.sha256);
 
   checkCertificateValidate(cerFilePath);
 

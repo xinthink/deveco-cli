@@ -4,6 +4,7 @@
  */
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { createHash } from 'node:crypto';
 import { httpClient } from '../utils/http-client.js';
 import {
   CertConstants,
@@ -48,7 +49,8 @@ function assertSafeDownloadUrl(url: string): void {
  */
 export async function downloadFile(
   downloadUrl: string,
-  filePath: string
+  filePath: string,
+  expectedSha256?: string
 ): Promise<void> {
   assertSafeDownloadUrl(downloadUrl);
   const { statusCode, statusText, buffer } = await httpClient.getBinaryAllowFailure(
@@ -63,6 +65,14 @@ export async function downloadFile(
       throw new Error(SignatureErrorMessages.ERR_CERT_NETWORK_ERROR);
     }
     throw new Error(SignatureErrorMessages.ERR_DOWNLOAD_CER);
+  }
+  if (expectedSha256) {
+    const actual = createHash('sha256').update(buffer).digest('hex');
+    if (actual !== expectedSha256.toLowerCase()) {
+      throw new Error(
+        `SHA-256 mismatch for ${filePath}: expected ${expectedSha256.toLowerCase()}, got ${actual}`
+      );
+    }
   }
   const dir = dirname(filePath);
   if (!existsSync(dir)) {
