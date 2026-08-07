@@ -95,6 +95,9 @@ function ensureRootKeys(): void {
 }
 
 function loadRootKey(keyId: string): Buffer {
+  if (!rootKeyIds.includes(keyId)) {
+    throw new Error(`Invalid kekId: ${keyId}`);
+  }
   ensureRootKeys();
   const filePath = getRootKeyPath(keyId);
   const key = fs.readFileSync(filePath);
@@ -248,12 +251,20 @@ export function decryptForLocalStorageFromDirectory(
   const wrapped = JSON.parse(
     fs.readFileSync(externalWrappedDekPath, 'utf8')
   ) as WrappedDekData;
+  if (!rootKeyIds.includes(wrapped.kekId)) {
+    throw new Error(`Invalid kekId: ${wrapped.kekId}`);
+  }
   const rootKeyPath = path.join(
     externalConfigPath,
     'keys',
     `${wrapped.kekId}.bin`
   );
-  const kek = fs.readFileSync(rootKeyPath);
+  const resolved = path.resolve(rootKeyPath);
+  const resolvedBase = path.resolve(path.join(externalConfigPath, 'keys'));
+  if (!resolved.startsWith(resolvedBase + path.sep) && resolved !== resolvedBase) {
+    throw new Error('kekId resolves outside the keys directory');
+  }
+  const kek = fs.readFileSync(resolved);
   if (kek.length !== kekLength) {
     throw new Error('Invalid external root key');
   }

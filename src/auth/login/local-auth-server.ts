@@ -127,13 +127,7 @@ export class LocalAuthServer {
       const urlParams = url.searchParams;
 
       if (_req.method === 'POST') {
-        let body = '';
-        _req.on('data', (chunk: Buffer) => {
-          body += chunk.toString();
-        });
-        _req.on('end', () => {
-          this.handleCallbackRequest(_req, res, urlParams, body);
-        });
+        this.readBody(_req, res, urlParams);
       } else {
         this.handleCallbackRequest(_req, res, urlParams, '');
       }
@@ -142,6 +136,27 @@ export class LocalAuthServer {
       res.end('Internal Server Error');
       this.rejectCallback?.(err as Error);
     }
+  }
+
+  private readBody(
+    _req: IncomingMessage,
+    res: ServerResponse,
+    urlParams: URLSearchParams
+  ): void {
+    let body = '';
+    let bodySize = 0;
+    const MAX_BODY_SIZE = 65536;
+    _req.on('data', (chunk: Buffer) => {
+      bodySize += chunk.length;
+      if (bodySize > MAX_BODY_SIZE) {
+        _req.destroy(new Error('Request body too large'));
+        return;
+      }
+      body += chunk.toString();
+    });
+    _req.on('end', () => {
+      this.handleCallbackRequest(_req, res, urlParams, body);
+    });
   }
 
   private handleCallbackRequest(

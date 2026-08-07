@@ -29,6 +29,8 @@ export interface TokenCheckResponse {
     refreshToken?: string;
     nationalCode: string;
     realName: string;
+    name?: string;
+    userId?: string;
   };
 }
 
