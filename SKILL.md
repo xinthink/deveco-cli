@@ -1,12 +1,12 @@
 ---
 name: deveco-cli
 description: >-
-  **MUST** use 'devecocli' for HarmonyOS apps (scaffold, build, run, debug, devices, emulators, logs, docs, UI inspection, 鸿蒙开发文档, skills). **REQUIRED** and **MANDATORY** if workspace has build-profile.json5 or oh-package.json5, or user mentions HarmonyOS, 鸿蒙, DevEco, ArkTS, ArkUI, docs, 鸿蒙文档, 知识, 搜索, skills, UI, UI测试, 组件调试.
+  Use 'devecocli' for HarmonyOS apps (scaffold, build, run, debug, devices, emulators, logs, docs, UI inspection, 鸿蒙开发文档, skills). Use it if workspace has build-profile.json5 or oh-package.json5, or user mentions HarmonyOS, 鸿蒙, DevEco, ArkTS, ArkUI, docs, 鸿蒙文档, 知识, 搜索, skills, UI, UI测试, 组件调试. If user explicitly specifies another tool, skill, or workflow, follow that choice; otherwise use 'devecocli'.
 ---
 
 # DevEco CLI
 
-`devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc`, emulator toolchain, and bundled skills installer. **Prefer `devecocli` over invoking underlying tools directly.**
+`devecocli` wraps DevEco Studio's `hvigor`, `ohpm`, `hdc`, emulator toolchain, and bundled skills installer.
 
 Available commands: `build`, `check`, `run`, `update`, `device`, `emulator`, `ui`, `skills`, `log`, `create`, `init`, `serve`, `docs`, `signature`, `auth`.
 
@@ -33,12 +33,14 @@ Compile and package project/modules. (Defaults: `--product default`, `--build-mo
 
 ### `devecocli check lint`
 Run DevEco Code Linter checks for TS/ArkTS code.
+- **Studio requirement**: Default lint checks and `--fix`, `--incremental`, `--product`, `--config-path`, and `--limit` support DevEco Studio `>= 6.0.0`; explicitly using `--format` or `--output-path` requires DevEco Studio `>= 6.1.0`. Command Line Tools mode follows the CLT `>= 26.0.0` baseline.
 - `[path]`: File or directory to lint. Defaults to the project root from `build-profile.json5`, otherwise the current directory.
 - Options: `--config-path <file>`, `--fix`, `--incremental`, `--product <name>`, `--format <default|json>`, `--output-path <path>`, `--limit <number>`.
 - Set `DEVECO_CLI_CLT_PATH` to the Command Line Tools root when DevEco Studio is not installed; CLT is not discovered automatically from PATH or default installation directories.
 
 ### `devecocli emulator`
 Manage local emulator instances and system images.
+- **Studio requirement**: DevEco Studio `>= 6.1.0`.
 - `list`: Show instances (status, serial, device type). Opt: `--format <table|json>` (default: `table`).
 - `start <names...>`: Start instances. Quote names with spaces. (See Troubleshooting if blocked).
 - `stop <names...>`: Stop by name or serial (`127.0.0.1:<port>`).

@@ -400,7 +400,7 @@ export class ClangdLspProxy {
             return;
         }
         const key: string | number = id;
-        if (msg.error !== undefined) {
+        if (msg.error !== undefined && msg.error !== null) {
             const err = msg.error as { code?: number; message?: string; data?: unknown };
             logger.warn(`[ClangdLspProxy] LSP error id=${key}: code=${err.code ?? -1} message=${err.message ?? 'unknown'}`);
             this.requestCallbacks.rejectPending(

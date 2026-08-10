@@ -229,6 +229,9 @@ export class HilogAdapter {
     size: string
   ): Promise<void> {
     debugLog(`Setting hilog buffer size to: ${size}`);
+    if (!/^\d+[KMG]?$/.test(size)) {
+      throw new Error(`Invalid hilog buffer size: ${JSON.stringify(size)}. Expected format: <number>[K|M|G], e.g. "4M", "16M"`);
+    }
     const result = await runHdcWithRetry(hdcPath, [
       '-t',
       deviceId,

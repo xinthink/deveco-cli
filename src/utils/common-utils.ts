@@ -254,6 +254,20 @@ export class CommonUtils {
     }
   }
 
+  static assertModuleName(name: string): void {
+    this.assertSafeName(name, 'module name');
+  }
+
+  static assertAbilityName(name: string): void {
+    this.assertSafeName(name, 'ability name');
+  }
+
+  private static assertSafeName(name: string, label: string): void {
+    if (!/^[A-Za-z0-9_.]+$/.test(name)) {
+      throw new Error(`Invalid ${label}: ${JSON.stringify(name)}`);
+    }
+  }
+
   static assertHilogToken(value: string, field: string): void {
     // 只允许字母/数字/下划线/点/冒号/连字符，长度 1-64
     if (!/^[A-Za-z0-9_.:\\-]{1,64}$/.test(value)) {

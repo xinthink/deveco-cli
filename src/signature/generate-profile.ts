@@ -288,8 +288,8 @@ async function downloadFromUrlList(
   if (!urlsInfo || urlsInfo.length === 0) {
     return false;
   }
-  const newUrl = urlsInfo[0].newUrl;
-  await downloadFile(newUrl, filePath);
+  const first = urlsInfo[0];
+  await downloadFile(first.newUrl, filePath, first.sha256);
   return true;
 }
 

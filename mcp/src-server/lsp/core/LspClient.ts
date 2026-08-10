@@ -24,6 +24,8 @@ export interface LspClientConfig {
  * LSP 消息处理客户端
  * 负责进程管理、流解析 (Content-Length) 和消息收发
  */
+const MAX_CONTENT_LENGTH = 50 * 1024 * 1024;
+
 export class LspClient extends EventEmitter {
     private process: ChildProcess | null = null;
     private buffer: Buffer = Buffer.alloc(0);
@@ -187,6 +189,11 @@ export class LspClient extends EventEmitter {
             }
 
             const contentLength = parseInt(contentLengthMatch[1], 10);
+            if (!Number.isFinite(contentLength) || contentLength < 0 || contentLength > MAX_CONTENT_LENGTH) {
+                logger.warn(`[LspClient] Invalid Content-Length: ${contentLengthMatch[1]}, drop until next packet`);
+                this.buffer = this.buffer.slice(headerEndIdx + 4);
+                continue;
+            }
             const bodyStartIdx = headerEndIdx + 4;
             const bodyEndIdx = bodyStartIdx + contentLength;
 

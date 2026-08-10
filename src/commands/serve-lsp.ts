@@ -160,9 +160,22 @@ function buildSpawnArgs(
  * 不解析、不拦截任何 LSP 消息（包括 initialize / initialized）。
  */
 function setupBridge(child: ChildProcess): void {
+  child.on('error', (err) => {
+    mcpLog.error(`[ace-server] spawn error: ${err.message}`);
+    process.exit(1);
+  });
+  child.stdout?.on('error', (err) => {
+    mcpLog.error(`[ace-server] stdout error: ${err.message}`);
+  });
   child.stdout?.on('data', (chunk: Buffer) => process.stdout.write(chunk));
+  child.stderr?.on('error', (err) => {
+    mcpLog.error(`[ace-server] stderr error: ${err.message}`);
+  });
   child.stderr?.on('data', (chunk: Buffer) => {
     mcpLog.error(`[ace-server] ${chunk.toString('utf8').trim()}`);
+  });
+  child.stdin?.on('error', (err) => {
+    mcpLog.error(`[ace-server] stdin error: ${err.message}`);
   });
   process.stdin.on('data', (chunk: Buffer) => {
     child.stdin?.write(chunk);

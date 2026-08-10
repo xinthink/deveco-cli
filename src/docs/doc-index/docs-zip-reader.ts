@@ -83,7 +83,13 @@ async function getDocsZipCache(zipPath: string): Promise<DocsZipCache> {
 
   closeDocsZipCache();
   const zipfile = await openZip(resolvedPath);
-  const entries = await loadEntryIndex(zipfile);
+  let entries: Map<string, yauzl.Entry>;
+  try {
+    entries = await loadEntryIndex(zipfile);
+  } catch (error) {
+    zipfile.close();
+    throw new Error(`Failed to read entries from zip: ${resolvedPath}`, { cause: error });
+  }
   docsZipCache = {
     zipPath: resolvedPath,
     mtimeMs: stat.mtimeMs,

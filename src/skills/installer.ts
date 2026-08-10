@@ -15,20 +15,9 @@ import { httpClient } from '../utils/http-client';
 import { ChecksumData, SkillOperationResult } from '../types/skills';
 import { fetchSkillChecksum } from './api';
 import { red } from 'colorette';
+import { assertSafeSkillName } from './validation.js';
 
 const fsp = fs.promises;
-
-/**
- * 验证 skill 名称是否安全。仅限字母、数字、点、下划线和连字符。
- * 使用白名单正则校验，防止路径穿越攻击
- * @param name - skill 名称
- * @throws 如果名称不安全
- */
-function assertSafeSkillName(name: string): void {
-  if (!/^[A-Za-z0-9._-]+$/.test(name) || name === '.' || name === '..') {
-    throw new Error(`Unsafe skill name: ${JSON.stringify(name)}`);
-  }
-}
 
 /**
  * 验证路径是否在指定父目录内
@@ -107,6 +96,8 @@ export async function verifyZipIntegrity(
  * @throws 如果下载失败或 skill 不存在
  */
 export async function downloadSkill(skillName: string): Promise<Buffer> {
+  assertSafeSkillName(skillName);
+  
   // 构建 API URL
   const url = `${SkillsApiConstants.SKILL_API_BASE}/${skillName}/install?format=zip`;
   // 使用 httpClient.getBinary 下载

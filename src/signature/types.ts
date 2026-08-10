@@ -20,7 +20,7 @@ export interface CertListResponse {
 }
 
 export interface DownloadUrlList {
-  urlsInfo: { newUrl: string }[];
+  urlsInfo: DownloadUrlInfo[];
 }
 
 export interface GenerateCertificateResult {

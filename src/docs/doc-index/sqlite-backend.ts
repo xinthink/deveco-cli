@@ -27,6 +27,7 @@ interface CachedDb {
 
 let sqliteModulePromise: Promise<SqliteWasmModule> | null = null;
 let cachedDb: CachedDb | null = null;
+let openChain: Promise<void> = Promise.resolve();
 
 async function getSqliteModule(): Promise<SqliteWasmModule> {
   if (!sqliteModulePromise) {
@@ -55,7 +56,7 @@ function createWasmReader(db: WasmDatabase): FtsDbReader {
   };
 }
 
-async function openReadonlyDb(dbPath: string): Promise<WasmDatabase> {
+async function openReadonlyDbInner(dbPath: string): Promise<WasmDatabase> {
   const fileStat = await stat(dbPath);
   if (
     cachedDb &&
@@ -71,21 +72,50 @@ async function openReadonlyDb(dbPath: string): Promise<WasmDatabase> {
   const wasm = sqlite3.wasm;
   const bytes = new Uint8Array(await readFile(dbPath));
   const ptr = wasm.allocFromTypedArray(bytes);
-  const db = new sqlite3.oo1.DB(':memory:');
-  const flags =
-    capi.SQLITE_DESERIALIZE_READONLY |
-    capi.SQLITE_DESERIALIZE_RESIZEABLE |
-    capi.SQLITE_DESERIALIZE_FREEONCLOSE;
-  capi.sqlite3_deserialize(
-    db.pointer,
-    'main',
-    ptr,
-    bytes.byteLength,
-    bytes.byteLength,
-    flags
-  );
-  cachedDb = { dbPath, mtimeMs: fileStat.mtimeMs, db };
-  return db;
+  let db: WasmDatabase | undefined;
+  let stored = false;
+  try {
+    db = new sqlite3.oo1.DB(':memory:');
+    const flags =
+      capi.SQLITE_DESERIALIZE_READONLY |
+      capi.SQLITE_DESERIALIZE_RESIZEABLE |
+      capi.SQLITE_DESERIALIZE_FREEONCLOSE;
+    const rc = capi.sqlite3_deserialize(
+      db.pointer,
+      'main',
+      ptr,
+      bytes.byteLength,
+      bytes.byteLength,
+      flags
+    );
+    if (rc !== capi.SQLITE_OK) {
+      throw new Error(
+        `Failed to open readonly database: sqlite3_deserialize returned code ${rc} for: ${dbPath}`
+      );
+    }
+    cachedDb = { dbPath, mtimeMs: fileStat.mtimeMs, db };
+    stored = true;
+    return db;
+  } finally {
+    if (!stored) {
+      db?.close();
+      wasm.dealloc(ptr);
+    }
+  }
+}
+
+async function openReadonlyDb(dbPath: string): Promise<WasmDatabase> {
+  let release!: () => void;
+  const previous = openChain;
+  openChain = new Promise((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await openReadonlyDbInner(dbPath);
+  } finally {
+    release();
+  }
 }
 
 function resetWasmCache(): void {

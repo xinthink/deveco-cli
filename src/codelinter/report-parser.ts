@@ -23,6 +23,8 @@ const INFORMATION_LINE_PATTERNS = [
   /^Write finished\.$/,
   /^CodeLinter found some defects in your code\.$/,
 ] as const;
+/** Studio 6.0 时过滤Code Linter 原生输出中状态信息和进度消息。 */
+const HIDDEN_NATIVE_MESSAGE_TYPES = new Set([1]);
 
 /** 过滤 Code Linter 原生输出中的 ANSI、进度和状态信息。 */
 export function filterCodelinterNativeText(text: string | undefined): string {
@@ -33,11 +35,39 @@ export function filterCodelinterNativeText(text: string | undefined): string {
     .replace(ANSI_PATTERN, '')
     .replace(CARRIAGE_RETURN_PATTERN, '\n')
     .split('\n')
+    .map(normalizeNativeMessage)
     .map((line) => line.trimEnd())
     .filter((line) => shouldKeepLine(line));
 
   return lines.length > 0 ? `${lines.join('\n')}\n` : '';
 }
+
+/** 将旧版消息协议转换为可展示诊断文本。 */
+function normalizeNativeMessage(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('{')) {
+    return line;
+  }
+  try {
+    const message = JSON.parse(trimmed) as {
+      content?: unknown;
+      messageType?: unknown;
+    };
+    if (
+      typeof message.content !== 'string' ||
+      typeof message.messageType !== 'number'
+    ) {
+      return line;
+    }
+    return HIDDEN_NATIVE_MESSAGE_TYPES.has(message.messageType)
+      ? ''
+      : message.content;
+  } catch {
+    return line;
+  }
+}
+
+const MAX_CODELINTER_OUTPUT_LENGTH = 50 * 1024 * 1024;
 
 /** 从 Code Linter 标准输出中分离 JSON 报告和诊断文本。 */
 export function extractJsonFromNativeStdout(
@@ -48,8 +78,21 @@ export function extractJsonFromNativeStdout(
     return { jsonText: undefined, diagnostics: '' };
   }
 
+  if (filtered.length > MAX_CODELINTER_OUTPUT_LENGTH) {
+    return { jsonText: undefined, diagnostics: `${filtered.slice(0, 1024)}\n[output truncated: exceeded ${MAX_CODELINTER_OUTPUT_LENGTH} bytes]\n` };
+  }
+
   if (isJsonText(filtered)) {
     return { jsonText: filtered, diagnostics: '' };
+  }
+
+  // Studio 6.0 为每个已检查文件输出一行独立 JSON。
+  const jsonLines = filtered.split('\n');
+  if (jsonLines.length > 1 && jsonLines.every(isJsonText)) {
+    return {
+      jsonText: JSON.stringify(jsonLines.map((line) => JSON.parse(line))),
+      diagnostics: '',
+    };
   }
 
   const jsonRange = findJsonRange(filtered);
@@ -97,32 +140,55 @@ function findJsonRange(
   text: string
 ): { start: number; end: number } | undefined {
   for (let start = 0; start < text.length; start++) {
-    if (text[start] !== '[' && text[start] !== '{') {
+    const ch = text[start];
+    if (ch !== '[' && ch !== '{') {
       continue;
     }
-    const range = findJsonRangeFromStart(text, start);
-    if (range) {
-      return range;
+    const close = ch === '[' ? ']' : '}';
+    const end = findMatchingClose(text, start, ch, close);
+    if (end !== -1 && isJsonText(text.slice(start, end + 1))) {
+      return { start, end: end + 1 };
     }
   }
   return undefined;
 }
 
-function findJsonRangeFromStart(
+function findMatchingClose(
   text: string,
-  start: number
-): { start: number; end: number } | undefined {
-  for (let end = text.length; end > start; end--) {
-    const last = text[end - 1];
-    if (last !== ']' && last !== '}') {
+  start: number,
+  open: string,
+  close: string
+): number {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) {
+      escape = false;
       continue;
     }
-    const candidate = text.slice(start, end);
-    if (isJsonText(candidate)) {
-      return { start, end };
+    if (ch === '\\' && inString) {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) {
+      continue;
+    }
+    if (ch === open) {
+      depth++;
+    } else if (ch === close) {
+      depth--;
+      if (depth === 0) {
+        return i;
+      }
     }
   }
-  return undefined;
+  return -1;
 }
 
 type JsonObject = Record<string, unknown>;

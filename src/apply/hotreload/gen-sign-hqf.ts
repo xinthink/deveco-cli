@@ -326,7 +326,10 @@ export class GenSignHqf {
 
     const signArgs = this.buildSignArgs(signConfig, unsignedHqfPath, signedHqfPath);
     const javaPath = this.toolProvider.javaPath;
-    debugLog(`[GenSignHqf] Signing: ${javaPath} ${signArgs.join(' ')}`);
+    const logSafeArgs = signArgs.map((item, i) =>
+      i > 0 && ['-keyPwd', '-keystorePwd'].includes(signArgs[i - 1]) ? '******' : item
+    );
+    debugLog(`[GenSignHqf] Signing: ${javaPath} ${logSafeArgs.join(' ')}`);
 
     try {
       const tSign = Date.now();

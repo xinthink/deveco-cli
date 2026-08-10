@@ -102,6 +102,9 @@ interface SensorOptions extends EmulatorTargetOptions {
   heartrate?: string;
 }
 
+/** Emulator CLI 从 Studio 6.1 起完整可用。 */
+const MIN_EMULATOR_STUDIO_VERSION = '6.1.0';
+
 function assertTarget(input: string): string {
   const target = input.trim();
   if (!target) {
@@ -758,6 +761,11 @@ const emulatorCommand = new Command('emulator').description(
   'Manage emulator instances'
 );
 
+emulatorCommand.hook('preAction', async () => {
+  const toolProvider = await ToolProvider.new();
+  toolProvider.require({ studio: MIN_EMULATOR_STUDIO_VERSION });
+});
+
 const EMULATOR_IMAGE_DEVICE_TYPES = [
   'phone',
   'foldable',
@@ -1280,7 +1288,7 @@ emulatorCommand
 const createEmulatorCmd = emulatorCommand
   .command('create <name>')
   .description(
-    'Create a local emulator by running emulator -create <name> …; --os-version must match a downloaded image from `emulator image list`.'
+    'Create a local emulator instance.'
   )
   .addOption(deviceTypeOption(true))
   .requiredOption(
