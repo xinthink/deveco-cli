@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import { execa } from 'execa';
+import * as net from 'net';
 import * as path from 'path';
 import { ToolProvider } from '../toolchain';
 import * as fs from 'fs';
@@ -125,6 +126,31 @@ export class HvigorAdapter {
 
   public isDaemonRunning(projectRoot?: string): boolean {
     return this.findProjectDaemon(projectRoot) !== null;
+  }
+
+  public async isDaemonAlive(projectRoot?: string): Promise<boolean> {
+    const daemon = this.findProjectDaemon(projectRoot);
+    if (!daemon) {
+      return false;
+    }
+    return this.isPortListening(daemon.port);
+  }
+
+  private isPortListening(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const socket = new net.Socket();
+      socket.setTimeout(2000);
+      socket.once('connect', () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.once('error', () => resolve(false));
+      socket.once('timeout', () => {
+        socket.destroy();
+        resolve(false);
+      });
+      socket.connect(port, '127.0.0.1');
+    });
   }
 
   public findProjectDaemon(projectRoot?: string): DaemonInfo | null {
