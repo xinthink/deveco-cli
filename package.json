@@ -24,6 +24,9 @@
     "build:index": "tsx index/build-index-bundle.ts",
     "dev": "tsx watch src/cli.ts",
     "start": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "format": "prettier --write src",
@@ -57,7 +60,8 @@
     "tsx": "^4.21.0",
     "turndown": "^7.2.4",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.59.1"
+    "typescript-eslint": "^8.59.1",
+    "vitest": "^4.1.10"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -78,10 +82,10 @@
     "proper-lockfile": "^4.1.2",
     "regedit": "^5.1.4",
     "remark-gfm": "^4.0.1",
-    "socket.io-client": "^4.7.5",
     "remark-parse": "^11.0.0",
     "semver": "^7.8.5",
     "smol-toml": "^1.6.1",
+    "socket.io-client": "^4.7.5",
     "unified": "^11.0.5",
     "yauzl": "^3.2.0",
     "zod": "^4.4.3"
