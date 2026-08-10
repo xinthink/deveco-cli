@@ -11,10 +11,20 @@ export default tseslint.config(
   {
     ignores: ['dist'],
     rules: {
-      'curly': ['error', 'all'],
-      'max-lines-per-function': ['error', { max: 50, skipBlankLines: true, skipComments: true }],
+      curly: ['error', 'all'],
+      'max-lines-per-function': [
+        'error',
+        { max: 50, skipBlankLines: true, skipComments: true },
+      ],
       'max-depth': ['error', { max: 4 }],
-      'dot-notation': 'error'
-    }
+      'dot-notation': 'error',
+    },
+  },
+  {
+    files: ['**/*.test.ts'],
+    rules: {
+      'max-lines-per-function': 'off',
+      'max-depth': 'off',
+    },
   }
 );
