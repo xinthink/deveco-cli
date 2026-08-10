@@ -169,6 +169,9 @@ export class ArktsLspManager {
     static async handleSyncProject(
         workspaceRoot: string,
         sdkPath?: string,
+        nodePath?: string,
+        ohpmJsPath?: string,
+        hvigorJsPath?: string,
         options?: { skipHvigorSync?: boolean },
     ): Promise<SyncResult> {
         logger.info('[ArktsLspManager] Received arkts/syncProject');
@@ -180,7 +183,7 @@ export class ArktsLspManager {
         const result = await tryWithBuildLock(
             workspaceRoot,
             async () => {
-                const installSuccess = await ohpmInstallAll(workspaceRoot, sdkPath);
+                const installSuccess = await ohpmInstallAll(workspaceRoot, sdkPath, nodePath ?? '', ohpmJsPath ?? '');
                 if (!installSuccess) {
                     logger.error('[ArktsLspManager] ohpm install failed');
                     return { status: 'failed' as const, reason: 'ohpm install failed' };
@@ -189,7 +192,7 @@ export class ArktsLspManager {
                     logger.info('[ArktsLspManager] hvigor sync skipped (config up-to-date)');
                     return { status: 'success' as const };
                 }
-                const success = await syncProject(workspaceRoot, sdkPath);
+                const success = await syncProject(workspaceRoot, sdkPath, nodePath ?? '', hvigorJsPath ?? '');
                 if (success) {
                     logger.info('[ArktsLspManager] syncProject completed successfully');
                     return { status: 'success' as const };

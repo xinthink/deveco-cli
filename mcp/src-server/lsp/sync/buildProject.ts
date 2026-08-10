@@ -6,7 +6,6 @@
 import { spawn, ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import { logger } from '../logger.js';
-import { findNodePath, resolveHvigorPath } from '../../utils/common.js';
 
 /** 构建结果 */
 export interface BuildResult {
@@ -106,11 +105,10 @@ export async function executeBuildCommand(
     return await spawnBuildProcess(cmdParts, projectPath, env);
 }
 
-function getEnvConfig(sdkPath: string): Record<string, string> {
-    const hvigorwPath = resolveHvigorPath(sdkPath) ?? '';
+function getEnvConfig(sdkPath: string, nodePath: string, hvigorJsPath: string): Record<string, string> {
     return {
-        node_path: findNodePath(sdkPath),
-        hvigor_path: hvigorwPath,
+        node_path: nodePath,
+        hvigor_path: hvigorJsPath,
         sdk_path: sdkPath,
     };
 }
@@ -133,9 +131,9 @@ const DEFAULT_HVIGOR_ARGS = '--sync -p product=default --analyze=normal --parall
 /**
  * 同步工程：校验配置后执行 hvigor 构建（异步，不阻塞事件循环）
  */
-export async function syncProject(projectPath: string, sdkPath: string): Promise<boolean> {
+export async function syncProject(projectPath: string, sdkPath: string, nodePath: string, hvigorJsPath: string): Promise<boolean> {
     try {
-        const config = getEnvConfig(sdkPath);
+        const config = getEnvConfig(sdkPath, nodePath, hvigorJsPath);
         const validation = validateConfig(config);
         if (validation != null) {
             logger.info(`Config validation failed: ${validation}`);

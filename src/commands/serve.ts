@@ -15,18 +15,19 @@ async function startStdioMcpServer(): Promise<void> {
   const PROJECT_PATH = process.env.PROJECT_PATH || '';
   const NODE_MAX_OLD_SPACE_SIZE = process.env.NODE_MAX_OLD_SPACE_SIZE;
   const DEBUG = process.env.DEBUG === 'true' || process.env.DEBUG === '1';
-  // ToolProvider 优先用 DevEco Studio/CLT 安装；缺失时若设置了 DEVECO_CLI_SDK_PATH /
-  // DEVECO_CLI_ARKTS_LSP_PATH 则以最小配置启动（sdk/arkts-lsp 由 MCP 内部按环境变量派生）。
+  // 组件路径（sdk / arkts-lsp / node / ohpm / hvigor / clangd）由 ToolProvider 按 CLT|Studio 布局一次性解析，
+  // 作为 config 注入 MCP server，MCP 内部不再自行解析安装布局。
   const projectPath = PROJECT_PATH;
   const toolProvider = await ToolProvider.new();
-  const devecoPath =
-    toolProvider.sourceType === 'clt'
-      ? toolProvider.toolchainRoot
-      : (toolProvider.devecoStudioPath ?? null);
 
   const server = createMcpServer({
     projectPath,
-    devecoPath: devecoPath ?? undefined,
+    sdkPath: toolProvider.sdkPath,
+    arktsLangServerPath: toolProvider.arktsLangServerPath ?? undefined,
+    nodePath: toolProvider.nodePath,
+    ohpmJsPath: toolProvider.ohpmJsPath,
+    hvigorJsPath: toolProvider.hvigorJsPath,
+    clangdPath: toolProvider.clangdPath ?? undefined,
     nodeMaxOldSpaceSize: NODE_MAX_OLD_SPACE_SIZE,
     debug: DEBUG,
   });
