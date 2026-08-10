@@ -99,6 +99,27 @@ export class ToolProvider {
       this._sourceType
     );
   }
+  /** arkts-lang-server 根目录（Studio: plugins/openharmony；CLT: arkts-lsp/lib），未安装返回 null。 */
+  public get arktsLangServerPath(): string | null {
+    const candidates = ToolProvider.buildToolPaths(
+      this._toolchainRoot,
+      this._sourceType
+    ).arktsLangServerCandidates;
+    for (const c of candidates) {
+      if (fs.existsSync(c.marker)) {
+        return c.root;
+      }
+    }
+    return null;
+  }
+  /** clangd 可执行文件路径，未安装返回 null。 */
+  public get clangdPath(): string | null {
+    const p = ToolProvider.buildToolPaths(
+      this._toolchainRoot,
+      this._sourceType
+    ).clangdPath;
+    return fs.existsSync(p) ? p : null;
+  }
   public get javaPath(): string {
     return this._javaPath ? this.verify(this._javaPath) : '';
   }
@@ -301,7 +322,10 @@ export class ToolProvider {
     root: string,
     source: InstallSourceType
   ): string {
-    const candidates = ToolProvider.getCodelinterCandidates(root, source);
+    const candidates = ToolProvider.buildToolPaths(
+      root,
+      source
+    ).codelinterCandidates;
     const entry = candidates.find(ToolProvider.isFile);
     if (!entry) {
       const label =
@@ -317,36 +341,6 @@ export class ToolProvider {
     const realEntry = resolveCanonicalPath(entry);
     ToolProvider.assertInsideRoot(realEntry, realRoot, 'codelinter');
     return realEntry;
-  }
-
-  /** 根据工具链来源生成 Code Linter 入口候选路径。 */
-  private static getCodelinterCandidates(
-    root: string,
-    source: InstallSourceType
-  ): string[] {
-    if (source === 'studio') {
-      const prefix = os.platform() === 'darwin' ? ['Contents'] : [];
-      return [
-        path.join(root, ...prefix, 'plugins', 'codelinter', 'run', 'index.js'),
-        path.join(root, ...prefix, 'plugins', 'codelinter', 'index.js'),
-        path.join(
-          root,
-          ...prefix,
-          'tools',
-          'codelinter',
-          'bin',
-          'codelinter.js'
-        ),
-        path.join(root, ...prefix, 'tools', 'codelinter', 'codelinter.js'),
-      ];
-    }
-
-    return [
-      path.join(root, 'codelinter', 'index.js'),
-      path.join(root, 'codelinter', 'run', 'index.js'),
-      path.join(root, 'tool', 'codelinter', 'bin', 'codelinter.js'),
-      path.join(root, 'tool', 'codelinter', 'codelinter.js'),
-    ];
   }
 
   private static isValidRoot(root: string, source: 'clt' | 'studio'): boolean {
@@ -371,16 +365,16 @@ export class ToolProvider {
     );
   }
 
-  private static buildToolPaths(root: string, source: 'clt' | 'studio') {
+  private static buildToolPaths(root: string, source: InstallSourceType) {
     return source === 'clt'
       ? ToolProvider.buildCltToolPaths(root)
       : ToolProvider.buildStudioToolPaths(root);
   }
 
   private static buildCltToolPaths(cltRoot: string) {
-    const sdkPath = path.join(cltRoot, 'sdk');
     const windows = os.platform() === 'win32';
     const ext = windows ? '.exe' : '';
+    const sdkPath = path.join(cltRoot, 'sdk');
     return {
       nodePath: windows
         ? path.join(cltRoot, 'tool', 'node', 'node.exe')
@@ -400,6 +394,17 @@ export class ToolProvider {
         cltRoot,
         'emulator',
         windows ? 'Emulator.exe' : 'Emulator'
+      ),
+      clangdPath: ToolProvider.clangdPathFor(sdkPath),
+      arktsLangServerCandidates: [
+        {
+          root: path.join(cltRoot, 'arkts-lsp', 'lib'),
+          marker: path.join(cltRoot, 'arkts-lsp', 'lib', 'out', 'index.js'),
+        },
+      ],
+      codelinterCandidates: ToolProvider.codelinterCandidatesFor(
+        cltRoot,
+        'clt'
       ),
     };
   }
@@ -435,7 +440,73 @@ export class ToolProvider {
         'emulator',
         windows ? 'Emulator.exe' : 'Emulator'
       ),
+      clangdPath: ToolProvider.clangdPathFor(sdkPath),
+      arktsLangServerCandidates:
+        ToolProvider.studioArktsLangServerCandidates(studioRoot),
+      codelinterCandidates: ToolProvider.codelinterCandidatesFor(
+        studioRoot,
+        'studio'
+      ),
     };
+  }
+
+  /** 按安装类型生成 Code Linter 入口候选路径。 */
+  private static codelinterCandidatesFor(
+    root: string,
+    source: InstallSourceType
+  ): string[] {
+    if (source === 'clt') {
+      return [
+        path.join(root, 'codelinter', 'index.js'),
+        path.join(root, 'codelinter', 'run', 'index.js'),
+        path.join(root, 'tool', 'codelinter', 'bin', 'codelinter.js'),
+        path.join(root, 'tool', 'codelinter', 'codelinter.js'),
+      ];
+    }
+    const macPrefix = os.platform() === 'darwin' ? ['Contents'] : [];
+    return [
+      path.join(root, ...macPrefix, 'plugins', 'codelinter', 'run', 'index.js'),
+      path.join(root, ...macPrefix, 'plugins', 'codelinter', 'index.js'),
+      path.join(
+        root,
+        ...macPrefix,
+        'tools',
+        'codelinter',
+        'bin',
+        'codelinter.js'
+      ),
+      path.join(root, ...macPrefix, 'tools', 'codelinter', 'codelinter.js'),
+    ];
+  }
+
+  /** Studio 布局的 arkts-lang-server 候选（Linux 不支持 Studio，无候选）。 */
+  private static studioArktsLangServerCandidates(
+    studioRoot: string
+  ): Array<{ root: string; marker: string }> {
+    if (os.platform() === 'linux') {
+      return [];
+    }
+    const macPrefix = os.platform() === 'darwin' ? ['Contents'] : [];
+    const base = path.join(studioRoot, ...macPrefix, 'plugins', 'openharmony');
+    return [
+      {
+        root: base,
+        marker: path.join(base, 'ace-server', 'out', 'index.js'),
+      },
+    ];
+  }
+
+  /** clangd 可执行文件路径：`<sdkPath>/default/openharmony/native/llvm/bin/clangd(.exe)`。 */
+  private static clangdPathFor(sdkPath: string): string {
+    return path.join(
+      sdkPath,
+      'default',
+      'openharmony',
+      'native',
+      'llvm',
+      'bin',
+      os.platform() === 'win32' ? 'clangd.exe' : 'clangd'
+    );
   }
 
   /** 判断路径是否为文件。 */

@@ -4,25 +4,9 @@
  */
 
 import { spawn } from 'child_process';
-import * as fs from 'fs';
-import * as path from 'path';
 import { logger } from '../logger.js';
-import { findNodePath } from '../../utils/common.js';
 
 const OHPM_ARGS = ['install', '--all'];
-
-function findOhpmJsPath(sdk: string): string | null {
-    const toolsDir = sdk.replace(/sdk\/?$/i, 'tools');
-
-    let ohpmPath = path.join(toolsDir, 'ohpm', 'bin', 'pm-cli.js');
-    if (fs.existsSync(ohpmPath)) {
-        return ohpmPath;
-    }
-
-    const sdkPath = sdk.toLowerCase().endsWith('sdk') ? path.dirname(sdk) : sdk;
-    ohpmPath = path.join(sdkPath, 'ohpm', 'bin', 'pm-cli.js');
-    return fs.existsSync(ohpmPath) ? ohpmPath : null;
-}
 
 async function runOhpmCommand(nodePath: string, ohpmJsPath: string, projectPath: string, sdkPath: string): Promise<{ exitCode: number; output: string }> {
     return new Promise<{ exitCode: number; output: string }>((resolve) => {
@@ -61,17 +45,17 @@ function logOhpmOutput(output: string): void {
 /**
  * 安装所有依赖（异步，不阻塞事件循环）
  * @param projectPath 项目路径
- * @param sdk DevEco SDK 路径，用于推导 ohpm 路径
+ * @param sdk DevEco SDK 路径
+ * @param nodePath 启动期由 ToolProvider 解析固定的 node 可执行文件路径
+ * @param ohpmJsPath 启动期由 ToolProvider 解析固定的 ohpm pm-cli.js 路径
  * @returns 是否成功
  */
-export async function ohpmInstallAll(projectPath: string, sdk: string): Promise<boolean> {
+export async function ohpmInstallAll(projectPath: string, sdk: string, nodePath: string, ohpmJsPath: string): Promise<boolean> {
     try {
-        const nodePath = findNodePath(sdk);
         if (!nodePath) {
             logger.error('node 路径不存在');
             return false;
         }
-        const ohpmJsPath = findOhpmJsPath(sdk);
         if (!ohpmJsPath) {
             logger.error('ohpm (pm-cli.js) 不存在');
             return false;

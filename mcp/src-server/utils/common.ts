@@ -12,21 +12,6 @@ import { VENDOR_NAME } from './constants';
 /** Maximum search depth for finding Harmony project */
 const MAX_SEARCH_DEPTH = 3;
 
-/** Maximum search depth for {@link smartFindToolPath}. */
-const SMART_FIND_MAX_DEPTH = 3;
-
-/** DevEco Studio 安装目录名(Windows / macOS 通用)。 */
-const DEVECO_STUDIO_DIR_NAME = 'DevEco Studio';
-
-/**
- * Tool-type identifiers used by {@link smartFindToolPath} / {@link checkPathValidity}.
- * Keep the string values aligned with the Rust constants (`TOOL_TYPE_*`).
- */
-export const ToolType = {
-  DevEcoStudio: 'deveco_studio'
-} as const;
-export type ToolType = (typeof ToolType)[keyof typeof ToolType];
-
 /**
  * Check if a path is a Harmony project directory.
  */
@@ -184,102 +169,37 @@ export function findHarmonyProjectInDir(startPath: string): string | null {
   return searchHarmonyProject(realResolvedPath, 0, MAX_SEARCH_DEPTH);
 }
 
-export function findArktsLangServerPath(devecoPath?: string | null): string | null {
-  const devecoRoot = devecoPath ?? findDevEcoPath();
-  if (!devecoRoot) {
-    return null;
-  }
+/**
+ * DevEco Studio 安装目录（Windows / macOS 通用）。
+ */
+const DEVECO_STUDIO_DIR_NAME = 'DevEco Studio';
 
-  // Studio 布局: <root>/plugins/openharmony/ace-server/out/index.js（仅 Win/macOS）
-  let pluginsOpenharmonyPath: string | null = null;
+/** 在默认安装位置探测 DevEco Studio（ToolProvider 解析失败时的兜底）。 */
+export function findDevEcoPath(): string | null {
   if (process.platform === 'win32') {
-    pluginsOpenharmonyPath = path.join(devecoRoot, 'plugins', 'openharmony');
-  } else if (process.platform === 'darwin') {
-    pluginsOpenharmonyPath = path.join(
-      devecoRoot,
-      'contents',
-      'plugins',
-      'openharmony'
-    );
+    const candidates = [
+      path.join('C:\\Program Files', VENDOR_NAME, DEVECO_STUDIO_DIR_NAME),
+      path.join('C:\\Program Files (x86)', VENDOR_NAME, DEVECO_STUDIO_DIR_NAME),
+    ];
+    return firstExistingPath(candidates);
   }
-  if (pluginsOpenharmonyPath) {
-    const aceServerIndexPath = path.join(
-      pluginsOpenharmonyPath,
-      'ace-server',
-      'out',
-      'index.js'
-    );
-    if (fs.existsSync(aceServerIndexPath)) {
-      return pluginsOpenharmonyPath;
-    }
-  }
-
-  // CLT 布局: <root>/arkts-lsp/lib/out/index.js（全平台）
-  const cltArktsLspLibPath = path.join(devecoRoot, 'arkts-lsp', 'lib');
-  const cltServerIndexPath = path.join(cltArktsLspLibPath, 'out', 'index.js');
-  if (fs.existsSync(cltServerIndexPath)) {
-    return cltArktsLspLibPath;
-  }
-
-  return null;
-}
-
-/**
- * 解析 ArkTS LSP / MCP 启动及 C++/ArkTS sync 所需的 sdkPath。
- *
- * macOS 下 DevEco Studio（.app 包）的 sdk 位于 `<root>/Contents/sdk`，
- * 而 CLT 与其他平台一致位于 `<root>/sdk`（无 Contents 层）。先按 CLT
- * 布局探测 `<root>/sdk`，命中即用；否则按 Studio 布局经
- * {@link devecoStudioContentRoot} 解析（macOS 追加 Contents）。
- *
- * 注意：sync 阶段（ohpm/hvigor/compileNative）会从 dirname(sdkPath) 派生
- * tools/ohpm 等同级目录。
- */
-export function resolveSdkPath(devecoPath?: string | null): string {
-  const root = smartFindToolPath(devecoPath ?? '');
-  // CLT 布局: <root>/sdk（全平台一致，无 Contents 层）
-  const cltSdkPath = path.join(root, 'sdk');
-  if (fs.existsSync(cltSdkPath)) {
-    return cltSdkPath;
-  }
-  // Studio 布局: macOS <root>/Contents/sdk，Windows/Linux <root>/sdk
-  return path.join(devecoStudioContentRoot(root), 'sdk');
-}
-
-/**
- * 从 sdkPath 派生 hvigorw.js 路径，对齐 buildCltToolPaths/buildStudioToolPaths 布局。
- * - CLT: `<root>/hvigor/bin/hvigorw.js`（根下，无 tools 层）
- * - Studio: `<root>/tools/hvigor/bin/hvigorw.js`（tools 下）
- * `<root>` 即 `dirname(sdkPath)`。先试 tools/ 再试根下，命中即返回，否则 null。
- */
-export function resolveHvigorPath(sdkPath: string): string | null {
-  const root = path.dirname(sdkPath);
-  const candidates = [
-    path.join(root, 'tools', 'hvigor', 'bin', 'hvigorw.js'),
-    path.join(root, 'hvigor', 'bin', 'hvigorw.js'),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) {
-      return c;
-    }
+  if (process.platform === 'darwin') {
+    const candidates = [
+      '/Applications/DevEco Studio.app',
+      path.join(process.env.HOME ?? '', 'Applications', 'DevEco Studio.app'),
+    ];
+    return firstExistingPath(candidates);
   }
   return null;
 }
 
-/**
- * 启动期一次性解析 ArkTS / C++ 全流程共用的两条固定路径。
- * 两条路径各自独立，按 CLT / DevEco Studio 安装布局派生。
- * 返回值在启动期固定，后续所有消费方应从此结果派生，不再重复解析。
- */
-export interface ToolchainPaths {
-  sdkPath: string;
-  arktsLangServerPath: string | null;
-}
-export function resolveToolchainPaths(devecoPath?: string | null): ToolchainPaths {
-  return {
-    sdkPath: resolveSdkPath(devecoPath),
-    arktsLangServerPath: findArktsLangServerPath(devecoPath),
-  };
+function firstExistingPath(candidates: string[]): string | null {
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+  return null;
 }
 
 /**
@@ -311,19 +231,6 @@ export function detectStandardProtocol(root: string): boolean {
 }
 
 /**
- * clangd 相对于 sdk 根目录的路径段。
- * 完整路径 = `<sdkPath>/<...CLANGD_IN_SDK_SEGMENTS>(.exe?)`。
- */
-const CLANGD_IN_SDK_SEGMENTS = [
-  'default',
-  'openharmony',
-  'native',
-  'llvm',
-  'bin',
-  'clangd',
-] as const;
-
-/**
  * 工程根下 `compile_commands.json` 的相对路径（由 DevEco / project_sync 生成）。
  */
 export const COMPILE_COMMANDS_RELATIVE_SEGMENTS = [
@@ -334,210 +241,10 @@ export const COMPILE_COMMANDS_RELATIVE_SEGMENTS = [
 ] as const;
 
 /**
- * 由启动期固定的 sdkPath 派生 clangd 可执行文件路径：
- * `<sdkPath>/default/openharmony/native/llvm/bin/clangd(.exe)`。
- * sdkPath 已在启动期经环境变量 / CLT|Studio 布局解析固定，本函数不再读取环境变量。
- * 路径存在返回绝对路径，否则返回 null。
- */
-export function clangdPathFromSdk(sdkPath: string): string | null {
-  const base = path.join(sdkPath, ...CLANGD_IN_SDK_SEGMENTS);
-  const candidate = process.platform === 'win32' ? base + '.exe' : base;
-  return fs.existsSync(candidate) ? candidate : null;
-}
-
-/**
  * 工程根下 `compile_commands.json` 的绝对路径。
  */
 export function compileCommandsPath(projectPath: string): string {
   return path.join(projectPath, ...COMPILE_COMMANDS_RELATIVE_SEGMENTS);
-}
-
-export function findDevEcoPath(): string | null {
-  if (process.platform === 'win32') {
-    const candidates = [
-      path.join('C:\\Program Files', VENDOR_NAME, DEVECO_STUDIO_DIR_NAME),
-      path.join('C:\\Program Files (x86)', VENDOR_NAME, DEVECO_STUDIO_DIR_NAME),
-    ];
-    return firstExistingPath(candidates);
-  }
-  if (process.platform === 'darwin') {
-    const candidates = [
-      '/Applications/DevEco Studio.app',
-      path.join(process.env.HOME ?? '', 'Applications', 'DevEco Studio.app'),
-    ];
-    return firstExistingPath(candidates);
-  }
-  return null;
-}
-
-function firstExistingPath(candidates: string[]): string | null {
-  for (const p of candidates) {
-    if (fs.existsSync(p)) {
-      return p;
-    }
-  }
-  return null;
-}
-
-/**
- * Resolve the platform-specific sub-directory inside a DevEco Studio install
- * (Windows -> `<root>`, macOS -> `<root>/Contents`). The result is the
- * directory that should contain `plugins/`, `sdk/`, `tools/` etc.
- */
-export function devecoStudioContentRoot(dir: string): string {
-  if (process.platform === 'darwin') {
-    return path.join(dir, 'Contents');
-  }
-  return dir;
-}
-
-/**
- * Return true when `dir` looks like a usable DevEco Studio installation
- * (has at least `plugins/openharmony` or a bundled `sdk` / `tools`).
- */
-export function isDevecoStudioPathAvailable(dir: string): boolean {
-  if (!dir || !fs.existsSync(dir) || !safeIsDirectory(dir)) {
-    return false;
-  }
-  const root = devecoStudioContentRoot(dir);
-  const markers = [
-    path.join(root, 'plugins', 'openharmony'),
-    path.join(root, 'sdk'),
-    path.join(root, 'tools'),
-  ];
-  return markers.some((p) => fs.existsSync(p));
-}
-
-/**
- * Locate an emulator system-image directory under `start` (i.e. a directory
- * containing one or more `<deviceType>/<osVersion>` sub-folders).
- */
-export function getEmulatorImagePath(start?: string | null): string | null {
-  if (!start || !fs.existsSync(start) || !safeIsDirectory(start)) {
-    return null;
-  }
-  const candidates = [
-    start,
-    path.join(start, 'images'),
-    path.join(start, 'emulator', 'images'),
-    path.join(devecoStudioContentRoot(start), 'tools', 'emulator', 'images'),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c) && safeIsDirectory(c)) {
-      return c;
-    }
-  }
-  return null;
-}
-
-function safeIsDirectory(p: string): boolean {
-  try {
-    return fs.statSync(p).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Validate whether `dirPath` is usable for the given `toolType`.
- */
-export function checkPathValidity(dirPath: string, toolType: string): boolean {
-  if (!dirPath || !fs.existsSync(dirPath)) {
-    return false;
-  }
-  switch (toolType) {
-    case ToolType.DevEcoStudio:
-      return isDevecoStudioPathAvailable(dirPath);
-    default:
-      return false;
-  }
-}
-
-/**
- * "Smart" search for a tool installation directory given a (possibly
- * imprecise) starting `dirPath`.
- */
-export function smartFindToolPath(dirPath: string, toolType: ToolType = ToolType.DevEcoStudio): string {
-  if (!dirPath) {
-    return '';
-  }
-
-  // 1. Check self.
-  if (checkPathValidity(dirPath, toolType)) {
-    return dirPath;
-  }
-
-  // 2. Check ancestors (up to SMART_FIND_MAX_DEPTH levels).
-  const ancestorHit = findAncestorWithValidTool(dirPath, toolType);
-  if (ancestorHit) {
-    return ancestorHit;
-  }
-
-  // 3. Check descendants (BFS, depth limit SMART_FIND_MAX_DEPTH).
-  const descendantHit = findDescendantWithValidTool(dirPath, toolType);
-  if (descendantHit) {
-    return descendantHit;
-  }
-
-  return dirPath;
-}
-
-function findAncestorWithValidTool(dirPath: string, toolType: ToolType): string | null {
-  let current = dirPath;
-  for (let i = 0; i < SMART_FIND_MAX_DEPTH; i++) {
-    const parent = path.dirname(current);
-    if (!parent || parent === current) {
-      break;
-    }
-    if (checkPathValidity(parent, toolType)) {
-      return parent;
-    }
-    current = parent;
-  }
-  return null;
-}
-
-function findDescendantWithValidTool(dirPath: string, toolType: ToolType): string | null {
-  if (!fs.existsSync(dirPath) || !safeIsDirectory(dirPath)) {
-    return null;
-  }
-  const queue: Array<{ p: string; depth: number }> = [{ p: dirPath, depth: 0 }];
-  while (queue.length > 0) {
-    const { p, depth } = queue.shift()!;
-    if (depth >= SMART_FIND_MAX_DEPTH) {
-      continue;
-    }
-    const hit = scanDescendantLevel(p, depth, toolType, queue);
-    if (hit) {
-      return hit;
-    }
-  }
-  return null;
-}
-
-function scanDescendantLevel(
-  parent: string,
-  depth: number,
-  toolType: ToolType,
-  queue: Array<{ p: string; depth: number }>
-): string | null {
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(parent, { withFileTypes: true });
-  } catch {
-    return null; // permission / IO error — skip silently
-  }
-  for (const entry of entries) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-    const sub = path.join(parent, entry.name);
-    if (checkPathValidity(sub, toolType)) {
-      return sub;
-    }
-    queue.push({ p: sub, depth: depth + 1 });
-  }
-  return null;
 }
 
 /** 通用 sleep 工具。 */
@@ -806,21 +513,3 @@ function removeIfExpired(full: string, now: number, maxAgeMs: number, logTag: st
   }
 }
 
-export function findNodePath(sdk: string): string {
-    const toolsDir = sdk.replace(/sdk\/?$/i, 'tools');
-    const nodeBin = process.platform === 'win32' ? 'node.exe' : 'node';
-
-    let nodePath = path.join(toolsDir, 'node', nodeBin);
-    if (fs.existsSync(nodePath)) {
-        return nodePath;
-    }
-
-    if (process.platform !== 'win32') {
-        nodePath = path.join(toolsDir, 'node', 'bin', 'node');
-        if (fs.existsSync(nodePath)) {
-            return nodePath;
-        }
-    }
-
-    return process.execPath ?? 'node';
-}

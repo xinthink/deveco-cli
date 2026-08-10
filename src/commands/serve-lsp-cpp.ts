@@ -7,11 +7,9 @@ import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { ToolProvider } from '../toolchain/index.js';
 import {
-  clangdPathFromSdk,
   findDevEcoPath,
   findHarmonyProjectInDir,
   normalizePath,
-  resolveSdkPath,
   compileCommandsPath,
 } from '../../mcp/src-server/utils/common.js';
 import { toUnixPath } from '../../mcp/src-server/lsp/utils.js';
@@ -60,9 +58,9 @@ async function resolvePaths(options: CppLspOptions): Promise<{
   clangdPath: string;
   compileCommandsDir: string;
 }> {
-  const devecoPath = await resolveDevecoPath();
-  if (!devecoPath) {
-    mcpLog.error('DevEco Studio not found. Ensure DevEco Studio is installed.');
+  const toolProvider = await resolveToolProvider();
+  if (!toolProvider?.clangdPath) {
+    mcpLog.error('clangd not found. Ensure DevEco Studio / CLT is installed.');
     process.exit(1);
   }
 
@@ -79,16 +77,9 @@ async function resolvePaths(options: CppLspOptions): Promise<{
     projectPath = normalizePath(path.resolve(process.cwd()));
     mcpLog.info(`projectPath=cwd ('${projectPath}'), no search (pass --auto-detect to search subdirs)`);
   }
-  // 启动期固定 sdkPath（env 优先，否则按 CLT|Studio 布局派生），clangd 从 sdkPath 派生。
-  const sdkPath = resolveSdkPath(devecoPath);
-  const clangdPath = clangdPathFromSdk(sdkPath);
-  if (!clangdPath) {
-    mcpLog.error(
-      `clangd not found under sdk '${sdkPath}'. ` +
-        'Expected at <sdkPath>/default/openharmony/native/llvm/bin/clangd',
-    );
-    process.exit(1);
-  }
+  // 启动期固定 sdkPath（CLT|Studio 布局），clangd 由 ToolProvider 直接解析。
+  const sdkPath = toolProvider.sdkPath;
+  const clangdPath = toolProvider.clangdPath!;
 
   // compile_commands.json 所在目录（<project>/.idea/.deveco/cxx）
   const ccPath = compileCommandsPath(projectPath);
@@ -100,10 +91,24 @@ async function resolvePaths(options: CppLspOptions): Promise<{
   return { projectPath, clangdPath, compileCommandsDir };
 }
 
-function resolveDevecoPath(): Promise<string | null> {
-  return ToolProvider.new()
-    .then((tp) => tp.devecoStudioPath)
-    .catch(() => findDevEcoPath());
+/**
+ * ToolProvider 解析失败（如环境变量指向无效安装）时回退到默认安装目录探测，
+ * 保证未配置环境变量的普通 Studio 安装也能启动 clangd。
+ */
+async function resolveToolProvider(): Promise<ToolProvider | null> {
+  try {
+    return await ToolProvider.new();
+  } catch {
+    const devecoPath = findDevEcoPath();
+    if (!devecoPath) {
+      return null;
+    }
+    try {
+      return ToolProvider.fromIDE(devecoPath);
+    } catch {
+      return null;
+    }
+  }
 }
 
 function spawnClangd(

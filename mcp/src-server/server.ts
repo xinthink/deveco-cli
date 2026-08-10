@@ -9,7 +9,7 @@ import * as path from 'path';
 import { z } from 'zod';
 import { ToolRouter, createToolRouter } from './router.js';
 import { ArktsCheckTool, CppCheckTool, ClangdLspTool } from './tools/index.js';
-import { detectStandardProtocol, findHarmonyProject, isSupportedCppFile, resolveToolchainPaths } from './utils/common.js';
+import { detectStandardProtocol, findHarmonyProject, isSupportedCppFile } from './utils/common.js';
 import { CommonUtils } from '../../src/utils/common-utils.js';
 import { initMcpLogger, disposeMcpLogger, flushMcpLogger, getMcpLogFilePath, mcpLog } from './utils/mcp-logger.js';
 import { ArktsLspManager } from './lsp/ArktsLspManager.js';
@@ -50,7 +50,18 @@ const MAX_CHECK_FILES = 100;
  */
 export interface McpServerConfig {
   projectPath?: string;
-  devecoPath?: string;
+  /** 启动期由 ToolProvider 解析固定的 sdkPath（CLT|Studio 布局）。 */
+  sdkPath?: string;
+  /** 启动期由 ToolProvider 解析固定的 arkts-lang-server 根目录。 */
+  arktsLangServerPath?: string;
+  /** 启动期由 ToolProvider 解析固定的 node 可执行文件路径。 */
+  nodePath?: string;
+  /** 启动期由 ToolProvider 解析固定的 ohpm pm-cli.js 路径。 */
+  ohpmJsPath?: string;
+  /** 启动期由 ToolProvider 解析固定的 hvigorw.js 路径。 */
+  hvigorJsPath?: string;
+  /** 启动期由 ToolProvider 解析固定的 clangd 可执行文件路径。 */
+  clangdPath?: string;
   nodeMaxOldSpaceSize?: string;
   /** debug 模式：true=console输出，false=文件输出（带轮转） */
   debug?: boolean;
@@ -76,6 +87,10 @@ export class DevecoCliMcpServer {
   private workspaceRoot: string = ''; // MCP 客户端提供的 workspace root，供重新扫描
   private sdkPath: string = ''; // 启动期固定 sdkPath（env / CLT|Studio 布局）
   private arktsLangServerPath: string | null = null; // 启动期固定 arkts-lang-server 路径
+  private nodePath: string = ''; // 启动期固定 node 可执行文件路径
+  private ohpmJsPath: string = ''; // 启动期固定 ohpm pm-cli.js 路径
+  private hvigorJsPath: string = ''; // 启动期固定 hvigorw.js 路径
+  private clangdPath: string | null = null; // 启动期固定 clangd 可执行文件路径
   private initPromise: Promise<void> | null = null; // 互斥锁：保证同一时刻只有一个初始化流程在执行
   private needsReinit: boolean = false; // 路径变更标记：初始化运行期间 setProjectPath() 被调用时设置
   private initRetryCount: number = 0; // 连续初始化失败时计数，超过 MAX_INIT_RETRY 后不再自动重试
@@ -119,11 +134,14 @@ export class DevecoCliMcpServer {
     mcpLog.info(`Constructor: findHarmonyProject('${startPath}') => ${foundProject ?? 'null'}`);
     this.config.projectPath = foundProject ?? undefined;
 
-    // 启动期一次性固定 sdkPath / arktsLangServerPath（环境变量优先，否则按 CLT|Studio 布局派生）。
-    // 后续 ArkTS / C++ 全流程（ace-server、ohpm/hvigor sync、compileNative、clangd）均从此派生，不再重复解析。
-    const toolchainPaths = resolveToolchainPaths(this.config.devecoPath);
-    this.sdkPath = toolchainPaths.sdkPath;
-    this.arktsLangServerPath = toolchainPaths.arktsLangServerPath;
+    // 启动期一次性固定组件路径（由 serve 命令经 ToolProvider 解析后注入）。
+    // 后续 ArkTS / C++ 全流程（ace-server、ohpm/hvigor sync、compileNative、clangd）均使用注入值，不再重复解析。
+    this.sdkPath = this.config.sdkPath ?? '';
+    this.arktsLangServerPath = this.config.arktsLangServerPath ?? null;
+    this.nodePath = this.config.nodePath ?? '';
+    this.ohpmJsPath = this.config.ohpmJsPath ?? '';
+    this.hvigorJsPath = this.config.hvigorJsPath ?? '';
+    this.clangdPath = this.config.clangdPath ?? null;
     mcpLog.info(`Constructor: sdkPath='${this.sdkPath}', arktsLangServerPath='${this.arktsLangServerPath ?? '(null)'}'`);
 
     // Create MCP server instance
@@ -1341,7 +1359,14 @@ export class DevecoCliMcpServer {
   private async runSync(projectPath: string, options?: { skipHvigorSync?: boolean }): Promise<boolean> {
     this.projectState = ProjectLifecycle.SYNCING;
     mcpLog.info('Starting project sync...');
-    const result = await ArktsLspManager.handleSyncProject(projectPath, this.sdkPath, options);
+    const result = await ArktsLspManager.handleSyncProject(
+      projectPath,
+      this.sdkPath,
+      this.nodePath,
+      this.ohpmJsPath,
+      this.hvigorJsPath,
+      options,
+    );
     switch (result.status) {
       case 'success':
         this.syncSkippedDueToLock = false;
@@ -1440,7 +1465,7 @@ export class DevecoCliMcpServer {
     this.cppProjectState = CppLifecycle.INITIALIZING_CPP;
     this.cppLspManager = new ClangdLspManager({
       workspaceRoot: projectPath,
-      sdkPath: this.sdkPath,
+      clangdPath: this.clangdPath ?? '',
     });
     try {
       await this.cppLspManager.start();
@@ -1469,8 +1494,13 @@ export class DevecoCliMcpServer {
   private async runSyncCpp(projectPath: string): Promise<boolean> {
     this.cppProjectState = CppLifecycle.SYNCING_CPP;
     mcpLog.info('[Cpp] Starting C++ project sync (compileNative)...');
-    // sdkPath 已在启动期固定（env / CLT|Studio 布局），C++ compileNative 从其 dirname 派生 tools/hvigor。
-    const result = await ClangdLspManager.handleSyncCppProject(projectPath, this.sdkPath);
+    // sdkPath 已在启动期固定（env / CLT|Studio 布局），compileNative 使用注入的 node/hvigor。
+    const result = await ClangdLspManager.handleSyncCppProject(
+      projectPath,
+      this.sdkPath,
+      this.nodePath,
+      this.hvigorJsPath,
+    );
     switch (result.status) {
       case 'success':
         this.cppSyncSkippedDueToLock = false;

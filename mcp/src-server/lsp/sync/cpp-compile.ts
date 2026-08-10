@@ -7,10 +7,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ModuleInfoParse } from '../parse/ModuleInfoParse.js';
 import { executeBuildCommand } from './buildProject.js';
-import {
-    compileCommandsPath,
-    resolveHvigorPath,
-} from '../../utils/common.js';
+import { CommonUtils } from '../../../../src/utils/common-utils.js';
+import { compileCommandsPath } from '../../utils/common.js';
 import { mcpLog } from '../../utils/mcp-logger.js';
 
 /** build-profile.json5 中的模块信息（与 ModuleInfoParse 的 BuildProfileModule 结构兼容）。 */
@@ -230,20 +228,20 @@ const COMPILE_COMMANDS_RELATIVE_SEGMENTS = [
 
 /**
  * 执行 compileNative 构建以生成 compile_commands.json。
- * sdkPath 由启动期固定（env / CLT|Studio 布局），tools/hvigor 从其 dirname（contentRoot）派生。
+ * node/hvigor 由启动期固定（ToolProvider 注入），不再从 sdkPath 派生。
  */
 export async function runCompileNative(
     projectPath: string,
     sdkPath: string,
+    nodePath: string,
+    hvigorJsPath: string,
     cppModules: ModuleInfo[],
 ): Promise<void> {
-    const hvigorPath = resolveHvigorPath(sdkPath);
-    if (!hvigorPath) {
-        mcpLog.warn(`[CppCompile] hvigorw.js not found under sdk '${sdkPath}'`);
+    if (!hvigorJsPath) {
+        mcpLog.warn(`[CppCompile] hvigorw.js path not injected (sdk '${sdkPath}')`);
         return;
     }
-    const nodePath = process.execPath || 'node';
-    mcpLog.info(`[CppCompile] sdkPath: ${sdkPath}, hvigorPath: ${hvigorPath}`);
+    mcpLog.info(`[CppCompile] sdkPath: ${sdkPath}, hvigorPath: ${hvigorJsPath}`);
 
     for (const module of cppModules) {
         const moduleName = module.name;
@@ -269,7 +267,7 @@ export async function runCompileNative(
         const result = await executeBuildCommand(
             projectPath,
             nodePath,
-            hvigorPath,
+            hvigorJsPath,
             sdkPath,
             hvigorArgs,
         );
@@ -288,7 +286,7 @@ export async function runCompileNative(
  * 2. 对每个模块执行 compileNative
  * 3. 合并 compile_commands.json
  */
-export async function initializeCppProject(projectPath: string, sdkPath: string): Promise<void> {
+export async function initializeCppProject(projectPath: string, sdkPath: string, nodePath: string, hvigorJsPath: string): Promise<void> {
     const cppModules = findCppModules(projectPath);
 
     if (cppModules.length === 0) {
@@ -300,7 +298,7 @@ export async function initializeCppProject(projectPath: string, sdkPath: string)
         `[CppCompile] Found ${cppModules.length} C++ module(s): ${cppModules.map((m) => m.name).join(', ')}`,
     );
 
-    await runCompileNative(projectPath, sdkPath, cppModules);
+    await runCompileNative(projectPath, sdkPath, nodePath, hvigorJsPath, cppModules);
     findAndMergeCompileCommands(projectPath);
 }
 

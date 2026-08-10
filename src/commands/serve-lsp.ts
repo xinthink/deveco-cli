@@ -11,7 +11,6 @@ import {
   getMcpLogDirectory,
   normalizePath,
   resolveArktsServerEntry,
-  resolveToolchainPaths,
 } from '../../mcp/src-server/utils/common.js';
 import { computeLspServerMaxSize, toUnixPath } from '../../mcp/src-server/lsp/utils.js';
 import { ModulesDependencyParse } from '../../mcp/src-server/lsp/parse/ModulesDependencyParse.js';
@@ -50,10 +49,6 @@ async function resolvePaths(options: ArktsLspOptions): Promise<{
   serverMaxSize: number;
 }> {
   const toolProvider = await ToolProvider.new();
-  const devecoPath: string | null =
-    toolProvider.sourceType === 'clt'
-      ? toolProvider.toolchainRoot
-      : toolProvider.devecoStudioPath;
   // 指定路径→直接用（不搜，安全）；未指定+--auto-detect→从 cwd 向下搜（不向上）；否则用 cwd。
   let projectPath: string;
   if (options.projectPath) {
@@ -68,7 +63,8 @@ async function resolvePaths(options: ArktsLspOptions): Promise<{
     mcpLog.info(`projectPath=cwd ('${projectPath}'), no search (pass --auto-detect to search subdirs)`);
   }
   // 启动期一次性固定 sdkPath / arktsLangServerPath（按 CLT|Studio 布局派生）。
-  const { sdkPath, arktsLangServerPath } = resolveToolchainPaths(devecoPath);
+  const sdkPath = toolProvider.sdkPath;
+  const arktsLangServerPath = toolProvider.arktsLangServerPath;
   if (!arktsLangServerPath) {
     mcpLog.error('ace-server not found (install DevEco Studio / CLT).');
     process.exit(1);

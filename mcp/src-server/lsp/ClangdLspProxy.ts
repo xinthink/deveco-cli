@@ -40,7 +40,7 @@ type DiagnosticWaiter = {
 };
 
 export interface ClangdLspProxyConfig {
-    /** clangd 可执行文件路径（由启动期固定的 sdkPath 经 clangdPathFromSdk 派生）。 */
+    /** clangd 可执行文件路径（启动期由 ToolProvider 解析固定后注入）。 */
     clangdPath: string;
     /** 工作区根。 */
     workspaceRoot: string;

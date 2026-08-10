@@ -7,7 +7,6 @@ import { ClangdLspProxy } from './ClangdLspProxy.js';
 import { tryWithBuildLock } from '../../../src/utils/build-lock.js';
 import { initializeCppProject, findCppModules } from './sync/cpp-compile.js';
 import {
-    clangdPathFromSdk,
     findHarmonyProject,
     compileCommandsPath,
     getMcpLogDirectory,
@@ -22,8 +21,8 @@ import * as fs from 'fs';
 export interface ClangdLspManagerConfig {
     /** 工程根路径（可为原始配置路径，start() 内部会解析为真实 harmony root）。 */
     workspaceRoot: string;
-    /** 启动期固定 sdkPath（env / CLT|Studio 布局）；clangd 与 compileNative 均从此派生。 */
-    sdkPath: string;
+    /** 启动期由 ToolProvider 解析固定的 clangd 可执行文件路径。 */
+    clangdPath: string;
     /** 日志根目录；缺省时由 start() 在 mcp 日志目录下生成。 */
     logPath?: string;
 }
@@ -133,7 +132,7 @@ export class ClangdLspManager {
      * - 原子性尝试获取锁（无重试），若其他进程已持有构建锁则返回 skipped
      * - 消除 isBuildLocked + withBuildLock 之间的 TOCTOU 竞态
      */
-    static async handleSyncCppProject(workspaceRoot: string, sdkPath: string): Promise<CppSyncResult> {
+    static async handleSyncCppProject(workspaceRoot: string, sdkPath: string, nodePath: string, hvigorJsPath: string): Promise<CppSyncResult> {
         logger.info('[ClangdLspManager] Received cpp/syncProject');
         if (!workspaceRoot || !sdkPath) {
             logger.error('[ClangdLspManager] handleSyncCppProject: workspaceRoot or sdkPath is empty');
@@ -151,7 +150,7 @@ export class ClangdLspManager {
             workspaceRoot,
             async () => {
                 try {
-                    await initializeCppProject(workspaceRoot, sdkPath);
+                    await initializeCppProject(workspaceRoot, sdkPath, nodePath, hvigorJsPath);
                     logger.info('[ClangdLspManager] compileNative + merge compile_commands completed');
                     return { status: 'success' as const };
                 } catch (e) {
@@ -204,10 +203,10 @@ export class ClangdLspManager {
         const logPath = this.config.logPath ?? this.getLogPath();
         initializeLogger(logPath);
 
-        // 3. 由启动期固定的 sdkPath 派生 clangd 路径
-        const clangdPath = clangdPathFromSdk(this.config.sdkPath);
+        // 3. clangd 路径由启动期 ToolProvider 解析固定并注入
+        const clangdPath = this.config.clangdPath;
         if (!clangdPath) {
-            const errMsg = `clangd executable not found under sdk: ${this.config.sdkPath}`;
+            const errMsg = 'clangd not found (install DevEco Studio / CLT)';
             logger.error(`[ClangdLspManager] ${errMsg}`);
             this.failInit(new Error(errMsg));
             return;
