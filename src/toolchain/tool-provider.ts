@@ -15,6 +15,7 @@ import {
   resolveCanonicalPath,
   resolvePathInsideRoot,
 } from '../utils/path-containment.js';
+import { TraceError } from '../trace/index.js';
 
 const CLT_VERSION = /^#\s*Version:\s*(\S+)/;
 
@@ -185,6 +186,24 @@ export class ToolProvider {
     provider.assertVersion();
   }
 
+  public static async getStudioVersion(): Promise<string | undefined> {
+    try {
+      const source = await ToolProvider.resolveInstallSource();
+      return readStudioVersion(source.toolchainRoot);
+    } catch {
+      return undefined;
+    }
+  }
+
+  public static async getCltVersion(): Promise<string | undefined> {
+    try {
+      const source = await ToolProvider.resolveInstallSource();
+      return ToolProvider.readCltVersion(source.toolchainRoot);
+    } catch {
+      return undefined;
+    }
+  }
+
   public static async new(): Promise<ToolProvider> {
     const source = await ToolProvider.resolveInstallSource();
     return source.sourceType === 'clt'
@@ -301,13 +320,15 @@ export class ToolProvider {
     root: string
   ): void {
     if (!version) {
-      throw new Error(
-        `Failed to determine ${label} version from ${marker} at ${root}`
+      throw new TraceError(
+        `Failed to determine ${label} version from ${marker} at ${root}`,
+        `Failed to determine ${label} version from ${marker}`
       );
     }
     if (!/^\d+(?:\.\d+){1,3}$/.test(version)) {
-      throw new Error(
-        `Invalid ${label} version "${version}" from ${marker} at ${root}`
+      throw new TraceError(
+        `Invalid ${label} version "${version}" from ${marker} at ${root}`,
+        `Invalid ${label} version "${version}" from ${marker}`
       );
     }
     if (compareStudioVersions(version, minimum) < 0) {
@@ -332,8 +353,9 @@ export class ToolProvider {
         source === 'studio'
           ? 'Code Linter not found in DevEco Studio.'
           : 'Code Linter not found in DevEco Command Line Tools.';
-      throw new Error(
-        `${label}\nSearched paths:\n  ${candidates.join('\n  ')}`
+      throw new TraceError(
+        `${label}\nSearched paths:\n  ${candidates.join('\n  ')}`,
+        label
       );
     }
 
@@ -769,7 +791,7 @@ export class ToolProvider {
 
   public static verifySignature(file: string): void {
     if (!fs.existsSync(file)) {
-      throw new Error(`executable not found at: ${file}`);
+      throw new TraceError(`executable not found at: ${file}`, 'executable not found');
     }
     const platform = os.platform();
     if (platform === 'linux') {
@@ -796,7 +818,7 @@ export class ToolProvider {
       }
       fs.accessSync(file, fs.constants.X_OK);
     } catch {
-      throw new Error(`executable is not accessible: ${file}`);
+      throw new TraceError(`executable is not accessible: ${file}`, 'executable is not accessible');
     }
   }
 
@@ -805,7 +827,7 @@ export class ToolProvider {
     file: string
   ): void {
     if (!result.signed) {
-      throw new Error(`The executable is not digitally signed: ${file}`);
+      throw new TraceError(`The executable is not digitally signed: ${file}`, 'The executable is not digitally signed');
     }
   }
 

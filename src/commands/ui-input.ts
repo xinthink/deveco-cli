@@ -16,6 +16,27 @@ import {
   runHdcShell,
 } from '../ui/input/index.js';
 import type { ClickOptions, SwipeOptions, TextOptions } from '../ui/input/index.js';
+import { telemetry, EventType, toTraceErrorCode, type CommandExecuted, type TrackMeasurement } from '../trace/index.js';
+
+function buildUiInputEvent(subCommand: string, options: ClickOptions | SwipeOptions | TextOptions | { device?: string }): CommandExecuted {
+  const flags: string[] = [];
+  if ('device' in options && options.device) {
+    flags.push('--device');
+  }
+  if ('id' in options && options.id) {
+    flags.push('--id');
+  }
+  if ('window' in options && options.window) {
+    flags.push('--window');
+  }
+  if ('speed' in options && options.speed) {
+    flags.push('--speed');
+  }
+  return {
+    event: EventType.CommandExecuted,
+    args: ['ui', subCommand, ...flags],
+  };
+}
 
 function escapeShellText(text: string): string {
   const encoded = Buffer.from(text, 'utf8').toString('base64');
@@ -27,15 +48,28 @@ function escapeShellText(text: string): string {
 async function withSpinner(
   startText: string,
   failLabel: string,
+  event: CommandExecuted,
   action: (spinner: SpinnerHelper) => Promise<void>
 ): Promise<void> {
   const spinner = new SpinnerHelper();
   spinner.start(startText);
+  const start = Date.now();
+  let success = true;
+  let errorCode: string | null = null;
   try {
     await action(spinner);
   } catch (error) {
     spinner.stop();
+    success = false;
+    errorCode = toTraceErrorCode(error);
     throw new Error(`${failLabel}: ${(error as Error).message}`, { cause: error });
+  } finally {
+    const measurement: TrackMeasurement = {
+      duration_ms: Date.now() - start,
+      success,
+      error_code: errorCode,
+    };
+    await telemetry.track(event, measurement);
   }
 }
 
@@ -44,7 +78,8 @@ async function handleClick(
   y: string | undefined,
   options: ClickOptions
 ): Promise<void> {
-  await withSpinner('Executing click...', 'click failed', async (spinner) => {
+  const event = buildUiInputEvent('click', options);
+  await withSpinner('Executing click...', 'click failed', event, async (spinner) => {
     assertTargetParams(x, y, options.id, options.window);
     const { hdcPath, deviceId } = await initDevice(options.device);
     const { x: cx, y: cy } = await resolveTarget(
@@ -63,7 +98,8 @@ async function handleDoubleClick(
   y: string | undefined,
   options: ClickOptions
 ): Promise<void> {
-  await withSpinner('Executing doubleclick...', 'doubleclick failed', async (spinner) => {
+  const event = buildUiInputEvent('doubleclick', options);
+  await withSpinner('Executing doubleclick...', 'doubleclick failed', event, async (spinner) => {
     assertTargetParams(x, y, options.id, options.window);
     const { hdcPath, deviceId } = await initDevice(options.device);
     const { x: cx, y: cy } = await resolveTarget(
@@ -82,7 +118,8 @@ async function handleLongClick(
   y: string | undefined,
   options: ClickOptions
 ): Promise<void> {
-  await withSpinner('Executing longclick...', 'longclick failed', async (spinner) => {
+  const event = buildUiInputEvent('longclick', options);
+  await withSpinner('Executing longclick...', 'longclick failed', event, async (spinner) => {
     assertTargetParams(x, y, options.id, options.window);
     const { hdcPath, deviceId } = await initDevice(options.device);
     const { x: cx, y: cy } = await resolveTarget(
@@ -100,7 +137,8 @@ async function handleSwipe(
   x1: string, y1: string, x2: string, y2: string,
   options: SwipeOptions
 ): Promise<void> {
-  await withSpinner('Executing swipe...', 'swipe failed', async (spinner) => {
+  const event = buildUiInputEvent('swipe', options);
+  await withSpinner('Executing swipe...', 'swipe failed', event, async (spinner) => {
     assertCoord(x1, 'x1');
     assertCoord(y1, 'y1');
     assertCoord(x2, 'x2');
@@ -120,7 +158,8 @@ async function handleFling(
   x1: string, y1: string, x2: string, y2: string,
   options: SwipeOptions
 ): Promise<void> {
-  await withSpinner('Executing fling...', 'fling failed', async (spinner) => {
+  const event = buildUiInputEvent('fling', options);
+  await withSpinner('Executing fling...', 'fling failed', event, async (spinner) => {
     assertCoord(x1, 'x1');
     assertCoord(y1, 'y1');
     assertCoord(x2, 'x2');
@@ -140,7 +179,8 @@ async function handleDrag(
   x1: string, y1: string, x2: string, y2: string,
   options: SwipeOptions
 ): Promise<void> {
-  await withSpinner('Executing drag...', 'drag failed', async (spinner) => {
+  const event = buildUiInputEvent('drag', options);
+  await withSpinner('Executing drag...', 'drag failed', event, async (spinner) => {
     assertCoord(x1, 'x1');
     assertCoord(y1, 'y1');
     assertCoord(x2, 'x2');
@@ -160,7 +200,8 @@ async function handleDircFling(
   direction: string,
   options: { device?: string }
 ): Promise<void> {
-  await withSpinner('Executing dircfling...', 'dircfling failed', async (spinner) => {
+  const event = buildUiInputEvent('dircfling', options);
+  await withSpinner('Executing dircfling...', 'dircfling failed', event, async (spinner) => {
     const code = DIRECTION_MAP[direction];
     if (code === undefined) {
       throw new Error(`Invalid direction "${direction}". Valid values: ${Object.keys(DIRECTION_MAP).join(', ')}`);
@@ -177,7 +218,8 @@ async function handleText(
   y: string | undefined,
   options: TextOptions
 ): Promise<void> {
-  await withSpinner('Executing text input...', 'input failed', async (spinner) => {
+  const event = buildUiInputEvent('text', options);
+  await withSpinner('Executing text input...', 'input failed', event, async (spinner) => {
     assertTargetParams(x, y, options.id, options.window, false);
     assertNonEmpty(text, 'text');
     const { hdcPath, deviceId } = await initDevice(options.device);

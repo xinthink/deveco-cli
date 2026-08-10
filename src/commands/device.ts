@@ -13,8 +13,39 @@ import {
 } from '../service/device-manager.js';
 import { red, yellow, gray } from 'colorette';
 import ora, { type Ora } from 'ora';
-import { exitWithListCommandError } from '../utils/ora-fail.js';
 import { renderTable, type TableRow } from '../utils/text-table.js';
+import {
+  telemetry,
+  EventType,
+  toTraceErrorCode,
+  type CommandExecuted,
+  type TrackMeasurement,
+  TraceError,
+} from '../trace/index.js';
+
+async function withDeviceTrace(
+  event: CommandExecuted,
+  action: () => Promise<void>
+): Promise<void> {
+  const start = Date.now();
+  let success = true;
+  let errorCode: string | null = null;
+  try {
+    await action();
+  } catch (error) {
+    success = false;
+    errorCode = toTraceErrorCode(error);
+    console.error(red((error as Error).message));
+    process.exitCode = 1;
+  } finally {
+    const measurement: TrackMeasurement = {
+      duration_ms: Date.now() - start,
+      success,
+      error_code: errorCode,
+    };
+    await telemetry.track(event, measurement);
+  }
+}
 
 function applyEmulatorDeviceTypeOverrides(
   entries: ConnectedDeviceEntry[],
@@ -120,7 +151,7 @@ async function listAction(
   toolProvider: ToolProvider,
   spinner?: Ora,
   format: DeviceOutputFormat = 'table'
-) {
+): Promise<void> {
   try {
     const entries = await deviceManager.getConnectedEntries();
     await applyEmulatorOverridesIfNeeded(entries, toolProvider);
@@ -137,10 +168,12 @@ async function listAction(
       printDeviceListTable(entries);
     }
   } catch (error) {
-    exitWithListCommandError(
-      spinner,
-      `Failed to list devices: ${(error as Error).message}`
+    throw new TraceError(
+      `Failed to list devices: ${(error as Error).message}`,
+      'Failed to list devices.'
     );
+  } finally {
+    spinner?.stop();
   }
 }
 
@@ -152,64 +185,55 @@ async function checkMultiDevice(
   if (devices.length < 2) {
     return;
   }
-  console.error(red('Multiple devices connected. Specify a device with:'));
+  const lines = ['Multiple devices connected. Specify a device with:'];
   for (const device of devices) {
     const deviceName = await deviceManager.getDeviceName(device.serial);
-    console.error(
-      gray(`  ${commandHint} -t ${device.serial}  # ${deviceName}`)
-    );
+    lines.push(`  ${commandHint} -t ${device.serial}  # ${deviceName}`);
   }
-  process.exit(1);
+  throw new TraceError(lines.join('\n'), 'Multiple devices connected.');
 }
 
 async function viewAction(
   deviceManager: DeviceManager,
   deviceSelector?: string,
   format: DeviceOutputFormat = 'table'
-) {
-  try {
-    if (!deviceSelector) {
-      await checkMultiDevice(deviceManager, 'devecocli device view');
-    }
+): Promise<void> {
+  if (!deviceSelector) {
+    await checkMultiDevice(deviceManager, 'devecocli device view');
+  }
 
-    const devices = await deviceManager.listDevices();
-    const info = await deviceManager.getDeviceInfo(devices, deviceSelector);
-    if (!info) {
-      if (format === 'json') {
-        console.error('No connected device found.');
-      } else {
-        console.log(yellow('No connected device found.'));
-      }
-      process.exit(1);
-    }
-
-    const detail = await deviceManager.getDeviceDetail(info.serial);
-    const deviceName = await deviceManager.getDeviceName(info.serial);
+  const devices = await deviceManager.listDevices();
+  const info = await deviceManager.getDeviceInfo(devices, deviceSelector);
+  if (!info) {
     if (format === 'json') {
-      const json: DeviceJsonDto = {
-        name: deviceName,
-        serial: info.serial,
-        kind: isLocalEmulatorSerial(info.serial) ? 'emulator' : 'device',
-        deviceType: detail.deviceType,
-        osVersion: detail.osVersion,
-      };
-      console.log(JSON.stringify(json, null, 2));
+      console.error('No connected device found.');
+      process.exitCode = 1;
       return;
     }
+    throw new TraceError('No connected device found.');
+  }
 
-    console.log(`  Serial:      ${info.serial}`);
-    console.log(`  Device Name: ${deviceName}`);
-    if (detail.deviceType) {
-      console.log(`  Device Type: ${detail.deviceType}`);
-    }
-    if (detail.osVersion) {
-      console.log(`  OS Version:  ${detail.osVersion}`);
-    }
-  } catch (error) {
-    console.error(
-      red(`Failed to show device details: ${(error as Error).message}`)
-    );
-    process.exit(1);
+  const detail = await deviceManager.getDeviceDetail(info.serial);
+  const deviceName = await deviceManager.getDeviceName(info.serial);
+  if (format === 'json') {
+    const json: DeviceJsonDto = {
+      name: deviceName,
+      serial: info.serial,
+      kind: isLocalEmulatorSerial(info.serial) ? 'emulator' : 'device',
+      deviceType: detail.deviceType,
+      osVersion: detail.osVersion,
+    };
+    console.log(JSON.stringify(json, null, 2));
+    return;
+  }
+
+  console.log(`  Serial:      ${info.serial}`);
+  console.log(`  Device Name: ${deviceName}`);
+  if (detail.deviceType) {
+    console.log(`  Device Type: ${detail.deviceType}`);
+  }
+  if (detail.osVersion) {
+    console.log(`  OS Version:  ${detail.osVersion}`);
   }
 }
 
@@ -222,11 +246,10 @@ async function initDeviceManager(): Promise<{
     const manager = DeviceManager.from(toolProvider);
     return { manager, toolProvider };
   } catch (error) {
-    console.error(
-      red(`Failed to initialize device manager: ${(error as Error).message}`)
+    throw new TraceError(
+      `Failed to initialize device manager: ${(error as Error).message}`,
+      'Failed to initialize device manager.'
     );
-    process.exit(1);
-    return undefined as never;
   }
 }
 
@@ -243,17 +266,23 @@ deviceCommand
       .default('table')
   )
   .action(async (options: { format: DeviceOutputFormat }) => {
-    const { manager, toolProvider } = await initDeviceManager();
-    if (options.format === 'json') {
-      await listAction(manager, toolProvider, undefined, 'json');
-      return;
-    }
+    const event: CommandExecuted = {
+      event: EventType.CommandExecuted,
+      args: ['device', 'list', ...(options.format === 'json' ? ['--format', 'json'] : [])],
+    };
+    await withDeviceTrace(event, async () => {
+      const { manager, toolProvider } = await initDeviceManager();
+      if (options.format === 'json') {
+        await listAction(manager, toolProvider, undefined, 'json');
+        return;
+      }
 
-    const spinner = ora({
-      text: 'Querying connected devices…',
-      color: 'cyan',
-    }).start();
-    await listAction(manager, toolProvider, spinner, 'table');
+      const spinner = ora({
+        text: 'Querying connected devices…',
+        color: 'cyan',
+      }).start();
+      await listAction(manager, toolProvider, spinner, 'table');
+    });
   });
 
 deviceCommand
@@ -266,8 +295,18 @@ deviceCommand
       .default('table')
   )
   .action(async (options: { target?: string; format: DeviceOutputFormat }) => {
-    const { manager } = await initDeviceManager();
-    await viewAction(manager, options.target, options.format);
+    const event: CommandExecuted = {
+      event: EventType.CommandExecuted,
+      args: [
+        'device', 'view',
+        ...(options.target ? ['--target'] : []),
+        ...(options.format === 'json' ? ['--format', 'json'] : []),
+      ],
+    };
+    await withDeviceTrace(event, async () => {
+      const { manager } = await initDeviceManager();
+      await viewAction(manager, options.target, options.format);
+    });
   });
 
 export default deviceCommand;

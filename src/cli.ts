@@ -36,6 +36,37 @@ import {
 } from './update/index.js';
 import { VersionCache } from './update/version-cache.js';
 import { getCliDataDir } from './utils/cli-data-dir.js';
+import { telemetry, maybeSpawnTelemetryUpload, isTelemetryDisabled } from './trace/index.js';
+import { mcpLog } from '../mcp/src-server/utils/mcp-logger.js';
+
+if (!isTelemetryDisabled()) {
+  try {
+    telemetry.init(path.join(getCliDataDir(), 'TraceLogData'));
+    telemetry.startScheduler();
+  } catch (e) {
+    mcpLog.error(`[telemetry] init failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+void (async () => {
+  if (isTelemetryDisabled()) {
+    return;
+  }
+  try {
+    const tp = await ToolProvider.new();
+    telemetry.setSourceType(tp.sourceType);
+    const cltVersion = await ToolProvider.getCltVersion();
+    if (cltVersion) {
+      telemetry.setCltVersion(cltVersion);
+    }
+    const studioVersion = await ToolProvider.getStudioVersion();
+    if (studioVersion) {
+      telemetry.setStudioVersion(studioVersion);
+    }
+  } catch (e) {
+    mcpLog.error(`[telemetry] toolchain info failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+})();
 
 program
   .name('devecocli')
@@ -122,16 +153,24 @@ program.hook('postAction', async (_thisCommand, actionCommand) => {
   await notifier.checkAndNotify();
 });
 
-program.parseAsync(process.argv).catch((err) => {
-  const message =
-    err instanceof Error ? err.message : String(err ?? 'Unknown error');
-  console.error(red(`Error: ${message}`));
-  if (
-    process.env.DEVECO_CLI_DEBUG === '1' &&
-    err instanceof Error &&
-    err.stack
-  ) {
-    console.error(err.stack);
-  }
-  process.exit(1);
-});
+program
+  .parseAsync(process.argv)
+  .finally(() => {
+    telemetry.stopScheduler();
+    try {
+      maybeSpawnTelemetryUpload(path.join(getCliDataDir(), 'TraceLogData'));
+    } catch (e) {
+      mcpLog.error(
+        `[telemetry] background upload spawn check failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  })
+  .catch((err) => {
+    const message =
+      err instanceof Error ? err.message : String(err ?? 'Unknown error');
+    console.error(red(`Error: ${message}`));
+    if (process.env.DEVECO_CLI_DEBUG === '1' && err instanceof Error && err.stack) {
+      console.error(err.stack);
+    }
+    process.exit(1);
+  });

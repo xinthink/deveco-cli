@@ -5,6 +5,7 @@
 
 import { Command, InvalidArgumentError } from 'commander';
 import { red, dim } from 'colorette';
+import { telemetry, EventType, type DocOperation } from '../trace/index.js';
 import {
   localDocService,
   type LocalSearchResult,
@@ -24,6 +25,45 @@ interface SearchOptions {
 
 interface CatalogOptions {
   format?: 'json' | 'default';
+}
+
+async function trackDocOperation<T>(
+  event: DocOperation,
+  operation: () => Promise<T>
+): Promise<T> {
+  const start = Date.now();
+  try {
+    const result = await operation();
+    await recordDocOperation(event, Date.now() - start, true, null);
+    return result;
+  } catch (error) {
+    const code =
+      error instanceof Error
+        ? ((error as NodeJS.ErrnoException).code ?? error.name)
+        : 'UnknownError';
+    await recordDocOperation(event, Date.now() - start, false, code);
+    throw error;
+  }
+}
+
+async function recordDocOperation(
+  event: DocOperation,
+  durationMs: number,
+  success: boolean,
+  errorCode: string | null
+): Promise<void> {
+  await telemetry
+    .track(event, {
+      duration_ms: durationMs,
+      success,
+      error_code: errorCode,
+    })
+    .catch(() => {});
+}
+
+function handleDocCommandError(error: unknown): void {
+  console.error(red(formatDocCommandError(error)));
+  process.exitCode = 1;
 }
 
 function validateOneOf<T extends string>(
@@ -86,24 +126,34 @@ docCommand
   )
   .option('--limit <n>', 'Max number of results', validatePositiveInt, 10)
   .action(async (keywords: string[], opts: SearchOptions) => {
+    const normalizedKeywords = keywords
+      .map((keyword) => keyword.trim())
+      .filter(Boolean);
+    const event: DocOperation = {
+      event: EventType.DocOperation,
+      subAction: 'search',
+      queryLen: normalizedKeywords.join(' ').length,
+      catalog: opts.catalog ?? 'all',
+    };
     try {
-      const searchInput = resolveSearchInput(keywords);
-      const catalog =
-        opts.catalog && opts.catalog !== 'all' ? opts.catalog : undefined;
-      const results = await localDocService.search(
-        searchInput,
-        catalog,
-        opts.limit
-      );
+      await trackDocOperation(event, async () => {
+        const searchInput = resolveSearchInput(keywords);
+        const catalog =
+          opts.catalog && opts.catalog !== 'all' ? opts.catalog : undefined;
+        const results = await localDocService.search(
+          searchInput,
+          catalog,
+          opts.limit
+        );
 
-      if (opts.format === 'json') {
-        console.log(JSON.stringify(results, null, 2));
-      } else {
-        outputSearchResults(results);
-      }
+        if (opts.format === 'json') {
+          console.log(JSON.stringify(results, null, 2));
+        } else {
+          outputSearchResults(results);
+        }
+      });
     } catch (error) {
-      console.error(red(formatDocCommandError(error)));
-      process.exit(1);
+      handleDocCommandError(error);
     }
   });
 
@@ -111,18 +161,22 @@ docCommand
   .command('read <documentId>')
   .description('Read full content of a document by document ID')
   .action(async (documentId: string) => {
+    const normalizedId = documentId.trim();
+    const event: DocOperation = {
+      event: EventType.DocOperation,
+      subAction: 'read',
+      documentId: normalizedId,
+    };
     try {
-      const normalizedId = documentId.trim();
-      if (!normalizedId) {
-        console.error(red('Document ID cannot be empty.'));
-        process.exit(1);
-      }
-
-      const content = await localDocService.readDocument(normalizedId);
-      console.log(content);
+      await trackDocOperation(event, async () => {
+        if (!normalizedId) {
+          throw new Error('Document ID cannot be empty.');
+        }
+        const content = await localDocService.readDocument(normalizedId);
+        console.log(content);
+      });
     } catch (error) {
-      console.error(red(formatDocCommandError(error)));
-      process.exit(1);
+      handleDocCommandError(error);
     }
   });
 
@@ -136,22 +190,28 @@ docCommand
     'default'
   )
   .action(async (opts: CatalogOptions) => {
+    const event: DocOperation = {
+      event: EventType.DocOperation,
+      subAction: 'catalog',
+      fmt: opts.format ?? 'default',
+    };
     try {
-      await awaitDocReady();
-      if (opts.format === 'json') {
-        const catalogs = CATALOG_NAMES.map((name) => ({
-          name,
-          title: CATALOG_TITLES[name],
-        }));
-        console.log(JSON.stringify(catalogs, null, 2));
-      } else {
-        for (const name of CATALOG_NAMES) {
-          console.log(`  ${name.padEnd(20)} ${dim(CATALOG_TITLES[name])}`);
+      await trackDocOperation(event, async () => {
+        await awaitDocReady();
+        if (opts.format === 'json') {
+          const catalogs = CATALOG_NAMES.map((name) => ({
+            name,
+            title: CATALOG_TITLES[name],
+          }));
+          console.log(JSON.stringify(catalogs, null, 2));
+        } else {
+          for (const name of CATALOG_NAMES) {
+            console.log(`  ${name.padEnd(20)} ${dim(CATALOG_TITLES[name])}`);
+          }
         }
-      }
+      });
     } catch (error) {
-      console.error(red(formatDocCommandError(error)));
-      process.exit(1);
+      handleDocCommandError(error);
     }
   });
 

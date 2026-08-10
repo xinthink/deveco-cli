@@ -22,6 +22,50 @@ import type {
   CodelinterReport,
   CodelinterReportFormat,
 } from './types.js';
+import { telemetry, EventType } from '../trace/index.js';
+import type { CheckCommand, TrackMeasurement } from '../trace/index.js';
+import { readProcessRss, formatBytesMb } from '../utils/process-rss.js';
+
+class ValidationError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'ValidationError';
+    this.code = code;
+  }
+}
+
+function deriveLintErrorCode(error: unknown): string {
+  const e = error as NodeJS.ErrnoException;
+  return error instanceof ValidationError
+    ? (error as ValidationError).code
+    : (e.code ?? e.name ?? 'UnknownError');
+}
+
+async function trackLint(
+  start: number,
+  success: boolean,
+  errorCode: string | null,
+  cmdArgs: string[]
+): Promise<void> {
+  const rssKb = await readProcessRss(process.pid);
+  const mcpMemory =
+    rssKb !== null ? formatBytesMb(Number(rssKb) * 1024) : 'unknown';
+  const event: CheckCommand = {
+    event: EventType.CheckCommand,
+    args: cmdArgs,
+    mcpMemory,
+    lspMemory: 'unknown',
+  };
+  const measurement: TrackMeasurement = {
+    duration_ms: Date.now() - start,
+    success,
+    error_code: errorCode,
+  };
+  await telemetry.track(event, measurement).catch(() => {});
+}
+
 /** 先校验有符号十进制整数形式，是否大于零由 parseLimit 继续判断。 */
 const INTEGER_PATTERN = /^-?\d+$/;
 /** 显式报告格式和输出路径从 Studio 6.1 起受支持。 */
@@ -148,35 +192,43 @@ async function handleLintCommand(
   options: LintOptions,
   command: Command
 ): Promise<void> {
-  const cwd = process.cwd();
-  const toolProvider = await ToolProvider.new();
-  const reportOptions = resolveSupportedReportOptions(
-    toolProvider,
-    command,
-    options
-  );
-  const reportPath = resolveReportPath(
-    reportOptions.outputPath,
-    reportOptions.format,
-    cwd
-  );
-  if (options.fix) {
-    console.warn(
-      yellow(
-        'Running codelinter with --fix. Ensure your project source is trusted.'
-      )
+  const start = Date.now();
+  const cmdArgs = ['check', 'lint'];
+  try {
+    const cwd = process.cwd();
+    const toolProvider = await ToolProvider.new();
+    const reportOptions = resolveSupportedReportOptions(
+      toolProvider,
+      command,
+      options
     );
+    const reportPath = resolveReportPath(
+      reportOptions.outputPath,
+      reportOptions.format,
+      cwd
+    );
+    if (options.fix) {
+      console.warn(
+        yellow(
+          'Running codelinter with --fix. Ensure your project source is trusted.'
+        )
+      );
+    }
+    const result = await executeLint(toolProvider, lintPath, options, cwd);
+    writeTextToStderr(result.diagnostics);
+    process.exitCode = writeLintResult(
+      result,
+      reportPath,
+      reportOptions.format,
+      options.limit,
+      cwd
+    );
+    await trackLint(start, true, null, cmdArgs);
+  } catch (error) {
+    const errorCode = deriveLintErrorCode(error);
+    await trackLint(start, false, errorCode, cmdArgs);
+    throw error;
   }
-
-  const result = await executeLint(toolProvider, lintPath, options, cwd);
-  writeTextToStderr(result.diagnostics);
-  process.exitCode = writeLintResult(
-    result,
-    reportPath,
-    reportOptions.format,
-    options.limit,
-    cwd
-  );
 }
 
 async function executeLint(
@@ -221,7 +273,8 @@ function resolveSupportedReportOptions(
   const studioVersion = readStudioVersion(toolProvider.toolchainRoot);
   if (
     studioVersion &&
-    ToolProvider.compareVersion(studioVersion, MODERN_REPORT_STUDIO_VERSION) >= 0
+    ToolProvider.compareVersion(studioVersion, MODERN_REPORT_STUDIO_VERSION) >=
+      0
   ) {
     return options;
   }

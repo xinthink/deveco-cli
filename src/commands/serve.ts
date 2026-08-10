@@ -5,6 +5,7 @@
 import { Command } from 'commander';
 import { createMcpServer } from '../../mcp/src-server/index.js';
 import { ToolProvider } from '../toolchain/index.js';
+import { telemetry } from '../trace/index.js';
 import { startArktsLspServer } from './serve-lsp.js';
 import { startClangdLspServer } from './serve-lsp-cpp.js';
 
@@ -30,11 +31,21 @@ async function startStdioMcpServer(): Promise<void> {
     clangdPath: toolProvider.clangdPath ?? undefined,
     nodeMaxOldSpaceSize: NODE_MAX_OLD_SPACE_SIZE,
     debug: DEBUG,
+    telemetry,
+  });
+
+  // server.start() resolves immediately (fire-and-forget via StdioTransport).
+  // Block here until a shutdown signal so the caller (parseAsync) doesn't
+  // resolve prematurely — otherwise cli.ts stops the telemetry scheduler
+  // before the first flush ever runs.
+  let resolveShutdown!: () => void;
+  const shutdownSignal = new Promise<void>((resolve) => {
+    resolveShutdown = resolve;
   });
 
   const shutdown = async (): Promise<void> => {
     await server.shutdown();
-    process.exit(0);
+    resolveShutdown();
   };
 
   process.once('SIGINT', shutdown);
@@ -49,6 +60,8 @@ async function startStdioMcpServer(): Promise<void> {
     console.error('Failed to start MCP server:', err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
+
+  await shutdownSignal;
 }
 
 const serveCommand = new Command('serve').description(

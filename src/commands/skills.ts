@@ -37,6 +37,8 @@ import {
   SkillOperationResult,
   InstallationTargets,
 } from '../types/skills';
+import { telemetry, EventType, type SkillOperation } from '../trace/index.js';
+import { formatBytesMb } from '../utils/process-rss.js';
 
 const DEVECO_CODE_AGENT = 'deveco';
 
@@ -55,7 +57,10 @@ async function getSkillNames(options: AddOptions): Promise<string[]> {
     const allSkills = await searchSkills(options.skill!, tagIds);
     const skill = allSkills.find((s) => s.enName === options.skill);
     if (!skill) {
-      throw new Error(`Skill "${options.skill}" not found`);
+      throw new ValidationError(
+        'errorCode',
+        `Skill "${options.skill}" not found`
+      );
     }
     return [skill.enName];
   }
@@ -120,12 +125,15 @@ function validateAddOptions(options: AddOptions): {
 } {
   // 1. 参数验证：--all 和 --skill 不能同时指定
   if (options.all && options.skill) {
-    throw new Error('`--all` and `--skill` cannot be specified together.');
+    throw new ValidationError(
+      'errorCode',
+      '`--all` and `--skill` cannot be specified together.'
+    );
   }
 
   // 2. 参数验证：必须提供 --all 或 --skill
   if (!options.all && !options.skill) {
-    throw new Error('Must specify `--all` or `--skill`');
+    throw new ValidationError('errorCode', 'Must specify `--all` or `--skill`');
   }
 
   // 3. 互斥验证并解析路径
@@ -185,8 +193,9 @@ async function installSkills(
   targets: InstallationTargets,
   force: boolean,
   spinner: SpinnerHelper
-): Promise<SkillOperationResult[]> {
+): Promise<{ results: SkillOperationResult[]; diskBytes: number }> {
   const results: SkillOperationResult[] = [];
+  let diskBytes = 0;
   const total = skillNames.length;
   const limit = pLimit(5);
 
@@ -210,6 +219,7 @@ async function installSkills(
       results.push({ success: false });
       continue;
     }
+    diskBytes += downloadResult.buffer.length;
     spinner.stop();
     const installResults = await installSingleSkill(
       skillName,
@@ -220,7 +230,7 @@ async function installSkills(
     results.push(...installResults);
   }
 
-  return results;
+  return { results, diskBytes };
 }
 
 async function downloadSkillSafe(
@@ -239,7 +249,9 @@ async function downloadSkillSafe(
 /**
  * 处理 add 子命令
  */
-async function handleAddCommand(options: AddOptions): Promise<void> {
+async function handleAddCommand(
+  options: AddOptions
+): Promise<{ diskBytes: number; results: SkillOperationResult[] }> {
   const spinner = new SpinnerHelper();
   try {
     spinner.start(`Installing skill...`);
@@ -251,7 +263,7 @@ async function handleAddCommand(options: AddOptions): Promise<void> {
       resolvedProject
     );
 
-    const results = await installSkills(
+    const { results, diskBytes } = await installSkills(
       skillNames,
       targets,
       options.force || false,
@@ -260,10 +272,98 @@ async function handleAddCommand(options: AddOptions): Promise<void> {
 
     spinner.stop();
     summarizeOperationResults(results);
+    return { diskBytes, results };
   } catch (error: unknown) {
     spinner.stop();
     throw error;
   }
+}
+
+/** add/remove 共用：从 results 派生操作结果计数 + 失败原因（去重、脱敏）。 */
+function computeOpCounts(results: SkillOperationResult[]): Record<string, unknown> {
+  const opTotal = results.length;
+  const opSuccess = results.filter((r) => r.success && !r.skipped).length;
+  const opSkipped = results.filter((r) => r.skipped).length;
+  const opFailed = results.filter((r) => !r.success).length;
+  const failedErrors = [
+    ...new Set(
+      results
+        .filter((r) => !r.success && typeof r.error === 'string')
+        .map((r) => sanitizeFailedError(r.error as string)),
+    ),
+  ];
+  return {
+    opTotal,
+    opSuccess,
+    opFailed,
+    opSkipped,
+    ...(failedErrors.length > 0 ? { failedErrors } : {}),
+  };
+}
+
+/** 失败原因脱敏：仅取首词（如 Unknown / Failed / Installation），剔除路径、技能名等细节。 */
+function sanitizeFailedError(text: string): string {
+  const match = /^([A-Za-z_][A-Za-z0-9_-]*)/.exec(text.trim());
+  return match ? match[1].slice(0, 32) : 'error';
+}
+
+/**
+ * 通用打点包装：事件 devecocli_skills，event_detail 含 sub_action + flags(args) + fn 返回的派生字段；
+ * §3.3 手动测量记耗时/成败/errorCode（校验错误取 ValidationError.code，运行时错误取 errno code/name）。
+ * fn 抛错则记 success=false + error_code 后 rethrow，交由 action 的 catch 走 process.exit。
+ */
+class ValidationError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'ValidationError';
+    this.code = code;
+  }
+}
+
+function deriveSkillsErrorCode(error: unknown): string {
+  const e = error as NodeJS.ErrnoException;
+  return error instanceof ValidationError
+    ? (error as ValidationError).code
+    : (e.code ?? e.name ?? 'UnknownError');
+}
+
+async function trackSkillsOperation(
+  subAction: string,
+  fn: () => Promise<Record<string, unknown>>,
+): Promise<void> {
+  const start = Date.now();
+  let success = true;
+  let errorCode: string | null = null;
+  let extra: Record<string, unknown> = {};
+  try {
+    extra = await fn();
+  } catch (e) {
+    success = false;
+    errorCode = deriveSkillsErrorCode(e);
+    throw e;
+  } finally {
+    const event: SkillOperation = {
+      event: EventType.SkillOperation,
+      subAction,
+      args: process.argv.slice(2).filter((a) => a.startsWith('-')),
+      ...extra,
+    };
+    await telemetry.track(event, {
+      duration_ms: Date.now() - start,
+      success,
+      error_code: errorCode,
+    });
+  }
+}
+
+/** devecocli skills add：下载数据量 + 安装结果计数 + 失败原因。 */
+function trackSkillsAdd(options: AddOptions): Promise<void> {
+  return trackSkillsOperation('add', async () => {
+    const { diskBytes, results } = await handleAddCommand(options);
+    return { diskUsage: formatBytesMb(diskBytes), ...computeOpCounts(results) };
+  });
 }
 
 /**
@@ -294,7 +394,7 @@ function validateRemoveOptions(options: RemoveOptions): {
 async function handleRemoveCommand(
   skillName: string,
   options: RemoveOptions
-): Promise<void> {
+): Promise<SkillOperationResult[]> {
   const spinner = new SpinnerHelper();
   try {
     spinner.start('Removing skill...');
@@ -308,6 +408,7 @@ async function handleRemoveCommand(
     );
     spinner.stop();
     summarizeOperationResults(results);
+    return results;
   } catch (error: unknown) {
     spinner.stop();
     throw error;
@@ -319,7 +420,8 @@ async function handleRemoveCommand(
  */
 function validateAgentsNotEmpty(agents: string[], hint: string = ''): void {
   if (agents.length === 0) {
-    throw new Error(
+    throw new ValidationError(
+      'errorCode',
       `No agents found. Install an AI agent (cursor, opencode, etc.) ${hint}`
     );
   }
@@ -412,40 +514,46 @@ skillsCommand
     'Show detailed information including description and installation status'
   )
   .action(async (options: { long?: boolean }) => {
-    const spinner = new SpinnerHelper();
     try {
-      spinner.start('Fetching skills...');
-      const tagIds = await fetchTagIds();
+      await trackSkillsOperation('list', async () => {
+        const spinner = new SpinnerHelper();
+        try {
+          spinner.start('Fetching skills...');
+          const tagIds = await fetchTagIds();
 
-      // 获取所有技能
-      const skills = await fetchAllSkills(tagIds);
+          // 获取所有技能
+          const skills = await fetchAllSkills(tagIds);
 
-      // 处理空结果
-      if (skills.length === 0) {
-        spinner.stop();
-        console.log(yellow('No skills available.'));
-        return;
-      }
-      spinner.succeed(`Fetched ${skills.length} skills`);
-
-      // 输出技能列表
-      for (const skill of skills) {
-        if (options.long) {
-          console.log(cyan(skill.enName));
-          console.log(dim(skill.description));
-
-          // 获取已安装的 agent 列表
-          const installedAgents = getInstalledAgents(skill.enName);
-          if (installedAgents.length > 0) {
-            console.log(green(`Installed for: ${installedAgents.join(', ')}`));
+          // 处理空结果
+          if (skills.length === 0) {
+            spinner.stop();
+            console.log(yellow('No skills available.'));
+            return { resultTotal: 0 };
           }
-          console.log();
-        } else {
-          console.log(skill.enName);
+          spinner.succeed(`Fetched ${skills.length} skills`);
+
+          // 输出技能列表
+          for (const skill of skills) {
+            if (options.long) {
+              console.log(cyan(skill.enName));
+              console.log(dim(skill.description));
+
+              // 获取已安装的 agent 列表
+              const installedAgents = getInstalledAgents(skill.enName);
+              if (installedAgents.length > 0) {
+                console.log(green(`Installed for: ${installedAgents.join(', ')}`));
+              }
+              console.log();
+            } else {
+              console.log(skill.enName);
+            }
+          }
+          return { resultTotal: skills.length };
+        } finally {
+          spinner.stop();
         }
-      }
+      });
     } catch (error: unknown) {
-      spinner.stop();
       console.error(red((error as Error).message));
       process.exit(1);
     }
@@ -456,31 +564,37 @@ skillsCommand
   .command('find <keyword>')
   .description('Search skills by keyword')
   .action(async (keyword: string) => {
-    const spinner = new SpinnerHelper();
     try {
-      spinner.start('Searching skills...');
-      const tagIds = await fetchTagIds();
+      await trackSkillsOperation('find', async () => {
+        const spinner = new SpinnerHelper();
+        try {
+          spinner.start('Searching skills...');
+          const tagIds = await fetchTagIds();
 
-      // 搜索技能
-      const skills = await searchSkills(keyword, tagIds);
+          // 搜索技能
+          const skills = await searchSkills(keyword, tagIds);
 
-      // 处理空结果
-      if (skills.length === 0) {
-        console.log(yellow(`No skills found matching '${keyword}'.`));
-        spinner.stop();
-        return;
-      }
+          // 处理空结果
+          if (skills.length === 0) {
+            console.log(yellow(`No skills found matching '${keyword}'.`));
+            spinner.stop();
+            return { resultTotal: 0, queryLen: keyword.length };
+          }
 
-      spinner.succeed(`Found ${skills.length} skills.`);
+          spinner.succeed(`Found ${skills.length} skills.`);
 
-      // 输出搜索结果
-      for (const skill of skills) {
-        console.log(cyan(skill.enName));
-        console.log(dim(skill.description));
-        console.log();
-      }
+          // 输出搜索结果
+          for (const skill of skills) {
+            console.log(cyan(skill.enName));
+            console.log(dim(skill.description));
+            console.log();
+          }
+          return { resultTotal: skills.length, queryLen: keyword.length };
+        } finally {
+          spinner.stop();
+        }
+      });
     } catch (error: unknown) {
-      spinner.stop();
       console.error(red((error as Error).message));
       process.exit(1);
     }
@@ -507,7 +621,7 @@ skillsCommand
   )
   .action(async (options: AddOptions) => {
     try {
-      await handleAddCommand(options);
+      await trackSkillsAdd(options);
     } catch (error: unknown) {
       console.error(red((error as Error).message));
       process.exit(1);
@@ -527,7 +641,10 @@ skillsCommand
   .option('--path <path>', 'Path for skill removal')
   .action(async (options: RemoveOptions) => {
     try {
-      await handleRemoveCommand(options.skill!, options);
+      await trackSkillsOperation('remove', async () => {
+        const results = await handleRemoveCommand(options.skill!, options);
+        return computeOpCounts(results);
+      });
     } catch (error: unknown) {
       console.error(red((error as Error).message));
       process.exit(1);

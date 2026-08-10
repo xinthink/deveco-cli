@@ -8,6 +8,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import * as path from 'path';
 import { z } from 'zod';
 import { ToolRouter, createToolRouter } from './router.js';
+import type { Telemetry } from '../../src/trace/index.js';
 import { ArktsCheckTool, CppCheckTool, ClangdLspTool } from './tools/index.js';
 import { detectStandardProtocol, findHarmonyProject, isSupportedCppFile } from './utils/common.js';
 import { CommonUtils } from '../../src/utils/common-utils.js';
@@ -65,6 +66,7 @@ export interface McpServerConfig {
   nodeMaxOldSpaceSize?: string;
   /** debug 模式：true=console输出，false=文件输出（带轮转） */
   debug?: boolean;
+  telemetry?: Telemetry;
 
 }
 
@@ -151,7 +153,7 @@ export class DevecoCliMcpServer {
     });
 
     // Create tool router
-    this.toolRouter = createToolRouter();
+    this.toolRouter = createToolRouter(config.telemetry, () => this.arktsCheckTool?.aceServerPid ?? null, () => this.config.projectPath ?? '', () => this.sdkPath ?? '');
 
     // 检测是否支持标准 LSP 协议（standardIndex/index.js 是否存在）。
     // legacy 模式（老版本 ace-server 私有协议）下不支持 hover/definition/references 等位置类语言特性，

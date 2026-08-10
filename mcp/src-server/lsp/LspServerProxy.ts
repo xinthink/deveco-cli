@@ -47,6 +47,10 @@ export class LspServerProxy {
     private get legacyHandle(): LegacyClientMessageHandle {
         return this.messageHandle as LegacyClientMessageHandle;
     }
+    /** ace-server 子进程 pid；未启动为 null。 */
+    public get lspPid(): number | null {
+        return this.messageHandle.lspPid;
+    }
     /** 老版本：onAsyncOpenFile。仅 legacy 模式调用。 */
     onAsyncOpenFile(param: OpenFileParam): void {
         this.legacyHandle.onAsyncOpenFile(param);

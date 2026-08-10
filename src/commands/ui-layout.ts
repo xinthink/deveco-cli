@@ -8,6 +8,13 @@ import { ArkUiDumpAdapter, findNodesInTree } from '../ui/index.js';
 import ora from 'ora';
 import type { ArkUiNode } from '../ui/index.js';
 import { resolveDeviceSerial } from '../utils/device-selector.js';
+import {
+  telemetry,
+  EventType,
+  toTraceErrorCode,
+  type CommandExecuted,
+  type TrackMeasurement,
+} from '../trace/index.js';
 
 interface LayoutOptions {
   device?: string;
@@ -17,6 +24,11 @@ interface LayoutOptions {
   allWindows?: boolean;
   format: 'default' | 'json';
   mode: 'full' | 'simplified';
+}
+
+interface LayoutTraceEvent extends CommandExecuted {
+  mode: LayoutOptions['mode'];
+  outputSize: number;
 }
 
 function parseNonNegativeInt(value: string): number {
@@ -79,24 +91,27 @@ function validateOptions(options: LayoutOptions) {
   }
 }
 
-function outputNodesById(tree: ArkUiNode[], id: string) {
+function renderNodesById(tree: ArkUiNode[], id: string): string {
   const nodes = findNodesInTree(tree, id);
   if (nodes.length === 0) {
     throw new Error(`Node '${id}' not found.`);
   }
   const stripped = nodes.map((node) => ({ ...node, children: [] }));
-  console.log(JSON.stringify(stripped, null, 2));
+  return JSON.stringify(stripped, null, 2);
 }
 
-function outputTree(tree: ArkUiNode[], format: 'default' | 'json') {
-  if (format === 'json') {
-    console.log(JSON.stringify(tree, null, 2));
-  } else {
-    console.log(renderTree(tree));
+function renderLayoutOutput(tree: ArkUiNode[], options: LayoutOptions): string {
+  if (options.id) {
+    return renderNodesById(tree, options.id);
   }
+  const format = options.format;
+  if (format === 'json') {
+    return JSON.stringify(tree, null, 2);
+  }
+  return renderTree(tree);
 }
 
-async function handleLayoutCommand(options: LayoutOptions) {
+async function handleLayoutCommand(options: LayoutOptions): Promise<number> {
   validateOptions(options);
   const spinner = ora({ text: 'Dumping layout…', color: 'cyan' }).start();
   let tree: ArkUiNode[];
@@ -126,11 +141,39 @@ async function handleLayoutCommand(options: LayoutOptions) {
   }
   spinner.stop();
 
-  if (options.id) {
-    outputNodesById(tree, options.id);
-    return;
+  const output = renderLayoutOutput(tree, options);
+  console.log(output);
+  return Buffer.byteLength(output, 'utf8');
+}
+
+function buildLayoutEvent(options: LayoutOptions): LayoutTraceEvent {
+  return {
+    event: EventType.CommandExecuted,
+    args: ['ui', 'layout', ...(options.device ? ['--device'] : [])],
+    mode: options.mode,
+    outputSize: 0,
+  };
+}
+
+async function trackLayoutCommand(options: LayoutOptions): Promise<void> {
+  const event = buildLayoutEvent(options);
+  const start = Date.now();
+  let success = true;
+  let errorCode: string | null = null;
+  try {
+    event.outputSize = await handleLayoutCommand(options);
+  } catch (error) {
+    success = false;
+    errorCode = toTraceErrorCode(error);
+    throw error;
+  } finally {
+    const measurement: TrackMeasurement = {
+      duration_ms: Date.now() - start,
+      success,
+      error_code: errorCode,
+    };
+    await telemetry.track(event, measurement);
   }
-  outputTree(tree, options.format);
 }
 
 export const layoutCommand = new Command('layout')
@@ -161,5 +204,5 @@ export const layoutCommand = new Command('layout')
       .default('simplified')
   )
   .action(async (options: LayoutOptions) => {
-    await handleLayoutCommand(options);
+    await trackLayoutCommand(options);
   });

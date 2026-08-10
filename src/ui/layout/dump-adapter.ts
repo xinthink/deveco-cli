@@ -17,6 +17,7 @@ import {
 } from './parsers.js';
 import { collapse } from './collapse.js';
 import type { RawDumpNode, RawDumpAttributes, ArkUiNode } from './types.js';
+import { TraceError } from '../../trace/index.js';
 
 function parseDumpFile(localPath: string): RawDumpNode {
   const jsonStr = readFileSync(localPath, 'utf-8').trim();
@@ -70,8 +71,9 @@ function resolveWindow(
     const match = windows.find((w) => String(w.id) === windowId);
     if (!match) {
       const available = windows.map((w) => `${w.id} (${w.name})`).join(', ');
-      throw new Error(
-        `Window '${windowId}' not found. Available windows: ${available || 'none'}`
+      throw new TraceError(
+        `Window '${windowId}' not found. Available windows: ${available || 'none'}`,
+        'Window not found.'
       );
     }
     return match;

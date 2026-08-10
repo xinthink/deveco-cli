@@ -23,6 +23,7 @@ import { generateTestProfileFile } from '../signature/generate-profile.js';
 import { aclPermissionsUsingWarn } from '../signature/acl-permission-warn.js';
 import { EnvChecker } from '../signature/env-checker.js';
 import { loginService } from '../auth';
+import { telemetry, EventType, toTraceErrorCode, type CommandExecuted, type TrackMeasurement } from '../trace/index.js';
 
 interface SignatureGenerateOptions {
   force?: boolean;
@@ -271,11 +272,32 @@ signatureCommand
     'Specify the product. The default value is default.'
   )
   .action(async (options: SignatureGenerateOptions) => {
+    const event: CommandExecuted = {
+      event: EventType.CommandExecuted,
+      args: [
+        'signature', 'generate',
+        ...(options.force ? ['--force'] : []),
+        ...(options.teamId ? ['--team-id'] : []),
+        ...(options.product ? ['--product'] : []),
+      ],
+    };
+    const start = Date.now();
+    let success = true;
+    let errorCode: string | null = null;
     try {
       await handleSignatureCommand(options);
     } catch (error) {
+      success = false;
+      errorCode = toTraceErrorCode(error);
       console.error(red((error as Error).message));
-      process.exit(1);
+      process.exitCode = 1;
+    } finally {
+      const measurement: TrackMeasurement = {
+        duration_ms: Date.now() - start,
+        success,
+        error_code: errorCode,
+      };
+      await telemetry.track(event, measurement);
     }
   });
 

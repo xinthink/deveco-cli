@@ -8,7 +8,7 @@ import fs from 'fs';
 const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
 
 export default defineConfig({
-  entry: ['src/cli.ts', 'src/internal/doc-init-background.ts'],
+  entry: ['src/cli.ts', 'src/internal/doc-init-background.ts', 'src/internal/telemetry-upload-background.ts'],
   format: ['esm'],
   platform: 'node',
   target: 'node18',

@@ -75,6 +75,11 @@ export class LegacyClientMessageHandle {
     public readonly diagnosticMap = new Map<string, LegacyDiagnostic>();
     private static readonly DIAGNOSTIC_TIMEOUT_MS = 20 * 1000;
 
+    /** 底层 LspClient（ace-server 子进程）的 pid；未启动为 null。 */
+    public get lspPid(): number | null {
+        return this.client.pid;
+    }
+
     constructor(config: LspClientConfig) {
         this.client = new LspClient(config);
         this.client.on('message', (raw: string) => this.handleRawMessage(raw));

@@ -24,6 +24,7 @@ import {
 } from '../apply/hotreload/hotreload-manager.js';
 import { withBuildLock } from '../utils/build-lock.js';
 import { executeBuildSteps, processModuleTasks } from './build.js';
+import { telemetry, EventType, toTraceErrorCode, type CommandExecuted, type TrackMeasurement, TraceError } from '../trace/index.js';
 
 interface RunOptions {
   module?: string[];
@@ -36,6 +37,12 @@ interface RunOptions {
   apply?: string;
   hotreload?: string;
   hotreloadApply?: string;
+}
+
+interface BuildMemoryStats {
+  ohpmMemoryMb: string;
+  syncMemoryMb: string;
+  buildMemoryMb: string;
 }
 
 function parseModuleArg(moduleArg: string): { moduleName: string; targetName: string } {
@@ -58,9 +65,10 @@ async function selectDevice(
 
   if (!deviceArg && devices.length > 1) {
     const named = await deviceManager.listDevicesWithName();
-    throw new Error(
+    throw new TraceError(
       'Multiple devices found. Specify a target device using `--device <Name>` or `--device <ID>`.\nAvailable devices:\n' +
-        named.map((d) => `  - ${d.name} (${d.serial})`).join('\n')
+        named.map((d) => `  - ${d.name} (${d.serial})`).join('\n'),
+      'Multiple devices found.'
     );
   }
 
@@ -91,8 +99,9 @@ function identifyModules(project: Project, moduleArgs?: string[]): string[] {
     return [selected];
   }
 
-  throw new Error(`Specify module(s) using --module <name> [<name>...].\nAvailable runnable modules:\n` +
-      runnableModules.map((m) => `  - ${m.name}`).join('\n')
+  throw new TraceError(`Specify module(s) using --module <name> [<name>...].\nAvailable runnable modules:\n` +
+      runnableModules.map((m) => `  - ${m.name}`).join('\n'),
+    'Specify module error.'
   );
 }
 
@@ -157,6 +166,30 @@ async function performDeployment(
   }
 }
 
+function buildRunEvent(options: RunOptions): CommandExecuted {
+  const event: CommandExecuted = {
+    event: EventType.CommandExecuted,
+    args: [
+      'run',
+      ...(options.module ? ['--module'] : []),
+      ...(options.device ? ['--device'] : []),
+      ...(options.product ? ['--product'] : []),
+      ...(options.buildMode ? ['--build-mode'] : []),
+      ...(options.ability ? ['--ability'] : []),
+      ...(options.uninstall ? ['--uninstall'] : []),
+      ...(options.skipBuild ? ['--skip-build'] : []),
+      ...(options.apply ? ['--apply'] : []),
+    ],
+  };
+  if (options.buildMode) {
+    event.build_mode = options.buildMode;
+  }
+  if (options.module) {
+    event.module_count = options.module.length;
+  }
+  return event;
+}
+
 const runCommand = new Command('run')
   .description('Build and run the project on a connected device')
   .option(
@@ -173,11 +206,36 @@ const runCommand = new Command('run')
   .option('--hotreload [action]', 'Start hot-reload mode (build+deploy with daemon, then exit). Use "stop" to shut down the hvigor daemon.')
   .option('--hotreload-apply <fileName>', 'Hot-reload changed files (.hvigor/<fileName> list) via daemon hot compile + signed hqf + quickfix, without restarting the app.')
   .action(async (options: RunOptions) => {
+    const event = buildRunEvent(options);
+    const start = Date.now();
+    let success = true;
+    let errorCode: string | null = null;
+
     try {
-      await runActionImpl(options);
+      const memStats = await runActionImpl(options, event);
+      if (memStats) {
+        if (memStats.ohpmMemoryMb) {
+          event.ohpm_install_memory = memStats.ohpmMemoryMb;
+        }
+        if (memStats.syncMemoryMb) {
+          event.hvigor_sync_memory = memStats.syncMemoryMb;
+        }
+        if (memStats.buildMemoryMb) {
+          event.hvigor_build_memory = memStats.buildMemoryMb;
+        }
+      }
     } catch (error) {
+      success = false;
+      errorCode = toTraceErrorCode(error);
       console.error(red((error as Error).message));
-      process.exit(1);
+      process.exitCode = 1;
+    } finally {
+      const measurement: TrackMeasurement = {
+        duration_ms: Date.now() - start,
+        success,
+        error_code: errorCode,
+      };
+      await telemetry.track(event, measurement);
     }
   });
 
@@ -187,7 +245,7 @@ async function runBuildPhase(
   parsedModules: { moduleName: string; targetName: string }[],
   productName: string,
   buildMode: string
-): Promise<void> {
+): Promise<BuildMemoryStats> {
   const ohpmAdapter = new OhpmAdapter(toolProvider, project.rootDir);
   const hvigorAdapter = new HvigorAdapter(toolProvider, project.rootDir);
 
@@ -207,16 +265,17 @@ async function runBuildPhase(
     BuildConfigManager.generate(project.rootDir, moduleName, productName, toolProvider);
   }
 
-  await withBuildLock(
+  const memStats = await withBuildLock(
     project.rootDir,
     () => executeBuildSteps(ohpmAdapter, hvigorAdapter, productName, buildMode, buildTarget, project.rootDir),
     () => console.log('Another build is already running for this project. Waiting for completion...')
   );
 
   console.log('\n' + green('Build completed successfully.'));
+  return memStats;
 }
 
-async function runActionImpl(options: RunOptions): Promise<void> {
+async function runActionImpl(options: RunOptions, event: CommandExecuted): Promise<BuildMemoryStats | undefined> {
   const project = Project.discover(process.cwd());
   console.warn(yellow('Ensure the project source is trusted before proceeding.'));
   const toolProvider = await ToolProvider.new();
@@ -224,22 +283,24 @@ async function runActionImpl(options: RunOptions): Promise<void> {
     toolProvider.assertJava();
   }
 
+  event.bundle_name = project.getBundleName();
+
   if (options.hotreloadApply) {
     await runHotReloadApplyFlow(options, project, toolProvider);
-    return;
+    return undefined;
   }
 
   if (options.hotreload) {
     await runHotReloadFlow(options, project, toolProvider);
-    return;
+    return undefined;
   }
 
   if (options.apply) {
     await runApplyFlow(options, project, toolProvider);
-    return;
+    return undefined;
   }
 
-  await runNormalFlow(options, project, toolProvider);
+  return runNormalFlow(options, project, toolProvider);
 }
 
 async function handleHotReloadClear(daemonClient: HvigorDaemonClient, toolProvider: ToolProvider, project: Project) {
@@ -390,15 +451,16 @@ function collectArtifacts(
 
 async function runNormalFlow(
   options: RunOptions, project: Project, toolProvider: ToolProvider
-): Promise<void> {
+): Promise<BuildMemoryStats | undefined> {
   const moduleArgs = identifyModules(project, options.module);
   const parsedModules = moduleArgs.map(parseModuleArg);
 
   for (const { moduleName } of parsedModules) {
     const type = project.getModuleType(moduleName);
     if (type !== 'entry' && type !== 'feature' && type !== 'shared') {
-      throw new Error(
-        `Module '${moduleName}' '${type}' is not runnable. Specify an entry or feature module.`
+      throw new TraceError(
+        `Module '${moduleName}' '${type}' is not runnable. Specify an entry or feature module.`,
+        'Module is not runnable.'
       );
     }
   }
@@ -414,8 +476,9 @@ async function runNormalFlow(
   project.validateProduct(productName);
   const buildMode = options.buildMode || 'debug';
 
+  let memStats: BuildMemoryStats | undefined;
   if (!options.skipBuild) {
-    await runBuildPhase(project, toolProvider, parsedModules, productName, buildMode);
+    memStats = await runBuildPhase(project, toolProvider, parsedModules, productName, buildMode);
   }
 
   const allArtifacts = collectArtifacts(project, parsedModules, isEmulator, productName);
@@ -430,6 +493,7 @@ async function runNormalFlow(
     mainAbility,
     !!options.uninstall
   );
+  return memStats;
 }
 
 async function runApplyFlow(

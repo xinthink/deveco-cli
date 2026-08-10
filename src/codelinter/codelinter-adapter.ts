@@ -17,6 +17,16 @@ import {
 } from './report-parser.js';
 import type { CodelinterCheckRequest, CodelinterCheckResult } from './types.js';
 
+class ValidationError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'ValidationError';
+    this.code = code;
+  }
+}
+
 type CodelinterToolchainSource = 'ide' | 'command-line-tools';
 
 interface CodelinterResolution {
@@ -120,7 +130,10 @@ export class CodelinterAdapter {
     const resolved = this.resolveRealPath(candidate, 'Lint path');
     const stat = fs.statSync(resolved);
     if (!stat.isFile() && !stat.isDirectory()) {
-      throw new Error(`Lint path must be a file or directory: ${candidate}`);
+      throw new ValidationError(
+        'errorCode',
+        `Lint path must be a file or directory: ${candidate}`
+      );
     }
     if (stat.isFile()) {
       const extension = path.extname(resolved).toLowerCase();
@@ -140,7 +153,8 @@ export class CodelinterAdapter {
       stat.isDirectory()
     );
     if (lintPath !== undefined && resolvedProjectRoot === undefined) {
-      throw new Error(
+      throw new ValidationError(
+        'errorCode',
         'Lint path is not in a valid project directory ' +
           `(project-level build-profile.json5 not found or invalid): ${resolved}`
       );
@@ -160,7 +174,10 @@ export class CodelinterAdapter {
       : path.join(lintTarget.projectRoot ?? this.cwd, 'code-linter.json5');
     const resolved = this.resolveRealPath(candidate, '`--config-path`');
     if (!fs.statSync(resolved).isFile()) {
-      throw new Error(`--config-path must point to a file: ${candidate}`);
+      throw new ValidationError(
+        'errorCode',
+        `--config-path must point to a file: ${candidate}`
+      );
     }
     if (lintTarget.projectRoot) {
       const configProjectRoot = this.discoverProjectRoot(resolved, false);
@@ -168,7 +185,8 @@ export class CodelinterAdapter {
         configProjectRoot === undefined ||
         path.relative(lintTarget.projectRoot, configProjectRoot) !== ''
       ) {
-        throw new Error(
+        throw new ValidationError(
+          'errorCode',
           '`--config-path` must belong to the same project as the lint path. ' +
             `Lint project: ${lintTarget.projectRoot}; ` +
             `Config project: ${configProjectRoot ?? 'not found'}.`
@@ -194,7 +212,8 @@ export class CodelinterAdapter {
     try {
       return fs.realpathSync(candidate);
     } catch (error) {
-      throw new Error(
+      throw new ValidationError(
+        'errorCode',
         `${label} does not exist or cannot be resolved: ${candidate}`,
         {
           cause: error,
@@ -329,7 +348,10 @@ export class CodelinterAdapter {
     const content = fileContent || jsonText?.trim();
 
     if (!content) {
-      throw new Error('Native JSON report was not generated.');
+      throw new ValidationError(
+        'errorCode',
+        'Native JSON report was not generated.'
+      );
     }
     return JSON.parse(content) as unknown;
   }

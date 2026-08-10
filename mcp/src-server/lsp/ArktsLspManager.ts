@@ -63,6 +63,11 @@ export class ArktsLspManager {
     /** dispose 仅执行一次 */
     private disposeOnce: Promise<void> | null = null;
 
+    /** ace-server 子进程 pid；LSP 未初始化（lspProxy 为空）时为 null。 */
+    public get aceServerPid(): number | null {
+        return this.lspProxy?.lspPid ?? null;
+    }
+
     constructor(config: ArktsLspManagerConfig) {
         this.config = config;
     }

@@ -11,6 +11,13 @@ import { ToolProvider } from '../toolchain/index.js';
 import { resolveDeviceSerial } from '../utils/device-selector.js';
 import { runHdcWithRetry, type HdcCommandResult } from '../utils/hdc-param.js';
 import { debugLog } from '../utils/logger.js';
+import {
+  telemetry,
+  EventType,
+  toTraceErrorCode,
+  type CommandExecuted,
+  type TrackMeasurement,
+} from '../trace/index.js';
 
 interface ScreenshotOptions {
   device?: string;
@@ -28,6 +35,13 @@ interface ScreenshotContext {
 
 interface FileSystemError extends Error {
   code?: string;
+}
+
+function buildScreenshotEvent(options: ScreenshotOptions): CommandExecuted {
+  return {
+    event: EventType.CommandExecuted,
+    args: ['ui', 'screenshot', ...(options.device ? ['--device'] : [])],
+  };
 }
 
 function timestamp(): string {
@@ -356,23 +370,42 @@ async function captureScreenshot(ctx: ScreenshotContext): Promise<void> {
 }
 
 async function screenshotAction(options: ScreenshotOptions): Promise<void> {
-  const localPath = resolveLocalPath(options.path);
-  const display =
-    options.display !== undefined ? parseDisplayId(options.display) : undefined;
-  if (options.device !== undefined && !options.device.trim()) {
-    throw new Error('--device must not be empty.');
+  const event = buildScreenshotEvent(options);
+  const start = Date.now();
+  let success = true;
+  let errorCode: string | null = null;
+  try {
+    const localPath = resolveLocalPath(options.path);
+    const display =
+      options.display !== undefined
+        ? parseDisplayId(options.display)
+        : undefined;
+    if (options.device !== undefined && !options.device.trim()) {
+      throw new Error('--device must not be empty.');
+    }
+    const toolProvider = await ToolProvider.new();
+    const serial = await resolveDeviceSerial(toolProvider, options.device);
+    const remotePath = `/data/local/tmp/devecocli-${randomUUID()}.png`;
+    await captureScreenshot({
+      hdcPath: toolProvider.hdcPath,
+      serial,
+      localPath,
+      remotePath,
+      display,
+    });
+    console.log(green(`Screenshot saved to ${localPath}`));
+  } catch (error) {
+    success = false;
+    errorCode = toTraceErrorCode(error);
+    throw error;
+  } finally {
+    const measurement: TrackMeasurement = {
+      duration_ms: Date.now() - start,
+      success,
+      error_code: errorCode,
+    };
+    await telemetry.track(event, measurement);
   }
-  const toolProvider = await ToolProvider.new();
-  const serial = await resolveDeviceSerial(toolProvider, options.device);
-  const remotePath = `/data/local/tmp/devecocli-${randomUUID()}.png`;
-  await captureScreenshot({
-    hdcPath: toolProvider.hdcPath,
-    serial,
-    localPath,
-    remotePath,
-    display,
-  });
-  console.log(green(`Screenshot saved to ${localPath}`));
 }
 
 export const screenshotCommand = new Command('screenshot')

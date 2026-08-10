@@ -6,6 +6,7 @@ import fs from 'fs';
 import * as path from 'path';
 import json5 from 'json5';
 import { CommonUtils } from './common-utils.js';
+import { TraceError } from '../trace/index.js';
 import { debugLog } from './logger.js';
 
 export interface ProductNode {
@@ -99,8 +100,9 @@ export class Project {
   public getModuleType(moduleName: string): string {
     const moduleNode = this.profile.modules.find((m) => m.name === moduleName);
     if (!moduleNode) {
-      throw new Error(
-        `Module '${moduleName}' not found in project-level build-profile.json5.`
+      throw new TraceError(
+        `Module '${moduleName}' not found in project-level build-profile.json5.`,
+        'Module not found in project-level build-profile.json5.'
       );
     }
 
@@ -139,8 +141,9 @@ export class Project {
   public getModuleProfile(moduleName: string): ModuleProfile {
     const moduleNode = this.profile.modules.find((m) => m.name === moduleName);
     if (!moduleNode) {
-      throw new Error(
-        `Module '${moduleName}' not found in project-level build-profile.json5.`
+      throw new TraceError(
+        `Module '${moduleName}' not found in project-level build-profile.json5.`,
+        `Module not found in project-level build-profile.json5.`
       );
     }
 
@@ -148,8 +151,9 @@ export class Project {
     const profilePath = path.join(moduleDir, 'build-profile.json5');
 
     if (!fs.existsSync(profilePath)) {
-      throw new Error(
-        `Build profile for module '${moduleName}' not found at ${profilePath}.`
+      throw new TraceError(
+        `Build profile for module '${moduleName}' not found at ${profilePath}.`,
+        'Build profile for module not found at ${profilePath}.'
       );
     }
 
@@ -237,15 +241,17 @@ export class Project {
 
   public validateProduct(product: string): void {
     if (!/^[\da-zA-Z_-]+$/.test(product)) {
-      throw new Error(
-        `Invalid product name '${product}'. Product names must only contain letters, digits, underscores, and hyphens.`
+      throw new TraceError(
+        `Invalid product name '${product}'. Product names must only contain letters, digits, underscores, and hyphens.`,
+        'Invalid product name.'
       );
     }
     const productExists = this.profile.app.products?.some((p) => p.name === product);
     if (!productExists) {
       const availableProducts = this.profile.app.products?.map((p) => p.name).join(', ') || 'none';
-      throw new Error(
-        `Product '${product}' not found in project configuration. Available products: ${availableProducts}`
+      throw new TraceError(
+        `Product '${product}' not found in project configuration. Available products: ${availableProducts}`,
+        'Productnot found in project configuration.'
       );
     }
   }
@@ -340,7 +346,7 @@ export class Project {
     const moduleNode = this.profile.modules.find((m) => m.name === moduleName);
     if (!moduleNode) {
       const available = this.getRunnableModuleNames();
-      throw new Error(`Module '${moduleName}' not found. Available modules: ${available}`);
+      throw new TraceError(`Module '${moduleName}' not found. Available modules: ${available}`, 'Module not found.');
     }
 
     const isShared = this.getModuleType(moduleName) === 'shared';
@@ -354,8 +360,9 @@ export class Project {
     ]);
 
     if (!fs.existsSync(metadataPath)) {
-      throw new Error(
-        `Build metadata not found for module '${moduleName}' at ${metadataPath}. Build the project first.`
+      throw new TraceError(
+        `Build metadata not found for module '${moduleName}' at ${metadataPath}. Build the project first.`,
+        `Build metadata not found for module. Build the project first.`
       );
     }
 
@@ -388,8 +395,9 @@ export class Project {
 
     const signedSuffix = isShared ? '-signed.hsp' : '-signed.hap';
     if (!isEmulator && !finalPackageName.endsWith(signedSuffix)) {
-      throw new Error(
-        `Target device is a real device, but the artifact for '${moduleName}' is not signed. Real devices cannot install unsigned packages.`
+      throw new TraceError(
+        `Target device is a real device, but the artifact for '${moduleName}' is not signed. Real devices cannot install unsigned packages.`,
+        'Target device is a real device, but the artifact is not signed.'
       );
     }
 
@@ -400,7 +408,8 @@ export class Project {
     ]);
 
     if (!fs.existsSync(packagePath)) {
-      throw new Error(`Generated package file not found in ${packagePath}.`);
+      throw new TraceError(`Generated package file not found in ${packagePath}.`, 
+        'Generated package file not found.');
     }
 
     return packagePath;
@@ -430,8 +439,9 @@ export class Project {
         : this.buildOutputPath(moduleNode.srcPath, product, ['outputs', target, hspPath]);
 
       if (!fs.existsSync(resolvedPath)) {
-        throw new Error(
-          `Remote HSP dependency not found: ${resolvedPath}`
+        throw new TraceError(
+          `Remote HSP dependency not found: ${resolvedPath}`,
+          'Remote HSP dependency not found.'
         );
       }
       result.push(resolvedPath);
@@ -524,8 +534,9 @@ export class Project {
     }
 
     if (!packageName) {
-      throw new Error(
-        `Could not find ${metadataKey} in output_metadata.json at ${metadataPath}`
+      throw new TraceError(
+        `Could not find ${metadataKey} in output_metadata.json at ${metadataPath}`,
+        'Could not find metadataKey in output_metadata.json at metadataPath.'
       );
     }
 
@@ -540,14 +551,16 @@ private validatePackageName(packageName: string): void {
     const basename = path.basename(packageName);
     
     if (basename !== packageName) {
-      throw new Error(
-        `Invalid traversal name: '${packageName}'. It must contain path characters.`
+      throw new TraceError(
+        `Invalid traversal name: '${packageName}'. It must contain path characters.`,
+        'Invalid traversal name.'
       );
     }
     
     if (!basename.endsWith('.hap') && !basename.endsWith('.hsp')) {
-      throw new Error(
-        `Invalid package name '${basename}'.It must be a .hap or .hsp file.`
+      throw new TraceError(
+        `Invalid package name '${basename}'.It must be a .hap or .hsp file.`,
+        'Invalid package name.'
       );
     }
   }

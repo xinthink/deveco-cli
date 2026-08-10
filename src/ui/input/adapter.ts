@@ -11,6 +11,7 @@ import type { WindowInfo } from '../window/types.js';
 import { findNodesInTree } from '../layout/parsers.js';
 import type { ArkUiNode } from '../layout/types.js';
 import { runHdcWithRetry } from '../../utils/hdc-param.js';
+import { TraceError } from '../../trace/index.js';
 import { debugLog } from '../../utils/logger.js';
 
 export async function initDevice(deviceArg?: string) {
@@ -50,8 +51,9 @@ async function resolveByNodeId(
   if (windowId !== undefined) {
     const win = windows.find((w) => String(w.id) === windowId);
     if (win && win.displayId !== 0) {
-      throw new Error(
+      throw new TraceError(
         `Window "${windowId}" is on display ${win.displayId}. ` +
+        'The current command only supports operations on the primary display.',
         'The current command only supports operations on the primary display.'
       );
     }
@@ -78,14 +80,15 @@ async function resolveAcrossDisplays(
   }
 
   if (allMatches.length === 0) {
-    throw new Error(`Node "${nodeId}" not found.`);
+    throw new TraceError(`Node "${nodeId}" not found.`, 'Node not found.');
   }
   if (allMatches.length > 1) {
-    throw new Error(`Multiple nodes found with id "${nodeId}".`);
+    throw new TraceError(`Multiple nodes found with id "${nodeId}".`, 'Multiple nodes found');
   }
   if (allMatches[0].displayId !== 0) {
-      throw new Error(
+      throw new TraceError(
         `Node "${nodeId}" is on display ${allMatches[0].displayId}. ` +
+        'The current command only supports operations on the primary display.',
         'The current command only supports operations on the primary display.'
       );
   }
@@ -98,10 +101,10 @@ function findSingleMatch(
 ): { x: number; y: number } {
   const matched = findNodesInTree(tree, nodeId);
   if (matched.length === 0) {
-    throw new Error(`Node "${nodeId}" not found.`);
+    throw new TraceError(`Node "${nodeId}" not found.`, 'Node not found.');
   }
   if (matched.length > 1) {
-    throw new Error(`Multiple nodes found with id "${nodeId}".`);
+    throw new TraceError(`Multiple nodes found with id "${nodeId}".`, 'Multiple nodes found');
   }
   return extractNodeBounds(matched[0], nodeId);
 }
@@ -112,7 +115,7 @@ function extractNodeBounds(
 ): { x: number; y: number } {
   const nodeBounds = node.bounds;
   if (!nodeBounds) {
-    throw new Error(`Node "${nodeId}" has no bounds.`);
+    throw new TraceError(`Node "${nodeId}" has no bounds.`, 'Node has no bounds.');
   }
   const [left, top, right, bottom] = nodeBounds;
   return {

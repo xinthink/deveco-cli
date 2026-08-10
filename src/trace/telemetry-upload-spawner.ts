@@ -1,0 +1,60 @@
+/*
+ * Copyright (c) 2026 Huawei Device Co., Ltd.
+ * SPDX-License-Identifier: MIT
+ */
+
+import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { isUploadDue, isTelemetryDisabled } from './upload-state.js';
+import { mcpLog } from '../../mcp/src-server/utils/mcp-logger.js';
+
+/**
+ * 定位后台上传脚本。
+ *
+ * 本模块经 tsup 打包后内联进 dist/cli.js，故 import.meta.url 指向 dist/cli.js，
+ * dirname = dist/，背景脚本位于 dist/internal/telemetry-upload-background.js。
+ * dev 模式（tsx 直接跑源码）下该路径不存在，返回 null 跳过 spawn。
+ */
+function resolveBackgroundScript(): string | null {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidate = join(here, 'internal', 'telemetry-upload-background.js');
+  return existsSync(candidate) ? candidate : null;
+}
+
+/**
+ * 检查是否应触发后台上传，若应触发则 spawn 一个 detached 子进程执行 telemetry.flush()。
+ * 子进程脱离父进程（unref），不阻塞 CLI 退出；stdio 全部 ignore。
+ *
+ * 触发条件复用 MCP 调度器的 UPLOAD_INTERVAL_MS：firstEventAt 距 now 超过该值即 spawn。
+ */
+export function maybeSpawnTelemetryUpload(storageDir: string): void {
+  if (isTelemetryDisabled() || !isUploadDue(storageDir)) {
+    return;
+  }
+  const script = resolveBackgroundScript();
+  if (!script) {
+    mcpLog.warn('[telemetry] background upload script not found, skipping spawn');
+    return;
+  }
+  try {
+    const child = spawn(
+      process.execPath,
+      [script],
+      {
+        detached: true,
+        stdio: ['ignore', 'ignore', 'ignore'],
+        env: {
+          ...process.env,
+          DEVECO_CLI_SKIP_VERSION_CHECK: '1',
+          DEVECO_CLI_TELEMETRY_UPLOAD: '1',
+        },
+      },
+    );
+    child.unref();
+    mcpLog.info('[telemetry] background upload process spawned');
+  } catch (e) {
+    mcpLog.warn('[telemetry] failed to spawn background upload:', e);
+  }
+}

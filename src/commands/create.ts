@@ -13,6 +13,8 @@ import {
   createProject,
   CreateProjectResult,
 } from '../utils/template-provider.js';
+import { telemetry, EventType } from '../trace/index.js';
+import type { CommandExecuted, TrackMeasurement } from '../trace/index.js';
 import { CommonUtils } from '../utils/common-utils.js';
 
 interface CreateOptions {
@@ -24,13 +26,15 @@ interface CreateOptions {
 
 function validateAppName(name: string): void {
   if (name.length < 1 || name.length > 200) {
-    throw new Error(
+    throw new ValidationError(
+      'errorCode',
       `App name length must be 1-200 characters. Current: ${name.length}`
     );
   }
 
   if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name)) {
-    throw new Error(
+    throw new ValidationError(
+      'errorCode',
       'Application name must start with a letter (a-z, A-Z) and contain only letters, digits, and underscores'
     );
   }
@@ -48,11 +52,12 @@ function normalizeProjectPath(projectPath: string): string {
 
 function validateProjectPath(projectPath: string): void {
   if (projectPath.length === 0) {
-    throw new Error('Project path cannot be empty.');
+    throw new ValidationError('errorCode', 'Project path cannot be empty.');
   }
 
   if (projectPath.length > 120) {
-    throw new Error(
+    throw new ValidationError(
+      'errorCode',
       `Project path cannot exceed 120 characters (current: ${projectPath.length}).`
     );
   }
@@ -67,18 +72,27 @@ function validateProjectPath(projectPath: string): void {
       platform === 'win32'
         ? 'letters, digits, dots, underscores, hyphens, colons, slashes (/) or backslashes (\\)'
         : 'letters, digits, dots, underscores, hyphens or slashes (/)';
-    throw new Error(`Project path can only contain ${allowedChars}.`);
+    throw new ValidationError(
+      'errorCode',
+      `Project path can only contain ${allowedChars}.`
+    );
   }
 
   const normalizedPath = normalizeProjectPath(projectPath);
 
   const chineseRegex = /[\u4e00-\u9fff]/;
   if (chineseRegex.test(normalizedPath)) {
-    throw new Error('Project path cannot contain Chinese characters.');
+    throw new ValidationError(
+      'errorCode',
+      'Project path cannot contain Chinese characters.'
+    );
   }
 
   if (normalizedPath.endsWith('.')) {
-    throw new Error('Project path cannot end with a dot (.)');
+    throw new ValidationError(
+      'errorCode',
+      'Project path cannot end with a dot (.)'
+    );
   }
 }
 
@@ -104,7 +118,8 @@ function checkWritePermission(dirPath: string): void {
   const existingParent = findExistingParent(dirPath);
 
   if (!existingParent) {
-    throw new Error(
+    throw new ValidationError(
+      'errorCode',
       `No existing parent directory found for '${dirPath}'. Cannot create project directory.`
     );
   }
@@ -112,7 +127,8 @@ function checkWritePermission(dirPath: string): void {
   try {
     fs.accessSync(existingParent, fs.constants.W_OK);
   } catch {
-    throw new Error(
+    throw new ValidationError(
+      'errorCode',
       `No write permission for directory '${existingParent}'. Cannot create project here.`
     );
   }
@@ -125,7 +141,8 @@ function checkWritePermission(dirPath: string): void {
     fs.writeFileSync(testFile, 'test');
     fs.unlinkSync(testFile);
   } catch {
-    throw new Error(
+    throw new ValidationError(
+      'errorCode',
       `No write permission for directory '${existingParent}'. Cannot create project here.`
     );
   }
@@ -142,7 +159,8 @@ function resolveProjectPath(appName: string, specifiedPath?: string): string {
     if (fs.existsSync(resolvedPath)) {
       const contents = fs.readdirSync(resolvedPath);
       if (contents.length > 0) {
-        throw new Error(
+        throw new ValidationError(
+          'errorCode',
           `Directory '${resolvedPath}' is not empty. Cannot create project here.`
         );
       }
@@ -156,7 +174,8 @@ function resolveProjectPath(appName: string, specifiedPath?: string): string {
   const basePath = path.join(pwd, appName);
 
   if (fs.existsSync(basePath)) {
-    throw new Error(
+    throw new ValidationError(
+      'errorCode',
       `Directory '${basePath}' already exists. Cannot create project here.`
     );
   }
@@ -169,46 +188,42 @@ function resolveApiLevel(
   options: CreateOptions,
   toolProvider?: ToolProvider
 ): number {
-  const sdkMaxApi = toolProvider?.getMaxApiLevel(); // 有 IDE 时从 SDK 获取，无 IDE 时 undefined
-  const noIdeMaxApi = 23; // 无 IDE 时的默认上限
+  const sdkMaxApi = toolProvider?.getMaxApiLevel();
+  const noIdeMaxApi = 23;
 
   if (options.apiLevel) {
     const parsed = Number(options.apiLevel);
-    
-    // 最小 API 验证：API 版本从 17 开始
+
     if (!Number.isInteger(parsed) || parsed < 17) {
-      throw new Error(
+      throw new ValidationError(
+        'errorCode',
         `Invalid API version ${options.apiLevel}. API version 17 or higher is required.`
       );
     }
-    
-    // 最大 API 验证
+
     if (sdkMaxApi !== undefined) {
-      // 有 IDE：范围 17 ~ SDK maxApi
       if (parsed > sdkMaxApi) {
-        throw new Error(
+        throw new ValidationError(
+          'errorCode',
           `Invalid API version ${options.apiLevel}. Your SDK supports API version 17-${sdkMaxApi}`
         );
       }
     } else {
-      // 无 IDE：范围 17-23
       if (parsed > noIdeMaxApi) {
-        throw new Error(
+        throw new ValidationError(
+          'errorCode',
           `Invalid API version ${options.apiLevel}. Without DevEco Studio, supported range is API version 17-${noIdeMaxApi}`
         );
       }
     }
-    
+
     return parsed;
   }
 
-  // 不指定 API 时的默认值
   if (sdkMaxApi !== undefined) {
-    // 有 IDE：使用 SDK 的 apiVersion
     return sdkMaxApi;
   }
-  
-  // 无 IDE：默认 API 23
+
   return 23;
 }
 
@@ -221,6 +236,48 @@ async function tryGetToolProvider(): Promise<ToolProvider | undefined> {
     console.log(yellow('Use placeholder API level instead.'));
     return undefined;
   }
+}
+
+class ValidationError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'ValidationError';
+    this.code = code;
+  }
+}
+
+interface CreateOperation extends CommandExecuted {
+  apiLevel: string | null;
+}
+
+async function trackCreate(
+  start: number,
+  success: boolean,
+  errorCode: string | null,
+  options?: CreateOptions
+): Promise<void> {
+  const event: CreateOperation = {
+    event: EventType.CommandExecuted,
+    args: ['create'],
+    apiLevel: options?.apiLevel ?? null,
+  };
+  const measurement: TrackMeasurement = {
+    duration_ms: Date.now() - start,
+    success,
+    error_code: errorCode,
+  };
+  await telemetry.track(event, measurement).catch(() => {});
+}
+
+function printCreateResult(result: CreateProjectResult): void {
+  console.log('\n' + green('Project created successfully.'));
+  console.log(`Project root: ${result.projectRoot}`);
+  console.log(`App name: ${result.appName}`);
+  console.log(`Bundle name: ${result.bundleName}`);
+  console.log(`API level: ${result.apiLevel}`);
+  console.log(green('Template integrity check passed.'));
 }
 
 const createCommand = new Command('create')
@@ -239,9 +296,12 @@ const createCommand = new Command('create')
     'API level (auto-detected from SDK if omitted; minimum: 17)'
   )
   .action(async (options: CreateOptions) => {
+    const start = Date.now();
+
     try {
       if (!options.appName) {
         console.error(red('Error: --app-name is required'));
+        await trackCreate(start, false, 'errorCode', options);
         process.exit(1);
       }
 
@@ -276,16 +336,18 @@ const createCommand = new Command('create')
         devecoStudioPath
       );
 
-      console.log('\n' + green('Project created successfully.'));
-      console.log(`Project root: ${result.projectRoot}`);
-      console.log(`App name: ${result.appName}`);
-      console.log(`Bundle name: ${result.bundleName}`);
-      console.log(`API level: ${result.apiLevel}`);
-      console.log(green('Template integrity check passed.'));
+      printCreateResult(result);
+
+      await trackCreate(start, true, null, options);
     } catch (error) {
-      const e = error as Error;
+      const e = error as NodeJS.ErrnoException;
+      const isValidationError = error instanceof ValidationError;
+      const errorCode = isValidationError
+        ? (error as ValidationError).code
+        : (e.code ?? e.name ?? 'UnknownError');
       console.error(red('\nFailed to create project.'));
       console.error(red(e.message));
+      await trackCreate(start, false, errorCode, options);
       process.exit(1);
     }
   });
