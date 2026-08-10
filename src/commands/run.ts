@@ -242,6 +242,33 @@ async function runActionImpl(options: RunOptions): Promise<void> {
   await runNormalFlow(options, project, toolProvider);
 }
 
+async function handleHotReloadClear(daemonClient: HvigorDaemonClient, toolProvider: ToolProvider, project: Project) {
+  daemonClient.onSocketDisconnect(() => {
+    console.log('Daemon disconnected (likely via --hotreload stop). Exiting watch session.');
+    process.exit(0);
+  });
+
+  // Poll daemon liveness — on macOS socket.io disconnect detection is slow
+  // (25s+ heartbeat timeout). Polling the registry catches --hotreload stop
+  // within 3 seconds regardless of OS.
+  const hvigorAdapterPoll = new HvigorAdapter(toolProvider, project.rootDir);
+  const pollTimer = setInterval(async () => {
+    if (!(await hvigorAdapterPoll.isDaemonAlive())) {
+      clearInterval(pollTimer);
+      console.log('Daemon stopped (via --hotreload stop). Exiting watch session.');
+      process.exit(0);
+    }
+  }, 3000);
+
+  await new Promise<void>(() => {
+    // Never resolves: the CLI process stays alive holding the watch-session
+    // socket open so the daemon's watch worker stays (for --hotreload-apply).
+    // When the daemon is stopped (--hotreload stop), either the socket
+    // disconnect handler or the poll timer catches it and exits.
+    // Ctrl+C also exits (SIGINT default handler).
+  });
+}
+
 async function runHotReloadFlow(
   options: RunOptions, project: Project, toolProvider: ToolProvider
 ): Promise<void> {
@@ -297,18 +324,7 @@ async function runHotReloadFlow(
     green('Hot-reload watch session active (socket persistent). Edit code, write .hvigor/<file>, then `devecocli run --hotreload-apply <file>` in another terminal. Ctrl+C here to stop.')
   );
 
-  daemonClient.onSocketDisconnect(() => {
-    console.log('Daemon disconnected (likely via --hotreload stop). Exiting watch session.');
-    process.exit(0);
-  });
-
-  await new Promise<void>(() => {
-    // Never resolves: the CLI process stays alive holding the watch-session
-    // socket open so the daemon's watch worker stays (for --hotreload-apply).
-    // When the daemon is killed (--hotreload stop), the socket disconnects
-    // and the handler above calls process.exit(0).
-    // Ctrl+C also exits (SIGINT default handler).
-  });
+  await handleHotReloadClear(daemonClient, toolProvider, project);
 }
 
 async function runHotReloadApplyFlow(
