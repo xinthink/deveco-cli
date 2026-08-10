@@ -41,7 +41,7 @@ interface LintOptions {
 export function createLintCommand(): Command {
   return new Command('lint')
     .description('Run DevEco Code Linter checks for TS/ArkTS code')
-    .helpOption('--help', 'display help for command')
+    .helpOption('-h, --help', 'display help for command')
     .addArgument(
       new Argument('[path]', 'File or directory to lint').argParser(
         parseLintPath
