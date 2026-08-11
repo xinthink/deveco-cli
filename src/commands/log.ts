@@ -9,6 +9,13 @@ import { CommonUtils } from '../utils/common-utils.js';
 import { cyan, red } from 'colorette';
 import ora from 'ora';
 import { debugLog } from '../utils/logger.js';
+import {
+  telemetry,
+  EventType,
+  type CommandExecuted,
+  type TrackMeasurement,
+  TraceError,
+} from '../trace/index.js';
 
 interface LogOptions {
   device?: string;
@@ -20,6 +27,71 @@ interface LogOptions {
   tail?: number;
   from?: number;
   to?: number;
+}
+
+interface LogTraceEvent extends CommandExecuted {
+  logType: 'common' | 'crash';
+  level: string;
+  bundleName: string;
+}
+
+function buildLogArgs(options: LogOptions): string[] {
+  return [
+    'log',
+    ...(options.device ? ['--device'] : []),
+    ...(options.crash ? ['--crash'] : []),
+    ...(options.level ? ['--level'] : []),
+    ...(options.bundleName ? ['--bundle-name'] : []),
+    ...(options.keyword ? ['--keyword'] : []),
+    ...(options.tail !== undefined ? ['--tail'] : []),
+    ...(options.from !== undefined ? ['--from'] : []),
+    ...(options.to !== undefined ? ['--to'] : []),
+    ...(options.follow ? ['--follow'] : []),
+  ];
+}
+
+function buildLogEvent(options: LogOptions): LogTraceEvent {
+  return {
+    event: EventType.CommandExecuted,
+    args: buildLogArgs(options),
+    logType: options.crash ? 'crash' : 'common',
+    level: options.level ?? 'ALL',
+    bundleName: options.bundleName ?? 'ALL',
+  };
+}
+
+function resolveLogErrorCode(error: unknown): string {
+  if (error instanceof TraceError) {
+    return error.traceMessage;
+  }
+  if (error instanceof Error) {
+    return (error as NodeJS.ErrnoException).code ?? error.name;
+  }
+  return 'UnknownError';
+}
+
+async function withLogTrace(
+  event: LogTraceEvent,
+  action: () => Promise<void>
+): Promise<void> {
+  const start = Date.now();
+  let success = true;
+  let errorCode: string | null = null;
+  try {
+    await action();
+  } catch (error) {
+    success = false;
+    errorCode = resolveLogErrorCode(error);
+    console.error(red((error as Error).message));
+    process.exitCode = 1;
+  } finally {
+    const measurement: TrackMeasurement = {
+      duration_ms: Date.now() - start,
+      success,
+      error_code: errorCode,
+    };
+    await telemetry.track(event, measurement).catch(() => {});
+  }
 }
 
 function parsePositiveInt(value: string): number {
@@ -109,7 +181,11 @@ const logCommand = new Command('log')
   .option('--device <device>', 'Target device (name or serial)')
   .option('--crash', 'Only obtain crash logs')
   .option('--level <level>', 'Log level filter: D, I, W, E, F', parseHilogLevel)
-  .option('--bundle-name <bundle-name>', 'Filter by application bundle name', parseBundleName)
+  .option(
+    '--bundle-name <bundle-name>',
+    'Filter by application bundle name',
+    parseBundleName
+  )
   .option('--keyword <keyword>', 'Keyword filter')
   .option('--tail <num>', 'Show only the latest N log lines', parsePositiveInt)
   .option(
@@ -124,10 +200,10 @@ const logCommand = new Command('log')
   )
   .option('--follow', 'Follow the log stream in real-time.')
   .action(async (options: LogOptions) => {
-    await handleLogCommand(options);
+    await withLogTrace(buildLogEvent(options), () => handleLogCommand(options));
   });
 
-async function handleLogCommand(options: LogOptions) {
+async function handleLogCommand(options: LogOptions): Promise<void> {
   const spinner = ora({
     text: 'Preparing log request…',
     color: 'cyan',
@@ -136,8 +212,8 @@ async function handleLogCommand(options: LogOptions) {
     spinner.stop();
     spinner.clear();
   };
+  spinner.start();
   try {
-    spinner.start();
     validateLogTimeRange(options);
     const fromSeconds = options.from;
     const toSeconds = options.to;
@@ -147,8 +223,10 @@ async function handleLogCommand(options: LogOptions) {
 
     const deviceId = await service.selectDevice(options.device);
     if (!deviceId) {
-      stopAndClearSpinner();
-      process.exit(1);
+      throw new TraceError(
+        'No active devices found.',
+        'No active devices found.'
+      );
     }
 
     debugLog(cyan(`deviceId: ${deviceId}`));
@@ -176,10 +254,8 @@ async function handleLogCommand(options: LogOptions) {
     if (logs) {
       console.log(logs);
     }
-  } catch (error) {
+  } finally {
     stopAndClearSpinner();
-    console.error(red((error as Error).message));
-    process.exit(1);
   }
 }
 
