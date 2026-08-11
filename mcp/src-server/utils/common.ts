@@ -254,24 +254,16 @@ export function sleep(ms: number): Promise<void> {
 
 /**
  * 受 clangd 支持的 C/C++ 源 / 头文件扩展名（小写、无前导点）。
- * 与 Rust 版本 `is_supported_cpp_file` 保持一致。
  */
 const CPP_SUPPORTED_EXTENSIONS = new Set([
   'c',
   'cc',
   'cpp',
   'cxx',
-  'c++',
   'h',
   'hh',
   'hpp',
   'hxx',
-  'h++',
-  'ipp',
-  'ixx',
-  'inl',
-  'inc',
-  'tpp',
 ]);
 
 /** 判断给定文件路径是否是受支持的 C/C++ 源 / 头文件。 */
