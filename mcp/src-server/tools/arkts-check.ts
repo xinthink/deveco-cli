@@ -61,6 +61,8 @@ export class ArktsCheckTool {
   private useStandardProtocol: boolean = true;
   /** legacy 模式：按 uri 等待 publishDiagnostics 的 waiter。 */
   private readonly diagnosticWaiters = new Map<string, DiagnosticWaiter>();
+  /** didOpen 文档版本号，每次发送递增，保证 LSP server 感知文件内容更新。 */
+  private documentVersion = 0;
 
   /** feature 名称 → LSP method 字符串的映射（解决 camelCase → UPPER_SNAKE_CASE 不匹配） */
   private static readonly FEATURE_METHOD_MAP: Record<string, string> = {
@@ -271,7 +273,7 @@ export class ArktsCheckTool {
   ): Promise<unknown> {
     mcpLog.debug(`textDocument/didOpen uri=${sendUri} content_len=${content.length}`);
     this.sendNotification('textDocument/didOpen', {
-      textDocument: { uri: sendUri, text: content, languageId, version: 1 },
+      textDocument: { uri: sendUri, text: content, languageId, version: ++this.documentVersion },
     });
     try {
       mcpLog.debug(`textDocument/diagnostic uri=${sendUri}`);
@@ -787,7 +789,7 @@ export class ArktsCheckTool {
 
     mcpLog.debug(`withOpenFile didOpen uri=${uri} len=${content.length}`);
     this.sendNotification('textDocument/didOpen', {
-      textDocument: { uri, text: content, languageId, version: content.length },
+      textDocument: { uri, text: content, languageId, version: ++this.documentVersion },
     });
     try {
       return await action(uri);

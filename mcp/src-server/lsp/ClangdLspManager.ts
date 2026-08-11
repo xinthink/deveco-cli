@@ -73,6 +73,11 @@ export class ClangdLspManager {
         return this.isInitialized && this.proxy !== null;
     }
 
+    /** clangd 子进程 pid（未启动 / 已 dispose 时为 null）。 */
+    get clangdPid(): number | null {
+        return this.proxy?.clangdPid ?? null;
+    }
+
     /** start() 解析出的真实 harmony root（start 之前为空）。 */
     get projectRoot(): string {
         return this.resolvedRoot;

@@ -20,19 +20,6 @@ function parseLimit(value: string): number {
   return n;
 }
 
-function readFormatFromArgv(): string | undefined {
-  const argv = process.argv;
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--format' && i + 1 < argv.length) {
-      return argv[i + 1];
-    }
-    if (argv[i].startsWith('--format=')) {
-      return argv[i].slice('--format='.length);
-    }
-  }
-  return undefined;
-}
-
 const compatCommand = new Command('compat').description(
   'Compatibility checking utilities.'
 );
@@ -45,7 +32,7 @@ compatCommand
   .arguments('[files...]')
   .option(
     '--source-version <version>',
-      'Current project SDK version (required; use `compat versions` to list available versions). ' +
+    'Current project SDK version (required; use `compat versions` to list available versions). ' +
       'On zsh, quote the value because version strings contain parentheses; run `compat versions` first to copy a real example.'
   )
   .option(
@@ -82,8 +69,11 @@ compatCommand
     'List all available target SDK versions for compatibility checking'
   )
   .option('--format <format>', 'Output format: default or json')
-  .action(async () => {
-    await handleVersionsCommand(readFormatFromArgv());
+  .action(async (_options: { format?: string }, command: Command) => {
+    // compatCommand 与 versions 都定义了 --format，父级的 option 会先消费掉该值，
+    // 因此从 command.optsWithGlobals()（父级优先）读取，而非子命令自身的 opts。
+    const format = command.optsWithGlobals<{ format?: string }>().format;
+    await handleVersionsCommand(format);
   });
 
 const checkCommand = new Command('check')

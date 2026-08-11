@@ -42,15 +42,34 @@ export async function startArktsLspServer(options: ArktsLspOptions): Promise<voi
   mcpLog.info('ace-server started, bridging stdio (initialize is left to the client)');
   setupBridge(child);
 
-  await trackServeLspStart(child.pid);
+  await trackServeLspStart(child.pid, buildServeLspArgs('--arkts', options));
+}
+
+/**
+ * 手工构造打点 args：仅 flag 名，取值（如 --project-path 的路径）不记录，
+ * 与 buildRunEvent 等既有惯例一致。
+ */
+export function buildServeLspArgs(
+  serverFlag: string,
+  options: { projectPath?: string; autoDetect?: boolean }
+): string[] {
+  return [
+    serverFlag,
+    ...(options.projectPath ? ['--project-path'] : []),
+    ...(options.autoDetect ? ['--auto-detect'] : []),
+  ];
 }
 
 /**
  * 落盘一条 `devecocli_serve_lsp` 事件：event_detail 含 `devecocli serve lsp` 之后的
- * 命令行参数（args，如 --arkts）与 ace-server 子进程内存（lspMemory）。
+ * 命令行 flag 名（args，仅 flag 不含取值，如 --arkts / --cpp，遵循 PRIVACY.md）与
+ * LSP 子进程启动期内存（lspMemory，spawn 后即时采样）。
  * 用 §3.1 无被测函数重载——仅记录发生，duration=0 / success=true。
  */
-async function trackServeLspStart(childPid: number | null): Promise<void> {
+export async function trackServeLspStart(
+  childPid: number | null,
+  args: string[]
+): Promise<void> {
   let lspMemory = 'unknown';
   if (childPid !== null) {
     const rssKb = await readProcessRss(childPid);
@@ -60,7 +79,7 @@ async function trackServeLspStart(childPid: number | null): Promise<void> {
   }
   const event: ServeLspOperation = {
     event: EventType.ServeLsp,
-    args: process.argv.slice(2),
+    args,
     lspMemory,
   };
   await telemetry.track(event);

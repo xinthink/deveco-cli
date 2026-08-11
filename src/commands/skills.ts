@@ -329,9 +329,31 @@ function deriveSkillsErrorCode(error: unknown): string {
     : (e.code ?? e.name ?? 'UnknownError');
 }
 
+/**
+ * 手工构造打点 args：仅 flag 名，取值不记录；--agent 取值非敏感，一并记录。
+ * 与 buildRunEvent 等既有惯例一致，避免用户路径经 process.argv 进入打点。
+ */
+function buildSkillsArgs(
+  subAction: 'list' | 'find' | 'add' | 'remove',
+  options: Partial<AddOptions> & { long?: boolean } = {}
+): string[] {
+  return [
+    'skills',
+    subAction,
+    ...(options.all ? ['--all'] : []),
+    ...(options.long ? ['--long'] : []),
+    ...(options.skill ? ['--skill'] : []),
+    ...(options.force ? ['--force'] : []),
+    ...(options.agent ? ['--agent', options.agent] : []),
+    ...(options.project ? ['--project'] : []),
+    ...(options.path ? ['--path'] : []),
+  ];
+}
+
 async function trackSkillsOperation(
   subAction: string,
   fn: () => Promise<Record<string, unknown>>,
+  args: string[]
 ): Promise<void> {
   const start = Date.now();
   let success = true;
@@ -347,7 +369,7 @@ async function trackSkillsOperation(
     const event: SkillOperation = {
       event: EventType.SkillOperation,
       subAction,
-      args: process.argv.slice(2).filter((a) => a.startsWith('-')),
+      args,
       ...extra,
     };
     await telemetry.track(event, {
@@ -360,10 +382,14 @@ async function trackSkillsOperation(
 
 /** devecocli skills add：下载数据量 + 安装结果计数 + 失败原因。 */
 function trackSkillsAdd(options: AddOptions): Promise<void> {
-  return trackSkillsOperation('add', async () => {
-    const { diskBytes, results } = await handleAddCommand(options);
-    return { diskUsage: formatBytesMb(diskBytes), ...computeOpCounts(results) };
-  });
+  return trackSkillsOperation(
+    'add',
+    async () => {
+      const { diskBytes, results } = await handleAddCommand(options);
+      return { diskUsage: formatBytesMb(diskBytes), ...computeOpCounts(results) };
+    },
+    buildSkillsArgs('add', options)
+  );
 }
 
 /**
@@ -552,7 +578,7 @@ skillsCommand
         } finally {
           spinner.stop();
         }
-      });
+      }, buildSkillsArgs('list', options));
     } catch (error: unknown) {
       console.error(red((error as Error).message));
       process.exit(1);
@@ -593,7 +619,7 @@ skillsCommand
         } finally {
           spinner.stop();
         }
-      });
+      }, buildSkillsArgs('find'));
     } catch (error: unknown) {
       console.error(red((error as Error).message));
       process.exit(1);
@@ -644,7 +670,7 @@ skillsCommand
       await trackSkillsOperation('remove', async () => {
         const results = await handleRemoveCommand(options.skill!, options);
         return computeOpCounts(results);
-      });
+      }, buildSkillsArgs('remove', options));
     } catch (error: unknown) {
       console.error(red((error as Error).message));
       process.exit(1);
