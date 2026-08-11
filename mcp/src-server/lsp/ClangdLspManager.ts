@@ -165,27 +165,36 @@ export class ClangdLspManager {
 
         const result = await tryWithBuildLock(
             workspaceRoot,
-            async () => {
-                try {
-                    if (skipCompileNative) {
-                        logger.info('[ClangdLspManager] compileNative skipped (C++ project up-to-date)');
-                        return { status: 'success' as const };
-                    }
-                    await initializeCppProject(workspaceRoot, sdkPath, nodePath, hvigorJsPath);
-                    logger.info('[ClangdLspManager] compileNative + merge compile_commands completed');
+            skipCompileNative
+                ? async () => {
+                    logger.info('[ClangdLspManager] compileNative skipped (C++ project up-to-date)');
                     return { status: 'success' as const };
-                } catch (e) {
-                    const reason = e instanceof Error ? e.message : String(e);
-                    logger.error(`[ClangdLspManager] compileNative failed: ${reason}`);
-                    return { status: 'failed' as const, reason };
                 }
-            },
+                : async () => ClangdLspManager.executeCompileNative(workspaceRoot, sdkPath, nodePath, hvigorJsPath),
         );
         if (!result.acquired) {
             logger.info('[ClangdLspManager] Build lock held by another process, skipping sync');
             return { status: 'skipped', reason: 'build lock held by another process' };
         }
         return result.result;
+    }
+
+    /** 执行 compileNative + 合并 compile_commands.json，返回成功/失败结果。 */
+    private static async executeCompileNative(
+        workspaceRoot: string,
+        sdkPath: string,
+        nodePath: string,
+        hvigorJsPath: string,
+    ): Promise<CppSyncResult> {
+        try {
+            await initializeCppProject(workspaceRoot, sdkPath, nodePath, hvigorJsPath);
+            logger.info('[ClangdLspManager] compileNative + merge compile_commands completed');
+            return { status: 'success' as const };
+        } catch (e) {
+            const reason = e instanceof Error ? e.message : String(e);
+            logger.error(`[ClangdLspManager] compileNative failed: ${reason}`);
+            return { status: 'failed' as const, reason };
+        }
     }
 
     async dispose(): Promise<void> {

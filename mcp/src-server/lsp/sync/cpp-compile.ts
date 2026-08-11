@@ -340,7 +340,7 @@ export function prepareCppCheck(projectPath: string, filesToCheck: string[]): bo
  */
 const CPP_MTIME_TOLERANCE_MS = 1000;
 
-/** HarmonyOS C++ 模块中 CMakeLists.txt 的标准相对路径段。 */
+/** C++ 模块中 CMakeLists.txt 的标准相对路径段。 */
 const CMAKE_LISTS_RELATIVE_SEGMENTS = ['src', 'main', 'cpp', 'CMakeLists.txt'] as const;
 
 /** 递归遍历时跳过的目录名（构建产物 / 依赖缓存，非源码）。 */

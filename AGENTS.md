@@ -36,6 +36,7 @@ There is **no test framework** (no vitest/jest, no `*.test.ts`). Verification = 
 - `DEVECO_CLI_DEBUG=1` — log raw `node` / `ohpm` / `hvigor` / `hdc` / `emulator` invocations via `utils/logger.ts → debugLog`. Also prints stack traces on error from `cli.ts`.
 - `DEVECO_CLI_SKIP_VERSION_CHECK=1` — bypass the DevEco Studio 6.1.0+ version check on startup. (`update` is the only command exempt by default; see `TOOLCHAIN_FREE_COMMANDS` in `src/cli.ts`.)
 - `DEVECO_CLI_DATA_DIR` — override user data root (default `~/.local/share/deveco-cli`). Derives `docs/.index/search.db`, `logs/doc-init.log`, `TraceLogData/upload-state.json`, etc.
+- `DEVECO_CLI_CPP_ENABLED` — set to `false` or `0` to disable C++ LSP in the MCP server (skips `compileNative` + `clangd`; C++ tools return "disabled"). Default: enabled.
 - `HTTP_PROXY` / `HTTPS_PROXY` — honoured by `global-agent` bootstrapped in `src/cli.ts`.
 
 ## Architecture
