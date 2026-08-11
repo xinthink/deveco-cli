@@ -15,7 +15,6 @@ import {
     DocumentSymbolParams,
     DefinitionParams,
     HoverParams,
-    LspDiagnostic,
     Position,
     PublishDiagnosticsParams,
     ReferenceParams,
@@ -79,6 +78,11 @@ export class ClangdLspProxy {
 
     setOnMessage(callback: (msg: LspMessage) => void): void {
         this.onMessage = callback;
+    }
+
+    /** clangd 子进程 pid（未 spawn / 已 dispose 时为 null）。 */
+    get clangdPid(): number | null {
+        return this.clangdProcess?.pid ?? null;
     }
 
     consumeStartErrorMessage(): string | null {

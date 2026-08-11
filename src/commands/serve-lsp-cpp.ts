@@ -14,6 +14,7 @@ import {
 } from '../../mcp/src-server/utils/common.js';
 import { toUnixPath } from '../../mcp/src-server/lsp/utils.js';
 import { initMcpLogger, mcpLog } from '../../mcp/src-server/utils/mcp-logger.js';
+import { trackServeLspStart, buildServeLspArgs } from './serve-lsp.js';
 
 export interface CppLspOptions {
   projectPath?: string;
@@ -51,6 +52,10 @@ export async function startClangdLspServer(options: CppLspOptions): Promise<void
     'clangd started, bridging stdio (initialize is left to the client)',
   );
   setupBridge(child);
+  await trackServeLspStart(
+    child.pid,
+    buildServeLspArgs('--cpp', options)
+  );
 }
 
 async function resolvePaths(options: CppLspOptions): Promise<{

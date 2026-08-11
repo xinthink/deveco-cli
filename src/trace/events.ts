@@ -13,7 +13,7 @@ export interface CommandExecuted extends BaseEvent {
 }
 
 export interface McpToolCall extends BaseEvent {
-  /** 具体工具名（hover / check 等），落 event_detail.sub_action */
+  /** 具体工具名（hover / check 等）或内部动作（init_arkts / init_cpp），落 event_detail.sub_action */
   subAction: string;
   /** 调用方向（callHierarchy 的 incoming/outgoing），有则落 event_detail.direction */
   direction?: string;
@@ -85,7 +85,7 @@ export interface WorkspaceSymbolToolCall extends McpToolCall {
 export interface SkillOperation extends BaseEvent {
   /** 操作类型：add / list / find / remove，落 event_detail.sub_action */
   subAction: string;
-  /** 命令行 flags（仅 --xxx / -x，剔除其后跟的值，避免敏感信息） */
+  /** 命令行参数（含命令路径，如 skills add；flag 仅记名，--agent 取值非敏感一并记录，--project/--path 等路径类取值剔除） */
   args: string[];
   /** add：本次下载数据量（MB） */
   diskUsage?: string;

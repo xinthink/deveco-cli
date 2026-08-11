@@ -8,7 +8,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import * as path from 'path';
 import { z } from 'zod';
 import { ToolRouter, createToolRouter } from './router.js';
-import type { Telemetry } from '../../src/trace/index.js';
+import { EventType, toTraceErrorCode, type Telemetry, type McpToolCall, type TrackMeasurement } from '../../src/trace/index.js';
+import { readProcessRss, formatBytesMb } from '../../src/utils/process-rss.js';
 import { ArktsCheckTool, CppCheckTool, ClangdLspTool } from './tools/index.js';
 import { detectStandardProtocol, findHarmonyProject, isSupportedCppFile } from './utils/common.js';
 import { CommonUtils } from '../../src/utils/common-utils.js';
@@ -1336,16 +1337,21 @@ export class DevecoCliMcpServer {
       this.needsReinit = true;
       this.projectState = ProjectLifecycle.IDLE;
     });
+    const initStart = Date.now();
     try {
       await this.arktsCheckTool.initialize();
       this.projectState = ProjectLifecycle.READY;
       this.initRetryCount = 0;
       mcpLog.info('Project fully initialized, check tool is available');
+      await this.trackInit('init_arkts', initStart, true, null, this.arktsCheckTool?.aceServerPid ?? null);
     } catch (err) {
       mcpLog.error('LSP initialization failed:', err);
+      const errorCode = toTraceErrorCode(err);
+      const arktsPid = this.arktsCheckTool?.aceServerPid ?? null;
       this.arktsCheckTool = null;
       this.initRetryCount++;
       this.projectState = ProjectLifecycle.ERROR;
+      await this.trackInit('init_arkts', initStart, false, errorCode, arktsPid);
     }
   }
 
@@ -1469,6 +1475,7 @@ export class DevecoCliMcpServer {
       workspaceRoot: projectPath,
       clangdPath: this.clangdPath ?? '',
     });
+    const initStart = Date.now();
     try {
       await this.cppLspManager.start();
       this.cppCheckTool = new CppCheckTool(this.cppLspManager);
@@ -1476,8 +1483,11 @@ export class DevecoCliMcpServer {
       this.cppProjectState = CppLifecycle.READY_CPP;
       this.cppInitRetryCount = 0;
       mcpLog.info('[Cpp] C++ project fully initialized, C++ tools are available');
+      await this.trackInit('init_cpp', initStart, true, null, this.cppLspManager?.clangdPid ?? null);
     } catch (err) {
       mcpLog.error('[Cpp] C++ LSP initialization failed:', err);
+      const errorCode = toTraceErrorCode(err);
+      const cppPid = this.cppLspManager?.clangdPid ?? null;
       if (this.cppLspManager) {
         this.cppLspManager.dispose().catch(() => {});
       }
@@ -1486,7 +1496,45 @@ export class DevecoCliMcpServer {
       this.cppLspTool = null;
       this.cppInitRetryCount++;
       this.cppProjectState = CppLifecycle.ERROR_CPP;
+      await this.trackInit('init_cpp', initStart, false, errorCode, cppPid);
     }
+  }
+
+  /**
+   * 落盘一条 `devecocli_serve_mcp` 事件（subAction 为 init_arkts / init_cpp）：
+   * measurement 含该语言后端初始化耗时 / 成败 / 错误码，event_detail 含 mcp 父进程内存
+   * 与对应 LSP 子进程内存（arkts=ace-server pid，cpp=clangd pid，均经 readProcessRss 采样）。
+   * 用 §3.1 无被测函数重载。
+   */
+  private async trackInit(
+    subAction: 'init_arkts' | 'init_cpp',
+    start: number,
+    success: boolean,
+    errorCode: string | null,
+    lspPid: number | null,
+  ): Promise<void> {
+    if (!this.config.telemetry) {
+      return;
+    }
+    let lspMemory = 'unknown';
+    if (lspPid !== null) {
+      const rssKb = await readProcessRss(lspPid);
+      if (rssKb !== null) {
+        lspMemory = formatBytesMb(Number(rssKb) * 1024);
+      }
+    }
+    const event: McpToolCall = {
+      event: EventType.McpToolCall,
+      subAction,
+      mcpMemory: formatBytesMb(process.memoryUsage().rss),
+      lspMemory,
+    };
+    const measurement: TrackMeasurement = {
+      duration_ms: Date.now() - start,
+      success,
+      error_code: errorCode,
+    };
+    await this.config.telemetry.track(event, measurement).catch(() => {});
   }
 
   /**
