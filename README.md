@@ -126,6 +126,10 @@ devecocli init --path D:\work\ARKTS\NewData
 - `Tail the last error logs from this app`
 - `Check for syntax errors in src/main/ets/pages/Index.ets`
 
+**说明：**
+- 在`Windows`上搭配`devecocli`使用`opencode`时，推荐将[powershell 7](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows?view=powershell-7.6) 作为默认执行终端。
+- 在`Windows`上用`opencode`执行devecocli build/emulator start等指令时，若命令结束后终端无法正常退出，建议将默认终端切换为[powershell 7](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows?view=powershell-7.6)
+
 ## 常用命令
 
 | 命令                        | 用途                                        |
