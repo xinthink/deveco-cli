@@ -13,6 +13,7 @@ import { tokenChecker } from '../utils/token-checker';
 import { httpClient } from '../../utils/http-client';
 import { DefinedError } from '../utils/errors.js';
 import { debugLog } from '../../utils/logger';
+import { reportAgreementSigned } from './agreement-sign';
 
 /**
  * 登录服务类
@@ -103,6 +104,7 @@ export class LoginService {
       await tokenStorage.saveJwtToken(jwtToken);
       debugLog('JWT token saved');
 
+      reportAgreementSigned(userInfo.accessToken);
       return userInfo;
     } finally {
       if (this.server) {
@@ -147,7 +149,6 @@ export class LoginService {
 
   /**
    * 获取当前会话信息
-   * 从磁盘的 JWT Token 解析用户信息
    * @param refreshToken 是否刷新 accessToken，默认 true
    * @returns 会话信息对象，如果未登录则返回 null
    */
