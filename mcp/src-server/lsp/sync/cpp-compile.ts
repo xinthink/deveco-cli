@@ -285,6 +285,7 @@ export async function runCompileNative(
  * 1. 查找含 C++ 的模块
  * 2. 对每个模块执行 compileNative
  * 3. 合并 compile_commands.json
+ * 4. 写入源文件清单 manifest（供启动期 {@link checkCppSyncRequired} 对比增删）
  */
 export async function initializeCppProject(projectPath: string, sdkPath: string, nodePath: string, hvigorJsPath: string): Promise<void> {
     const cppModules = findCppModules(projectPath);
@@ -300,6 +301,7 @@ export async function initializeCppProject(projectPath: string, sdkPath: string,
 
     await runCompileNative(projectPath, sdkPath, nodePath, hvigorJsPath, cppModules);
     findAndMergeCompileCommands(projectPath);
+    writeCppSourceManifest(projectPath, cppModules);
 }
 
 /** 检查是否需要进行 C++ 初始化。返回 true 表示需要初始化，false 表示可以直接检查。 */
@@ -328,4 +330,198 @@ export function prepareCppCheck(projectPath: string, filesToCheck: string[]): bo
 
     mcpLog.info('[CppCompile] All files covered, no initialization needed');
     return false;
+}
+
+/* ---------- C++ 同步必要性检查（MCP 启动期） ---------- */
+
+/**
+ * mtime 容差（毫秒）。与 project-check.ts 保持一致，
+ * 部分文件系统（FAT32、网络挂载）的 mtime 精度为 2s，引入 1s 容差避免误判。
+ */
+const CPP_MTIME_TOLERANCE_MS = 1000;
+
+/** HarmonyOS C++ 模块中 CMakeLists.txt 的标准相对路径段。 */
+const CMAKE_LISTS_RELATIVE_SEGMENTS = ['src', 'main', 'cpp', 'CMakeLists.txt'] as const;
+
+/** 递归遍历时跳过的目录名（构建产物 / 依赖缓存，非源码）。 */
+const SKIP_DIR_NAMES = new Set(['.cxx', 'build', 'node_modules', '.preview', '.hvigor', '.idea']);
+
+/** C++ 源文件扩展名（compile_commands.json 仅记录编译单元，不含头文件）。 */
+const CPP_SOURCE_EXTENSIONS = new Set(['c', 'cpp', 'cxx', 'cc']);
+
+/** manifest 文件名（与 compile_commands.json 同目录）。 */
+const CPP_SOURCE_MANIFEST_FILENAME = 'cpp-source-manifest.json';
+
+/** C++ 同步必要性检查结果。 */
+export interface CppSyncCheckResult {
+    required: boolean;
+    reason: string;
+}
+
+/** manifest 文件结构。 */
+interface CppSourceManifest {
+    /** 上次初始化时记录的 C++ 源文件相对路径列表（已排序）。 */
+    files: string[];
+    /** 写入时间戳（ms）。 */
+    updatedAt: number;
+}
+
+/** 判断是否为 C++ 源文件（编译单元，不含头文件）。 */
+function isCppSourceFile(fileName: string): boolean {
+    const ext = path.extname(fileName).replace(/^\./, '').toLowerCase();
+    return CPP_SOURCE_EXTENSIONS.has(ext);
+}
+
+/** 文件存在且 mtime 晚于 baseline（含容差）则返回 true。 */
+function isFileNewerThan(filePath: string, baseline: number): boolean {
+    if (!fs.existsSync(filePath)) {
+        return false;
+    }
+    return fs.statSync(filePath).mtimeMs - baseline > CPP_MTIME_TOLERANCE_MS;
+}
+
+/** manifest 文件绝对路径（与 compile_commands.json 同目录）。 */
+function cppSourceManifestPath(projectPath: string): string {
+    return path.join(path.dirname(compileCommandsPath(projectPath)), CPP_SOURCE_MANIFEST_FILENAME);
+}
+
+/** 递归收集模块源目录下所有 C++ 源文件的相对路径（readdirSync，不逐文件 statSync）。 */
+function collectCppSourceRelPaths(dir: string, projectRoot: string, result: string[]): void {
+    let entries: fs.Dirent[];
+    try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+        return;
+    }
+    for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            if (SKIP_DIR_NAMES.has(entry.name)) {
+                continue;
+            }
+            collectCppSourceRelPaths(fullPath, projectRoot, result);
+        } else if (isCppSourceFile(entry.name)) {
+            result.push(path.relative(projectRoot, fullPath).replace(/\\/g, '/'));
+        }
+    }
+}
+
+/** 收集所有 C++ 模块的源文件相对路径（已排序）。 */
+function collectAllCppSourceRelPaths(projectPath: string, cppModules: ModuleInfo[]): string[] {
+    const result: string[] = [];
+    for (const mod of cppModules) {
+        const modulePath = CommonUtils.resolvePathWithinRoot(projectPath, mod.srcPath);
+        collectCppSourceRelPaths(modulePath, projectPath, result);
+    }
+    return result.sort();
+}
+
+/**
+ * 在 initializeCppProject 成功后写 manifest，记录当前 C++ 源文件清单。
+ * 启动期 {@link checkCppSyncRequired} 据此对比文件集是否变化（新增/删除 .cpp）。
+ */
+export function writeCppSourceManifest(projectPath: string, cppModules: ModuleInfo[]): void {
+    const files = collectAllCppSourceRelPaths(projectPath, cppModules);
+    const manifest: CppSourceManifest = { files, updatedAt: Date.now() };
+    const manifestPath = cppSourceManifestPath(projectPath);
+    try {
+        fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+        fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+        mcpLog.info(`[CppCompile] C++ source manifest written, ${files.length} files`);
+    } catch (e) {
+        mcpLog.warn(`[CppCompile] Failed to write C++ source manifest: ${e}`);
+    }
+}
+
+/**
+ * 检查 3（内部）：源文件清单对比。
+ * 读取 manifest 中记录的文件集，重新遍历当前源目录，对比是否一致（新增/删除 .cpp）。
+ * @returns null 表示清单一致无需初始化；否则返回需要初始化的结果。
+ */
+function checkCppSourceManifest(projectPath: string, cppModules: ModuleInfo[]): CppSyncCheckResult | null {
+    const manifestPath = cppSourceManifestPath(projectPath);
+    if (!fs.existsSync(manifestPath)) {
+        return { required: true, reason: 'C++ source manifest not found, needs initialization' };
+    }
+    let recordedFiles: string[];
+    try {
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as Partial<CppSourceManifest>;
+        recordedFiles = Array.isArray(manifest.files) ? manifest.files : [];
+    } catch {
+        return { required: true, reason: 'C++ source manifest corrupted, needs initialization' };
+    }
+    const currentFiles = collectAllCppSourceRelPaths(projectPath, cppModules);
+    if (currentFiles.length !== recordedFiles.length ||
+        currentFiles.some((f, i) => f !== recordedFiles[i])) {
+        return {
+            required: true,
+            reason: `C++ source file set changed (recorded=${recordedFiles.length}, actual=${currentFiles.length})`,
+        };
+    }
+    return null;
+}
+
+/**
+ * 判断 MCP 启动时是否需要执行 C++ 初始化（compileNative + 合并 compile_commands.json）。
+ *
+ * 三级检查（短路求值，命中即返回）：
+ *   1. 基准存在性 — compile_commands.json 不存在 → 需要初始化
+ *   2. C++ 构建配置 mtime — build-profile.json5 或 CMakeLists.txt 晚于基准 → 需要初始化
+ *   3. 源文件清单对比 — manifest 中记录的文件集与当前目录不一致（新增/删除 .cpp）→ 需要初始化
+ *
+ * 设计依据：
+ *   compile_commands.json 是编译数据库（编译命令 + flags + 文件列表），不是编译产物。
+ *   已有 .cpp 文件的内容编辑不改变它（clangd 通过 didOpen/didChange 感知内容变化），
+ *   只有结构性变更（配置变化、文件增删）才需要重新生成。
+ *
+ *   - 检查 2 查 build-profile.json5（含 buildNativeOption：CMake 路径/参数/ABI）
+ *     + CMakeLists.txt（C++ 专属构建配置：flags、include 路径、显式源文件列表），
+ *     覆盖配置内容变更。
+ *   - 检查 3 的 manifest 覆盖 CMake glob 新增/删除 .cpp 文件的场景
+ *     （CMakeLists.txt 未变但文件集变了）。
+ *
+ * 性能：检查 2 是 O(模块数 × 2) 次 statSync（毫秒级）；检查 3 仅在检查 2 通过后执行，
+ * 遍历用 readdirSync（每目录一次 syscall）不逐文件 statSync，1000 文件 / 50 目录 ≈ <10ms。
+ *
+ * @param projectPath 项目根目录
+ */
+export function checkCppSyncRequired(projectPath: string): CppSyncCheckResult {
+    // ---- 检查 1：基准存在性 ----
+    const baselinePath = compileCommandsPath(projectPath);
+    if (!fs.existsSync(baselinePath)) {
+        return { required: true, reason: 'C++ baseline (compile_commands.json) not found, needs initialization' };
+    }
+    const baseline = fs.statSync(baselinePath).mtimeMs;
+
+    const cppModules = findCppModules(projectPath);
+    if (cppModules.length === 0) {
+        return { required: false, reason: 'no C++ modules, skip compileNative' };
+    }
+
+    // ---- 检查 2：C++ 构建配置 mtime 对比 ----
+    for (const mod of cppModules) {
+        const modulePath = CommonUtils.resolvePathWithinRoot(projectPath, mod.srcPath);
+
+        // build-profile.json5（含 buildNativeOption 段：CMake 路径/参数/ABI）
+        if (isFileNewerThan(path.join(modulePath, 'build-profile.json5'), baseline)) {
+            return { required: true, reason: `module '${mod.name}': build-profile.json5 newer than baseline` };
+        }
+
+        // CMakeLists.txt（C++ 专属构建配置：flags、include 路径、显式源文件列表）
+        const cmakeListsPath = path.join(modulePath, ...CMAKE_LISTS_RELATIVE_SEGMENTS);
+        if (isFileNewerThan(cmakeListsPath, baseline)) {
+            return { required: true, reason: `module '${mod.name}': CMakeLists.txt newer than baseline` };
+        }
+    }
+
+    // ---- 检查 3：源文件清单对比（CMake glob 新增/删除 .cpp）----
+    const manifestResult = checkCppSourceManifest(projectPath, cppModules);
+    if (manifestResult) {
+        return manifestResult;
+    }
+
+    return {
+        required: false,
+        reason: `C++ project up-to-date (baseline: ${new Date(baseline).toISOString()})`,
+    };
 }

@@ -136,8 +136,18 @@ export class ClangdLspManager {
      * 锁策略与 {@link ArktsLspManager.handleSyncProject} 一致：
      * - 原子性尝试获取锁（无重试），若其他进程已持有构建锁则返回 skipped
      * - 消除 isBuildLocked + withBuildLock 之间的 TOCTOU 竞态
+     *
+     * @param options.skipCompileNative 为 true 时跳过 compileNative + 合并步骤
+     *   （由启动期 {@link checkCppSyncRequired} 判定工程未变更时设置，
+     *    复用上一次生成的 compile_commands.json）。
      */
-    static async handleSyncCppProject(workspaceRoot: string, sdkPath: string, nodePath: string, hvigorJsPath: string): Promise<CppSyncResult> {
+    static async handleSyncCppProject(
+        workspaceRoot: string,
+        sdkPath: string,
+        nodePath: string,
+        hvigorJsPath: string,
+        options?: { skipCompileNative?: boolean },
+    ): Promise<CppSyncResult> {
         logger.info('[ClangdLspManager] Received cpp/syncProject');
         if (!workspaceRoot || !sdkPath) {
             logger.error('[ClangdLspManager] handleSyncCppProject: workspaceRoot or sdkPath is empty');
@@ -151,10 +161,16 @@ export class ClangdLspManager {
             return { status: 'success' };
         }
 
+        const skipCompileNative = options?.skipCompileNative === true;
+
         const result = await tryWithBuildLock(
             workspaceRoot,
             async () => {
                 try {
+                    if (skipCompileNative) {
+                        logger.info('[ClangdLspManager] compileNative skipped (C++ project up-to-date)');
+                        return { status: 'success' as const };
+                    }
                     await initializeCppProject(workspaceRoot, sdkPath, nodePath, hvigorJsPath);
                     logger.info('[ClangdLspManager] compileNative + merge compile_commands completed');
                     return { status: 'success' as const };

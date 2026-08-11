@@ -16,7 +16,7 @@ import { CommonUtils } from '../../src/utils/common-utils.js';
 import { initMcpLogger, disposeMcpLogger, flushMcpLogger, getMcpLogFilePath, mcpLog } from './utils/mcp-logger.js';
 import { ArktsLspManager } from './lsp/ArktsLspManager.js';
 import { ClangdLspManager } from './lsp/ClangdLspManager.js';
-import { findCppModules } from './lsp/sync/cpp-compile.js';
+import { findCppModules, checkCppSyncRequired } from './lsp/sync/cpp-compile.js';
 import { checkSyncRequired } from './lsp/sync/syncGuard.js';
 
 /**
@@ -1465,7 +1465,11 @@ export class DevecoCliMcpServer {
     mcpLog.info(`[Cpp] Found ${cppModules.length} C++ module(s): ${cppModules.map((m) => m.name).join(', ')}`);
 
     // Phase 2: SYNCING_CPP — compileNative + 合并 compile_commands.json
-    if (!(await this.runSyncCpp(projectPath))) {
+    // 启动期同步检查：工程未变更时跳过 compileNative（复用上次的 compile_commands.json）
+    const cppSyncCheck = checkCppSyncRequired(projectPath);
+    const skipCompileNative = !cppSyncCheck.required;
+    mcpLog.info(`[Cpp] C++ sync check: skipCompileNative=${skipCompileNative}, reason=${cppSyncCheck.reason}`);
+    if (!(await this.runSyncCpp(projectPath, { skipCompileNative }))) {
       return;
     }
 
@@ -1540,8 +1544,11 @@ export class DevecoCliMcpServer {
   /**
    * C++ sync 阶段：执行 compileNative + 合并 compile_commands.json。
    * 与 {@link runSync} 同构：处理 success/skipped/failed 三种结果。
+   *
+   * @param options.skipCompileNative 为 true 时跳过 compileNative + 合并步骤
+   *   （由 {@link doEnsureCppProjectReady} 经 {@link checkCppSyncRequired} 判定后传入）。
    */
-  private async runSyncCpp(projectPath: string): Promise<boolean> {
+  private async runSyncCpp(projectPath: string, options?: { skipCompileNative?: boolean }): Promise<boolean> {
     this.cppProjectState = CppLifecycle.SYNCING_CPP;
     mcpLog.info('[Cpp] Starting C++ project sync (compileNative)...');
     // sdkPath 已在启动期固定（env / CLT|Studio 布局），compileNative 使用注入的 node/hvigor。
@@ -1550,6 +1557,7 @@ export class DevecoCliMcpServer {
       this.sdkPath,
       this.nodePath,
       this.hvigorJsPath,
+      options,
     );
     switch (result.status) {
       case 'success':
