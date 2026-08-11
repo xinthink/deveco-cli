@@ -18,6 +18,7 @@ import { findJsonObject, toUnixPath } from '../utils.js';
 import { DependencyMapParseResult, DependencyMapParseStatus } from '../constant.js';
 import { isRecord } from '../common/typeGuards.js';
 import { ModuleInfoParse } from './ModuleInfoParse.js';
+import { CommonUtils } from '../../../../src/utils/common-utils.js';
 
 /** getDependenciesOnly 返回项：在 ModuleDependencies 基础上增加 moduleName */
 export interface DepsOnlyItem extends ModuleDependencies {
@@ -79,6 +80,12 @@ export class ModulesDependencyParse {
             if (!isDependencyModuleEntry(mod)) {
                 continue;
             }
+            try {
+                CommonUtils.assertModuleName(mod.name);
+            } catch {
+                logger.warn(`[Parser] Skipping module with invalid name: ${mod.name}`);
+                continue;
+            }
             this.parseSingleModule(mod, dependencyMapPath, projectModuleDependency, moduleModels);
             if ((i + 1) % 100 === 0) {
                 logger.info(`[Parser] getAllDependencyMap progress: ${i + 1}/${modules.length} (${Date.now() - startMs}ms)`);
@@ -124,6 +131,12 @@ export class ModulesDependencyParse {
                 continue;
             }
             const name = mod.name;
+            try {
+                CommonUtils.assertModuleName(name);
+            } catch {
+                logger.warn(`[Parser] Skipping module with invalid name: ${name}`);
+                continue;
+            }
             if (filterSet && !filterSet.has(name)) {
                 continue;
             }
