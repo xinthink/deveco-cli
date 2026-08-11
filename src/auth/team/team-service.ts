@@ -69,15 +69,9 @@ export class TeamListAdapter {
       throw new DefinedError(getLoginHint());
     }
 
-    const body = await this.fetchTeamList(
-      userInfo.accessToken,
-      userInfo.userId
-    );
+    const body = await this.fetchTeamList(userInfo.accessToken, userInfo.userId);
     const teamList = parseTeamListResponse(body);
-    return {
-      userId: userInfo.userId,
-      teamList,
-    };
+    return { userId: userInfo.userId, teamList };
   }
 
   /**

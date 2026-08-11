@@ -11,6 +11,7 @@ bootstrap();
 import * as path from 'path';
 import { program, type Command } from 'commander';
 import { red } from 'colorette';
+import { AgreementConfig } from './auth/auth-config.js';
 import buildCommand from './commands/build.js';
 import runCommand from './commands/run.js';
 import updateCommand from './commands/update.js';
@@ -39,7 +40,7 @@ import { getCliDataDir } from './utils/cli-data-dir.js';
 
 program
   .name('devecocli')
-  .description('HarmonyOS application development command line tool')
+  .description(`HarmonyOS application development command line tool\n\nPrivacy: ${AgreementConfig.PRIVACY_URL}`)
   .version(process.env.npm_package_version || '0.1.0');
 
 program.addCommand(buildCommand);

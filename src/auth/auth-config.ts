@@ -65,6 +65,18 @@ export const CryptoConstants = {
   KEK_VERSIONS: ['kek-v1', 'kek-v2', 'kek-v3'] as const,
 } as const;
 
+export const AgreementConfig = {
+  /** TMS 协议服务 URL */
+  TMS_URL: 'https://terms-drcn.platform.dbankcloud.cn/agreementservice/user',
+
+  /** 隐私协议 ID */
+  PRIVACY_ID: '20000257',
+
+  /** 隐私声明 URL */
+  PRIVACY_URL:
+    'https://legal.cloud.huawei.com/terms/scope/huawei/deveco-cli/privacy-statement.htm?code=CN&language=zh-CN&branchid=0&contenttag=default',
+} as const;
+
 /**
  * 默认登录配置
  */
