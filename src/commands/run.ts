@@ -179,6 +179,8 @@ function buildRunEvent(options: RunOptions): CommandExecuted {
       ...(options.uninstall ? ['--uninstall'] : []),
       ...(options.skipBuild ? ['--skip-build'] : []),
       ...(options.apply ? ['--apply'] : []),
+      ...(options.hotreload ? ['--hotreload'] : []),
+      ...(options.hotreloadApply ? ['--hotreload-apply'] : []),
     ],
   };
   if (options.buildMode) {
