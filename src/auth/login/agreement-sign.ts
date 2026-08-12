@@ -29,7 +29,7 @@ export function reportAgreementSigned(accessToken: string): void {
       '-s', '-X', 'POST', AgreementConfig.TMS_URL,
       '-H', 'Content-Type: application/x-www-form-urlencoded',
       '-d', body,
-      '--max-time', '10',
+      '--max-time', '5',
       '-o', '/dev/null',
       '-w', '%{http_code}',
     ], {
