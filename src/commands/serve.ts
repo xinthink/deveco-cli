@@ -16,6 +16,9 @@ async function startStdioMcpServer(): Promise<void> {
   const PROJECT_PATH = process.env.PROJECT_PATH || '';
   const NODE_MAX_OLD_SPACE_SIZE = process.env.NODE_MAX_OLD_SPACE_SIZE;
   const DEBUG = process.env.DEBUG === 'true' || process.env.DEBUG === '1';
+  // C++ LSP 开关：默认开启，设为 'false' 或 '0' 关闭（跳过 compileNative + clangd）
+  const CPP_ENABLED = process.env.DEVECO_CLI_CPP_ENABLED !== 'false' &&
+    process.env.DEVECO_CLI_CPP_ENABLED !== '0';
   // 组件路径（sdk / arkts-lsp / node / ohpm / hvigor / clangd）由 ToolProvider 按 CLT|Studio 布局一次性解析，
   // 作为 config 注入 MCP server，MCP 内部不再自行解析安装布局。
   const projectPath = PROJECT_PATH;
@@ -31,6 +34,7 @@ async function startStdioMcpServer(): Promise<void> {
     clangdPath: toolProvider.clangdPath ?? undefined,
     nodeMaxOldSpaceSize: NODE_MAX_OLD_SPACE_SIZE,
     debug: DEBUG,
+    cppEnabled: CPP_ENABLED,
     telemetry,
   });
 

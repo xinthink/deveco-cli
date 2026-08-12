@@ -16,7 +16,7 @@ import { CommonUtils } from '../../src/utils/common-utils.js';
 import { initMcpLogger, disposeMcpLogger, flushMcpLogger, getMcpLogFilePath, mcpLog } from './utils/mcp-logger.js';
 import { ArktsLspManager } from './lsp/ArktsLspManager.js';
 import { ClangdLspManager } from './lsp/ClangdLspManager.js';
-import { findCppModules } from './lsp/sync/cpp-compile.js';
+import { findCppModules, checkCppSyncRequired } from './lsp/sync/cpp-compile.js';
 import { checkSyncRequired } from './lsp/sync/syncGuard.js';
 
 /**
@@ -67,6 +67,8 @@ export interface McpServerConfig {
   nodeMaxOldSpaceSize?: string;
   /** debug 模式：true=console输出，false=文件输出（带轮转） */
   debug?: boolean;
+  /** C++ LSP 服务开关，默认 true。关闭后跳过 compileNative + clangd 初始化，C++ 工具不可用。 */
+  cppEnabled?: boolean;
   telemetry?: Telemetry;
 
 }
@@ -112,6 +114,7 @@ export class DevecoCliMcpServer {
   private cppSyncSkippedDueToLock: boolean = false; // C++ sync 因锁被占用而跳过
   private cppSyncSkipStartedAt: number = 0; // 首次因锁竞争跳过 C++ sync 的时间戳
   private cppHasNoCppCode: boolean = false; // 工程无 C++ 代码，C++ 工具应返回 "no C++ code"
+  private readonly cppEnabled: boolean; // C++ LSP 服务开关（默认 true，由 DEVECO_CLI_CPP_ENABLED 控制）
 
   constructor(config: McpServerConfig = {}) {
     this.config = config;
@@ -145,7 +148,8 @@ export class DevecoCliMcpServer {
     this.ohpmJsPath = this.config.ohpmJsPath ?? '';
     this.hvigorJsPath = this.config.hvigorJsPath ?? '';
     this.clangdPath = this.config.clangdPath ?? null;
-    mcpLog.info(`Constructor: sdkPath='${this.sdkPath}', arktsLangServerPath='${this.arktsLangServerPath ?? '(null)'}'`);
+    this.cppEnabled = this.config.cppEnabled ?? true;
+    mcpLog.info(`Constructor: sdkPath='${this.sdkPath}', arktsLangServerPath='${this.arktsLangServerPath ?? '(null)'}', cppEnabled=${this.cppEnabled}`);
 
     // Create MCP server instance
     this.server = new McpServer({
@@ -860,6 +864,9 @@ export class DevecoCliMcpServer {
       case CppLifecycle.ERROR_CPP:
         return this.handleCppErrorCheck();
       case CppLifecycle.READY_CPP:
+        if (!this.cppEnabled) {
+          return { content: [{ type: 'text', text: 'C++ LSP is disabled. Set DEVECO_CLI_CPP_ENABLED=true to enable.' }], isError: true };
+        }
         if (this.cppHasNoCppCode) {
           return { content: [{ type: 'text', text: 'No C++ code in this project' }], isError: true };
         }
@@ -983,6 +990,9 @@ export class DevecoCliMcpServer {
     const raw = (args as { target?: unknown }).target;
     const target: 'arkts' | 'cpp' | 'all' =
       raw === 'cpp' ? 'cpp' : raw === 'arkts' ? 'arkts' : 'all';
+    if (target === 'cpp' && !this.cppEnabled) {
+      return { content: [{ type: 'text', text: 'C++ LSP is disabled, cannot restart. Set DEVECO_CLI_CPP_ENABLED=true to enable.' }], isError: true };
+    }
     this.restartProject(target);
     const sides = target === 'all' ? 'ArkTS + C++' : target === 'cpp' ? 'C++' : 'ArkTS';
     return {
@@ -1003,7 +1013,7 @@ export class DevecoCliMcpServer {
     if (target === 'arkts' || target === 'all') {
       this.restartArkts();
     }
-    if (target === 'cpp' || target === 'all') {
+    if ((target === 'cpp' || target === 'all') && this.cppEnabled) {
       this.restartCpp();
     }
   }
@@ -1423,6 +1433,13 @@ export class DevecoCliMcpServer {
    * C++ 初始化互斥入口：与 {@link ensureProjectReady} 同构。
    */
   private async ensureCppProjectReady(): Promise<void> {
+    // C++ LSP 开关关闭时直接标记就绪，不执行任何初始化（不扫描模块、不 compileNative、不 spawn clangd）
+    if (!this.cppEnabled) {
+      mcpLog.info('[Cpp] C++ LSP disabled by config, skipping initialization');
+      this.cppHasNoCppCode = true;
+      this.cppProjectState = CppLifecycle.READY_CPP;
+      return;
+    }
     if (this.cppInitPromise) {
       return;
     }
@@ -1465,11 +1482,20 @@ export class DevecoCliMcpServer {
     mcpLog.info(`[Cpp] Found ${cppModules.length} C++ module(s): ${cppModules.map((m) => m.name).join(', ')}`);
 
     // Phase 2: SYNCING_CPP — compileNative + 合并 compile_commands.json
-    if (!(await this.runSyncCpp(projectPath))) {
+    // 启动期同步检查：工程未变更时跳过 compileNative（复用上次的 compile_commands.json）
+    const cppSyncCheck = checkCppSyncRequired(projectPath);
+    const skipCompileNative = !cppSyncCheck.required;
+    mcpLog.info(`[Cpp] C++ sync check: skipCompileNative=${skipCompileNative}, reason=${cppSyncCheck.reason}`);
+    if (!(await this.runSyncCpp(projectPath, { skipCompileNative }))) {
       return;
     }
 
     // Phase 3: INITIALIZING_CPP — clangd spawn + initialize（manager 自管 await 就绪）
+    await this.initCppLsp(projectPath);
+  }
+
+  /** Phase 3：spawn clangd + LSP initialize 握手 + 创建 C++ 工具实例。 */
+  private async initCppLsp(projectPath: string): Promise<void> {
     this.cppProjectState = CppLifecycle.INITIALIZING_CPP;
     this.cppLspManager = new ClangdLspManager({
       workspaceRoot: projectPath,
@@ -1540,8 +1566,11 @@ export class DevecoCliMcpServer {
   /**
    * C++ sync 阶段：执行 compileNative + 合并 compile_commands.json。
    * 与 {@link runSync} 同构：处理 success/skipped/failed 三种结果。
+   *
+   * @param options.skipCompileNative 为 true 时跳过 compileNative + 合并步骤
+   *   （由 {@link doEnsureCppProjectReady} 经 {@link checkCppSyncRequired} 判定后传入）。
    */
-  private async runSyncCpp(projectPath: string): Promise<boolean> {
+  private async runSyncCpp(projectPath: string, options?: { skipCompileNative?: boolean }): Promise<boolean> {
     this.cppProjectState = CppLifecycle.SYNCING_CPP;
     mcpLog.info('[Cpp] Starting C++ project sync (compileNative)...');
     // sdkPath 已在启动期固定（env / CLT|Studio 布局），compileNative 使用注入的 node/hvigor。
@@ -1550,6 +1579,7 @@ export class DevecoCliMcpServer {
       this.sdkPath,
       this.nodePath,
       this.hvigorJsPath,
+      options,
     );
     switch (result.status) {
       case 'success':

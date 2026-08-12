@@ -1352,7 +1352,8 @@ devecocli skills remove --skill skillname --agent agentname  # skillname需替�
       "environment":{
         "PROJECT_PATH": "D:\\code\\sample_project", // 工程路径
         "NODE_MAX_OLD_SPACE_SIZE": "8192", // 可选，设置内部node进程最大的老生代内存大小，默认为8192
-        "DEVECO_PATH": "D:\\Application\\DevEco Studio" // 可选，Deveco Studio的路径
+        "DEVECO_PATH": "D:\\Application\\DevEco Studio", // 可选，Deveco Studio的路径
+        "DEVECO_CLI_CPP_ENABLED": "true" // 可选，是否启用C++ LSP服务，默认为true，设为false可关闭
       },
       "enbale": true
     }
