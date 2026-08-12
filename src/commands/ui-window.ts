@@ -10,6 +10,19 @@ import { renderTable } from '../utils/text-table.js';
 import ora from 'ora';
 import type { WindowInfo } from '../ui/index.js';
 import { resolveDeviceSerial } from '../utils/device-selector.js';
+import {
+  telemetry,
+  EventType,
+  toTraceErrorCode,
+  type CommandExecuted,
+  type TrackMeasurement,
+} from '../trace/index.js';
+
+interface WindowListOptions {
+  device?: string;
+  format: 'default' | 'json';
+  all?: boolean;
+}
 
 const WINDOW_LIST_HEADERS = [
   'Id',
@@ -45,11 +58,7 @@ function formatWindowOutput(windows: WindowInfo[], format: 'default' | 'json') {
   console.log(renderTable(WINDOW_LIST_HEADERS, rows));
 }
 
-async function handleWindowList(options: {
-  device?: string;
-  format: 'default' | 'json';
-  all?: boolean;
-}) {
+async function handleWindowList(options: WindowListOptions) {
   const spinner = ora({ text: 'Listing windows…', color: 'cyan' }).start();
   let windows: Awaited<ReturnType<WindowAdapter['listWindows']>>;
   try {
@@ -74,6 +83,46 @@ async function handleWindowList(options: {
   formatWindowOutput(windows, options.format);
 }
 
+function buildWindowListEvent(options: WindowListOptions): CommandExecuted {
+  const flags: string[] = [];
+  if (options.device) {
+    flags.push('--device');
+  }
+  if (options.format !== 'default') {
+    flags.push('--format');
+  }
+  if (options.all) {
+    flags.push('--all');
+  }
+  return {
+    event: EventType.CommandExecuted,
+    args: ['ui', 'window', 'list', ...flags],
+  };
+}
+
+async function trackWindowListCommand(
+  options: WindowListOptions
+): Promise<void> {
+  const event = buildWindowListEvent(options);
+  const start = Date.now();
+  let success = true;
+  let errorCode: string | null = null;
+  try {
+    await handleWindowList(options);
+  } catch (error) {
+    success = false;
+    errorCode = toTraceErrorCode(error);
+    throw error;
+  } finally {
+    const measurement: TrackMeasurement = {
+      duration_ms: Date.now() - start,
+      success,
+      error_code: errorCode,
+    };
+    await telemetry.track(event, measurement);
+  }
+}
+
 export const windowCommand = new Command('window').description(
   'Manage device windows'
 );
@@ -88,12 +137,6 @@ windowCommand
       .default('default')
   )
   .option('--all', 'Show all windows including system windows')
-  .action(
-    async (options: {
-      device?: string;
-      format: 'default' | 'json';
-      all?: boolean;
-    }) => {
-      await handleWindowList(options);
-    }
-  );
+  .action(async (options: WindowListOptions) => {
+    await trackWindowListCommand(options);
+  });

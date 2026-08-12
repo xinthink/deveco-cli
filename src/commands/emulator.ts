@@ -22,7 +22,6 @@ import {
   fetchRunningEmulatorHvds,
 } from '../utils/emulator-hdc-targets.js';
 import {
-  EmulatorLicenseBlockedError,
   ensureEmulatorSdkAgreementForImageDownload,
   ensureEmulatorServiceAgreementConfig,
   runEmulatorLicenseAccept,
@@ -30,7 +29,7 @@ import {
   runEmulatorLicenseView,
 } from '../utils/emulator-license.js';
 import { ToolProvider } from '../toolchain/index.js';
-import { telemetry, EventType, toTraceErrorCode, type CommandExecuted, type TrackMeasurement } from '../trace/index.js';
+import { telemetry, EventType, toTraceErrorCode, TraceError, type CommandExecuted, type TrackMeasurement } from '../trace/index.js';
 
 async function withEmulatorTrace(
   event: CommandExecuted,
@@ -573,7 +572,9 @@ async function startAction(
     names.map((name) => startOneEmulator(emulatorManager, hdcPath, name))
   );
 
-  reportSettledFailures(results, names, 'start');
+  if (reportSettledFailures(results, names, 'start')) {
+    throw new TraceError('One or more emulators failed to start.');
+  }
 }
 
 async function resolveEmulatorListName(
@@ -971,32 +972,24 @@ imageCommand
       };
       await withEmulatorTrace(event, async () => {
         const { manager, toolProvider } = await initEmulatorManager();
-        try {
-          await ensureEmulatorSdkAgreementForImageDownload(
-            toolProvider.emulatorPath,
-            toolProvider.sdkPath
-          );
-        } catch (error) {
-          if (error instanceof EmulatorLicenseBlockedError) {
-            console.error(red(error.message));
-            process.exitCode = 1;
-            return;
-          }
-          throw error;
-        }
+        await ensureEmulatorSdkAgreementForImageDownload(
+          toolProvider.emulatorPath,
+          toolProvider.sdkPath
+        );
 
         const deviceType = opts.deviceType?.trim();
         const osVersion = opts.osVersion?.trim();
-        if (!deviceType || !osVersion) {
-          console.error(
-            red(
-              !deviceType
-                ? "Error: missing required option '--device-type <type>'"
-                : "Error: misssing required option '--os-version <version>'"
-            )
+        if (!deviceType) {
+          throw new TraceError(
+            "Error: missing required option '--device-type <type>'",
+            'Missing required device type.'
           );
-          process.exitCode = 1;
-          return;
+        }
+        if (!osVersion) {
+          throw new TraceError(
+            "Error: misssing required option '--os-version <version>'",
+            'Missing required OS version.'
+          );
         }
         await assertImageDownloadAvailable(manager, deviceType, osVersion);
 
@@ -1294,23 +1287,15 @@ emulatorCommand
     };
     await withEmulatorTrace(event, async () => {
       const { manager, toolProvider } = await initEmulatorManager();
-      try {
-        await ensureEmulatorServiceAgreementConfig(
-          toolProvider.emulatorPath,
-          toolProvider.sdkPath
-        );
-      } catch (e) {
-        if (e instanceof EmulatorLicenseBlockedError) {
-          console.error(red(e.message));
-          process.exitCode = 1;
-          return;
-        }
-        throw e;
-      }
+      await ensureEmulatorServiceAgreementConfig(
+        toolProvider.emulatorPath,
+        toolProvider.sdkPath
+      );
       if (!names?.length) {
-        console.error(red("Error: missing required argument 'names'"));
-        process.exitCode = 1;
-        return;
+        throw new TraceError(
+          "Error: missing required argument 'names'",
+          'Missing required emulator name.'
+        );
       }
       await startAction(manager, toolProvider.hdcPath, names);
     });
