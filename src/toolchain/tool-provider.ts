@@ -2,7 +2,6 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { execFileSync } from 'child_process';
 import fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -25,10 +24,6 @@ const CLT_VERSION = /^#\s*Version:\s*(\S+)/;
 const COMPAT_MIN_STUDIO_VERSION = '26.0.0.810';
 
 type InstallSourceType = 'clt' | 'studio';
-
-type SignatureVerificationResult = {
-  signed: boolean;
-};
 
 function parseApiLevel(file: string): number | undefined {
   try {
@@ -55,9 +50,6 @@ function sdkMetadataPaths(sdkPath: string): string[] {
 }
 
 export class ToolProvider {
-  private static readonly verifiedPaths = new Set<string>();
-  private static powerShellPath: string | undefined;
-  private static powerShellModulesPath: string | undefined;
   private static installSourcePromise:
     | Promise<{ sourceType: InstallSourceType; toolchainRoot: string }>
     | undefined;
@@ -85,7 +77,7 @@ export class ToolProvider {
     return this._devecoStudioPath;
   }
   public get nodePath(): string {
-    return this.verify(this._nodePath);
+    return this._nodePath;
   }
   public get ohpmJsPath(): string {
     return this._ohpmJsPath;
@@ -122,27 +114,19 @@ export class ToolProvider {
     return fs.existsSync(p) ? p : null;
   }
   public get javaPath(): string {
-    return this._javaPath ? this.verify(this._javaPath) : '';
+    return this._javaPath ?? '';
   }
   public get sdkPath(): string {
     return this._sdkPath;
   }
   public get hdcPath(): string {
-    return this.verify(this._hdcPath);
+    return this._hdcPath;
   }
   public get emulatorPath(): string {
-    return this.verify(this._emulatorPath);
+    return this._emulatorPath;
   }
   public get emulatorLauncherPath(): string {
     return this.emulatorPath;
-  }
-
-  private verify(file: string): string {
-    if (!ToolProvider.verifiedPaths.has(file)) {
-      ToolProvider.verifySignature(file);
-      ToolProvider.verifiedPaths.add(file);
-    }
-    return file;
   }
 
   public assertJava(): void {
@@ -154,11 +138,6 @@ export class ToolProvider {
         'Java runtime is required to run hvigor. Set JAVA_HOME or add Java to PATH.'
       );
     }
-    this.verify(this._javaPath);
-  }
-
-  public assertEmulator(): void {
-    this.verify(this._emulatorPath);
   }
 
   public assertStudio(): void {
@@ -789,113 +768,4 @@ export class ToolProvider {
     return this._apiscanPaths;
   }
 
-  public static verifySignature(file: string): void {
-    if (!fs.existsSync(file)) {
-      throw new TraceError(`executable not found at: ${file}`, 'executable not found');
-    }
-    const platform = os.platform();
-    if (platform === 'linux') {
-      ToolProvider.assertExecutable(file);
-      return;
-    }
-    if (platform === 'win32' && path.extname(file).toLowerCase() === '.exe') {
-      ToolProvider.assertSigned(
-        ToolProvider.verifyWindowsSignature(file),
-        file
-      );
-      return;
-    }
-    if (platform === 'darwin') {
-      ToolProvider.assertExecutable(file);
-      ToolProvider.assertSigned(ToolProvider.verifyMacSignature(file), file);
-    }
-  }
-
-  private static assertExecutable(file: string): void {
-    try {
-      if (!fs.statSync(file).isFile()) {
-        throw new Error();
-      }
-      fs.accessSync(file, fs.constants.X_OK);
-    } catch {
-      throw new TraceError(`executable is not accessible: ${file}`, 'executable is not accessible');
-    }
-  }
-
-  private static assertSigned(
-    result: SignatureVerificationResult,
-    file: string
-  ): void {
-    if (!result.signed) {
-      throw new TraceError(`The executable is not digitally signed: ${file}`, 'The executable is not digitally signed');
-    }
-  }
-
-  private static findPowerShellPath(): string {
-    if (ToolProvider.powerShellPath !== undefined) {
-      return ToolProvider.powerShellPath;
-    }
-    const candidate = path.join(
-      process.env.SystemRoot || 'C:\\Windows',
-      'System32',
-      'WindowsPowerShell',
-      'v1.0',
-      'powershell.exe'
-    );
-    ToolProvider.powerShellPath = fs.existsSync(candidate) ? candidate : '';
-    if (ToolProvider.powerShellPath) {
-      ToolProvider.powerShellModulesPath = path.join(
-        path.dirname(ToolProvider.powerShellPath),
-        'Modules'
-      );
-    }
-    return ToolProvider.powerShellPath;
-  }
-
-  private static verifyWindowsSignature(
-    file: string
-  ): SignatureVerificationResult {
-    const powerShell = ToolProvider.findPowerShellPath();
-    if (!powerShell) {
-      throw new Error('The PowerShell application was not found');
-    }
-    const scriptContent = `Get-AuthenticodeSignature -FilePath '${file.replace(/'/g, "''")}' | ConvertTo-Json -Depth 3 -Compress`;
-    try {
-      const output = execFileSync(
-        powerShell,
-        [
-          '-NoProfile',
-          '-ExecutionPolicy', 'Bypass',
-          '-Command', scriptContent,
-        ],
-        {
-          encoding: 'utf8',
-          timeout: 5000,
-          stdio: ['ignore', 'pipe', 'ignore'],
-          env: {
-            ...process.env,
-            PSModulePath: ToolProvider.powerShellModulesPath,
-          },
-        }
-      );
-      const result = JSON.parse(output) as { Status?: unknown };
-      return { signed: Number(result.Status) === 0 };
-    } catch (e) {
-      debugLog(`[ToolProvider] verify Windows Signature, error msg: ${e}`);
-      return { signed: false };
-    }
-  }
-
-  private static verifyMacSignature(file: string): SignatureVerificationResult {
-    try {
-      execFileSync('codesign', ['-v', file], {
-        encoding: 'utf8',
-        timeout: 5000,
-        stdio: ['ignore', 'ignore', 'ignore'],
-      });
-      return { signed: true };
-    } catch {
-      return { signed: false };
-    }
-  }
 }
