@@ -23,6 +23,7 @@ const updateCommand = new Command('update').description(
 );
 
 updateCommand.command('_check', { hidden: true }).action(async () => {
+  const start = Date.now();
   const cache = new VersionCache(path.join(getCliDataDir(), 'update'));
 
   try {
@@ -52,16 +53,25 @@ updateCommand.command('_check', { hidden: true }).action(async () => {
       getCurrentVersion(),
       publishTag
     );
+    await trackUpdateCheck(start, true, null);
   } catch (error) {
     await cache.writeError(
       error instanceof Error ? error.message : String(error)
     );
+    const e = error as NodeJS.ErrnoException;
+    const errorCode = e.code ?? e.name ?? 'UnknownError';
+    await trackUpdateCheck(start, false, errorCode);
   }
 });
 
 const updateEvent: CommandExecuted = {
   event: EventType.CommandExecuted,
   args: ['update'],
+};
+
+const updateCheckEvent: CommandExecuted = {
+  event: EventType.CommandExecuted,
+  args: ['update', '_check'],
 };
 
 async function trackUpdate(
@@ -75,6 +85,19 @@ async function trackUpdate(
     error_code: errorCode,
   };
   await telemetry.track(updateEvent, measurement).catch(() => {});
+}
+
+async function trackUpdateCheck(
+  start: number,
+  success: boolean,
+  errorCode: string | null
+): Promise<void> {
+  const measurement: TrackMeasurement = {
+    duration_ms: Date.now() - start,
+    success,
+    error_code: errorCode,
+  };
+  await telemetry.track(updateCheckEvent, measurement).catch(() => {});
 }
 
 updateCommand.action(async () => {
