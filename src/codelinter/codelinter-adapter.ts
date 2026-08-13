@@ -7,7 +7,6 @@ import fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ToolProvider } from '../toolchain/index.js';
-import { readStudioVersion } from '../toolchain/studio-version.js';
 import { debugLog } from '../utils/logger.js';
 import { Project } from '../utils/project.js';
 import {
@@ -52,8 +51,6 @@ interface ResolvedLintTarget {
 
 const TEMP_DIRECTORY_PREFIX = 'deveco-codelinter-';
 const SUPPORTED_LINT_FILE_EXTENSIONS = ['.ets', '.ts', '.js'] as const;
-/** Studio 6.1 起支持标准报告参数。 */
-const MODERN_CODELINTER_STUDIO_VERSION = '6.1.0';
 
 /** 封装 Code Linter 工具链解析、命令执行和报告标准化。 */
 export class CodelinterAdapter {
@@ -66,6 +63,11 @@ export class CodelinterAdapter {
     this.toolProvider = toolProvider;
     this.resolution = CodelinterAdapter.resolveWithToolProvider(toolProvider);
     this.cwd = cwd;
+  }
+
+  /** 是否支持标准报告参数。 */
+  public get supportsReportOptions(): boolean {
+    return !this.resolution.isLegacyStudioArgs;
   }
 
   /** 从工作目录解析项目根目录，未发现项目时返回工作目录。 */
@@ -371,6 +373,17 @@ export class CodelinterAdapter {
     fs.rmSync(resolvedTempDir, { recursive: true, force: true });
   }
 
+  private static isModernStudioEntry(codelinterEntry: string): boolean {
+    const expectedSegments = ['plugins', 'codelinter', 'run', 'index.js'];
+    const actualSegments = path
+      .normalize(codelinterEntry)
+      .split(path.sep)
+      .slice(-expectedSegments.length);
+    return expectedSegments.every(
+      (segment, index) => actualSegments[index]?.toLowerCase() === segment
+    );
+  }
+
   /** 根据 ToolProvider 解析 Code Linter 的完整执行环境。 */
   private static resolveWithToolProvider(
     toolProvider: ToolProvider
@@ -384,9 +397,7 @@ export class CodelinterAdapter {
       source === 'ide' ? 'DevEco Studio' : 'DevEco Command Line Tools';
     const isLegacyStudioArgs =
       source === 'ide' &&
-      ToolProvider.compareVersion(
-        readStudioVersion(toolProvider.toolchainRoot) ?? '0.0.0',
-        MODERN_CODELINTER_STUDIO_VERSION) < 0;
+      !CodelinterAdapter.isModernStudioEntry(codelinterEntry);
     const resolution: CodelinterResolution = {
       command: toolProvider.nodePath,
       argsPrefix: [codelinterEntry, sdkPath],
