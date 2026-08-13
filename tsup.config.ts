@@ -11,7 +11,7 @@ export default defineConfig({
   entry: ['src/cli.ts', 'src/internal/doc-init-background.ts', 'src/internal/telemetry-upload-background.ts'],
   format: ['esm'],
   platform: 'node',
-  target: 'node18',
+  target: 'node22',
   clean: true,
   dts: false,
   shims: true,
