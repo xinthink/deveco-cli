@@ -68,8 +68,6 @@ async function trackLint(
 
 /** 先校验有符号十进制整数形式，是否大于零由 parseLimit 继续判断。 */
 const INTEGER_PATTERN = /^-?\d+$/;
-/** 显式报告格式和输出路径从 Studio 6.1 起受支持。 */
-const MODERN_REPORT_STUDIO_VERSION = '6.1.0';
 
 interface LintOptions {
   fix?: boolean;
@@ -197,8 +195,10 @@ async function handleLintCommand(
   try {
     const cwd = process.cwd();
     const toolProvider = await ToolProvider.new();
+    const adapter = new CodelinterAdapter(toolProvider, cwd);
     const reportOptions = resolveSupportedReportOptions(
       toolProvider,
+      adapter,
       command,
       options
     );
@@ -214,7 +214,7 @@ async function handleLintCommand(
         )
       );
     }
-    const result = await executeLint(toolProvider, lintPath, options, cwd);
+    const result = await executeLint(adapter, lintPath, options);
     writeTextToStderr(result.diagnostics);
     process.exitCode = writeLintResult(
       result,
@@ -232,12 +232,10 @@ async function handleLintCommand(
 }
 
 async function executeLint(
-  toolProvider: ToolProvider,
+  adapter: CodelinterAdapter,
   lintPath: string | undefined,
-  options: LintOptions,
-  cwd: string
+  options: LintOptions
 ): Promise<CodelinterCheckResult> {
-  const adapter = new CodelinterAdapter(toolProvider, cwd);
   return runWithCheckingSpinner(adapter, {
     lintPath,
     configPath: options.configPath,
@@ -262,30 +260,23 @@ function getSpecifiedModernReportOptions(command: Command): string[] {
 /** 在旧版 Studio 中提示并忽略不受原生支持的报告选项。 */
 function resolveSupportedReportOptions(
   toolProvider: ToolProvider,
+  adapter: CodelinterAdapter,
   command: Command,
   options: LintOptions
 ): Pick<LintOptions, 'format' | 'outputPath'> {
   const specifiedOptions = getSpecifiedModernReportOptions(command);
-  if (specifiedOptions.length === 0 || toolProvider.sourceType !== 'studio') {
+  if (specifiedOptions.length === 0 || adapter.supportsReportOptions) {
     return options;
   }
 
   const studioVersion = readStudioVersion(toolProvider.toolchainRoot);
-  if (
-    studioVersion &&
-    ToolProvider.compareVersion(studioVersion, MODERN_REPORT_STUDIO_VERSION) >=
-      0
-  ) {
-    return options;
-  }
-
   const optionNoun = specifiedOptions.length === 1 ? 'option' : 'options';
   console.warn(
     yellow(
       `Warning: The detected DevEco Studio version is: ` +
-        `${studioVersion ?? 'unknown'}. Unsupported ${optionNoun}: ` +
-        `${specifiedOptions.join(', ')}. Minimum supported version: ` +
-        `${MODERN_REPORT_STUDIO_VERSION}. Action: ignore the unsupported ` +
+        `${studioVersion ?? 'unknown'}. The bundled legacy Code Linter does ` +
+        `not support ${optionNoun}: ${specifiedOptions.join(', ')}. ` +
+        `Action: ignore the unsupported ` +
         `${optionNoun} and continue the lint check with default terminal output.`
     )
   );
