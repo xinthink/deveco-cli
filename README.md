@@ -4,7 +4,7 @@
   <p>
     <a href="https://www.npmjs.com/package/@deveco/deveco-cli"><img src="https://img.shields.io/npm/v/@deveco/deveco-cli.svg" alt="NPM Version" /></a>
     <a href="https://www.npmjs.com/package/@deveco/deveco-cli"><img src="https://img.shields.io/npm/dm/@deveco/deveco-cli.svg" alt="NPM Downloads" /></a>
-    <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-%3E%3D18-green.svg" alt="Node.js" /></a>
+    <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-%3E%3D22-green.svg" alt="Node.js" /></a>
     <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue.svg" alt="Platform" />
     <a href="https://developer.huawei.com/consumer/cn/download/"><img src="https://img.shields.io/badge/DevEco%20Studio-%3E%3D6.0.0-orange.svg" alt="DevEco Studio" /></a>
     <img src="https://img.shields.io/badge/Command%20Line%20Tools-%3E%3D26.0.0-orange.svg" alt="Command Line Tools" />
@@ -22,7 +22,7 @@
 ### 前置要求
 
 - 操作系统为 `macOS` 、 `Windows` 或 `Linux`（需配置对应环境变量）
-- Node.js >= 18，推荐使用22及以上版本
+- 安装`Node.js`，推荐使用22及以上版本
 - [DevEco Studio](https://developer.huawei.com/consumer/cn/download/) >= 6.0.0 或 [Command Line Tools](https://developer.huawei.com/consumer/cn/download/) >= 26.0.0
   - **macOS**：必须安装在 `~/Applications` 或 `/Applications` 目录下。
 
