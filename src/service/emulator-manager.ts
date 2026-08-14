@@ -5,7 +5,10 @@
 import { execa } from 'execa';
 import { ToolProvider } from '../toolchain/index.js';
 import type { EmulatorInfo } from './emulator-types.js';
-import { normalizeListNameKey } from './emulator-types.js';
+import {
+  normalizeListNameKey,
+  supportsHotBoot,
+} from './emulator-types.js';
 import { spawnEmulatorDetached } from '../utils/emulator-spawn.js';
 import { runAllEmulatorStartStrategies } from './emulator-start-strategies.js';
 import {
@@ -622,6 +625,9 @@ export class EmulatorManager {
       '-osVersion',
       opts.osVersion,
     ];
+    if (supportsHotBoot(opts.osVersion)) {
+      args.push('-hotBoot', 'true');
+    }
     await this.runEmulatorChecked(args, {
       extraReject: [
         /Device create fail/i,
