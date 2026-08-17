@@ -24,10 +24,13 @@ function resolveBackgroundScript(): string | null {
 }
 
 /**
- * 检查是否应触发后台上传，若应触发则 spawn 一个 detached 子进程执行 telemetry.flush()。
+ * 检查是否应触发后台上传，若应触发则 spawn 一个 detached 子进程，进程内执行
+ * telemetry.flush() + telemetry.retryFailed()（待上传 + failed 重试一起跑）。
  * 子进程脱离父进程（unref），不阻塞 CLI 退出；stdio 全部 ignore。
  *
- * 触发条件复用 MCP 调度器的 UPLOAD_INTERVAL_MS：firstEventAt 距 now 超过该值即 spawn。
+ * 触发条件（OR，见 upload-state.ts isUploadDue）：
+ * - 有待上传事件且 firstEventAt 距 now 超过 UPLOAD_INTERVAL_MS；或
+ * - failed 目录有 7 天内文件且距上次重试超过 RETRY_INTERVAL_MS（1h）。
  */
 export function maybeSpawnTelemetryUpload(storageDir: string): void {
   if (isTelemetryDisabled() || !isUploadDue(storageDir)) {
@@ -53,7 +56,6 @@ export function maybeSpawnTelemetryUpload(storageDir: string): void {
       },
     );
     child.unref();
-    mcpLog.info('[telemetry] background upload process spawned');
   } catch (e) {
     mcpLog.warn('[telemetry] failed to spawn background upload:', e);
   }
