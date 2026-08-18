@@ -5,7 +5,6 @@
 
 import https from 'node:https';
 import Endpoints from '../config/endpoints.json';
-import { mcpLog } from '../../mcp/src-server/utils/mcp-logger.js';
 
 interface HttpResponse {
   code: number;
@@ -17,10 +16,10 @@ interface HttpResponse {
  * 协议对齐 test_upload 样例（uploader.ts flush）：
  * POST <endpoint>，headers 带 sender / deviceid，body 为明文 JSON 数组
  * [{ action, detail: <事件对象 JSON 字符串>, timestamp }, ...]。
+ *
+ * 上传器本身静默（不记 URL / 报文 / 响应体），成败由调用方 telemetry.ts 统一打 warn。
  */
 export class TraceUploader {
-  private static readonly DEBUG = true;
-
   static readonly ENDPOINT = Endpoints.devecoApiTraceUpload;
   static readonly SENDER = 'deveco-cli';
 
@@ -31,21 +30,15 @@ export class TraceUploader {
       deviceid: installId.replace(/-/g, ''),
       'Content-Length': String(Buffer.byteLength(payload, 'utf8')),
     };
-    TraceUploader.log(`upload request: URL=${TraceUploader.ENDPOINT}`);
-
     try {
-      const { code, body: respBody } = await this.httpPost(
+      const { body: respBody } = await this.httpPost(
         TraceUploader.ENDPOINT,
         headers,
         Buffer.from(payload, 'utf8'),
         60000
       );
-      TraceUploader.log(`upload response: status=${code}, body=${respBody}`);
       return TraceUploader.isSuccess(respBody);
-    } catch (e) {
-      TraceUploader.log(
-        `upload failed: ${e instanceof Error ? e.message : String(e)}`
-      );
+    } catch {
       return false;
     }
   }
@@ -103,11 +96,5 @@ export class TraceUploader {
       req.write(body);
       req.end();
     });
-  }
-
-  private static log(msg: string): void {
-    if (TraceUploader.DEBUG) {
-      mcpLog.info('[TRACE]' + msg);
-    }
   }
 }

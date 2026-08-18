@@ -12,6 +12,12 @@ import path from 'node:path';
  */
 export const UPLOAD_INTERVAL_MS = 5 * 60 * 1000;
 
+/** failed 文件重试间隔：CLI 后台 spawn 门控 + MCP startScheduler 的 retryTimer 共用。 */
+export const RETRY_INTERVAL_MS = 60 * 60 * 1000;
+
+/** failed 文件保留上限：文件名日期超过此值直接删除（不再重试）。 */
+export const FAILED_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
 /** 打点总开关（env `DEVECO_CLI_DISABLE_TELEMETRY=1`）：关闭后不采集、不落盘、不上传。 */
 export function isTelemetryDisabled(): boolean {
   const value = process.env.DEVECO_CLI_DISABLE_TELEMETRY;
@@ -23,6 +29,8 @@ export interface UploadState {
   firstEventAt: number | null;
   /** 上次成功上传的时间戳（ms）；null 表示从未上传过 */
   lastUploadAt: number | null;
+  /** 上次 failed 重试的时间戳（ms）；null 表示从未重试过 */
+  lastRetryAt: number | null;
 }
 
 const STATE_FILENAME = 'upload-state.json';
@@ -32,7 +40,7 @@ function stateFile(storageDir: string): string {
 }
 
 function defaultState(): UploadState {
-  return { firstEventAt: null, lastUploadAt: null };
+  return { firstEventAt: null, lastUploadAt: null, lastRetryAt: null };
 }
 
 export function readUploadState(storageDir: string): UploadState {
@@ -44,6 +52,8 @@ export function readUploadState(storageDir: string): UploadState {
         typeof obj.firstEventAt === 'number' ? obj.firstEventAt : null,
       lastUploadAt:
         typeof obj.lastUploadAt === 'number' ? obj.lastUploadAt : null,
+      lastRetryAt:
+        typeof obj.lastRetryAt === 'number' ? obj.lastRetryAt : null,
     };
   } catch {
     return defaultState();
@@ -75,14 +85,66 @@ export function markUploadComplete(storageDir: string): void {
   writeUploadState(storageDir, state);
 }
 
-/** 判断是否应触发后台上传：有待上传事件且最早事件已等待超过 UPLOAD_INTERVAL_MS。 */
+/** retryFailed 完成后调用：更新 lastRetryAt（CLI 后台 spawn 据此按 1h 门控 failed 重试）。 */
+export function markRetryComplete(storageDir: string): void {
+  const state = readUploadState(storageDir);
+  state.lastRetryAt = Date.now();
+  writeUploadState(storageDir, state);
+}
+
+/** 解析 `telemetry-YYYY-MM-DD.txt` 文件名中的日期为本地 0 点 ms；无法解析返回 null。 */
+export function parseFailedFileDate(fileName: string): number | null {
+  const m = fileName.match(/^telemetry-(\d{4})-(\d{2})-(\d{2})\.txt$/);
+  if (!m) {
+    return null;
+  }
+  const ms = Date.parse(`${m[1]}-${m[2]}-${m[3]}T00:00:00`);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** failed 目录是否存在文件名日期在 7 天内的待重试文件。 */
+export function hasRetryableFailedFiles(
+  storageDir: string,
+  now: number = Date.now()
+): boolean {
+  const failedDir = path.join(storageDir, 'failed');
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(failedDir);
+  } catch {
+    return false;
+  }
+  for (const f of entries) {
+    if (!f.startsWith('telemetry-') || !f.endsWith('.txt')) {
+      continue;
+    }
+    const t = parseFailedFileDate(f);
+    if (t !== null && now - t <= FAILED_MAX_AGE_MS) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 判断是否应 spawn 后台上传进程（OR 逻辑）：
+ * - 有待上传事件且最早事件已等待超过 UPLOAD_INTERVAL_MS；或
+ * - failed 目录有 7 天内文件且距上次重试超过 RETRY_INTERVAL_MS。
+ * 任一成立即 spawn 同一进程，进程内 flush + retryFailed 一起执行。
+ */
 export function isUploadDue(
   storageDir: string,
   now: number = Date.now()
 ): boolean {
   const state = readUploadState(storageDir);
-  if (state.firstEventAt === null) {
-    return false;
+  if (state.firstEventAt !== null && now - state.firstEventAt >= UPLOAD_INTERVAL_MS) {
+    return true;
   }
-  return now - state.firstEventAt >= UPLOAD_INTERVAL_MS;
+  if (
+    hasRetryableFailedFiles(storageDir, now) &&
+    (state.lastRetryAt === null || now - state.lastRetryAt >= RETRY_INTERVAL_MS)
+  ) {
+    return true;
+  }
+  return false;
 }

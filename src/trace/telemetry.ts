@@ -17,10 +17,14 @@ import {
 import { mcpLog } from '../../mcp/src-server/utils/mcp-logger.js';
 import type { BaseEvent, TrackMeasurement, TraceEvent } from './events.js';
 import {
+  FAILED_MAX_AGE_MS,
+  RETRY_INTERVAL_MS,
   UPLOAD_INTERVAL_MS,
   isTelemetryDisabled,
   markFirstEventIfPending,
+  markRetryComplete,
   markUploadComplete,
+  parseFailedFileDate,
 } from './upload-state.js';
 import { resolveInstallId } from './install-id.js';
 
@@ -49,6 +53,10 @@ export class Telemetry {
   private nodeVersion = '';
   private initialTimer: NodeJS.Timeout | null = null;
   private intervalTimer: NodeJS.Timeout | null = null;
+  private retryInitialTimer: NodeJS.Timeout | null = null;
+  private retryTimer: NodeJS.Timeout | null = null;
+  /** flush / retryFailed 串行化链：同进程内不并发，避免并发写同一 failed 文件 */
+  private flushChain: Promise<unknown> = Promise.resolve();
 
   constructor() {
     mcpLog.info(`[telemetry] instance created, sessionId=${this.sessionId}`);
@@ -101,20 +109,13 @@ export class Telemetry {
     if (!this.storageDir) {
       throw new Error('Telemetry not initialized. Call init() first.');
     }
-    mcpLog.info(`[telemetry] track: ${event.event}`);
     if (!fnOrMeasurement) {
       await this.record(event, 0, true, null);
-      mcpLog.info(
-        `[telemetry] track recorded: ${event.event} (no measurement)`
-      );
       return undefined;
     }
     if (typeof fnOrMeasurement !== 'function') {
       const m = fnOrMeasurement;
       await this.record(event, m.duration_ms, m.success, m.error_code);
-      mcpLog.info(
-        `[telemetry] track recorded: ${event.event} (measurement: duration=${m.duration_ms}ms, success=${m.success}, code=${m.error_code})`
-      );
       return undefined;
     }
     const fn = fnOrMeasurement;
@@ -123,17 +124,11 @@ export class Telemetry {
       const result = await fn();
       const duration = Date.now() - start;
       await this.record(event, duration, true, null);
-      mcpLog.info(
-        `[telemetry] track success: ${event.event}, duration=${duration}ms`
-      );
       return result;
     } catch (e) {
       const duration = Date.now() - start;
       const code = this.toErrorCode(e);
       await this.record(event, duration, false, code);
-      mcpLog.info(
-        `[telemetry] track failed: ${event.event}, duration=${duration}ms, code=${code}`
-      );
       throw e;
     }
   }
@@ -156,12 +151,9 @@ export class Telemetry {
         this.traceFileKey
       );
       await fs.promises.appendFile(this.currentFile(), line + '\n', 'utf8');
-      mcpLog.info(
-        `[telemetry] event persisted: ${traceEvent.properties.trace_uuid}`
-      );
       markFirstEventIfPending(this.storageDir);
-    } catch (e) {
-      mcpLog.error('[telemetry] track write error:', e);
+    } catch {
+      // 落盘失败静默，不影响主流程
     }
   }
 
@@ -267,14 +259,20 @@ export class Telemetry {
       return;
     }
     mcpLog.info(
-      `[telemetry] scheduler started (first flush in ${UPLOAD_INTERVAL_MS / 1000}s, then every ${UPLOAD_INTERVAL_MS / 1000}s)`
+      `[telemetry] scheduler started (flush every ${UPLOAD_INTERVAL_MS / 1000}s, retry failed every ${RETRY_INTERVAL_MS / 1000}s)`
     );
     this.initialTimer = setTimeout(() => {
-      this.flush().catch((e) => mcpLog.error('[telemetry] flush error:', e));
+      this.flush().catch(() => { /* 调度内 flush 失败静默，不阻塞下一轮 */ });
       this.intervalTimer = setInterval(() => {
-        this.flush().catch((e) => mcpLog.error('[telemetry] flush error:', e));
+        this.flush().catch(() => { /* 调度内 flush 失败静默，不阻塞下一轮 */ });
       }, UPLOAD_INTERVAL_MS);
     }, UPLOAD_INTERVAL_MS);
+    this.retryInitialTimer = setTimeout(() => {
+      this.retryFailed().catch(() => { /* 调度内 retry 失败静默，不阻塞下一轮 */ });
+      this.retryTimer = setInterval(() => {
+        this.retryFailed().catch(() => { /* 调度内 retry 失败静默，不阻塞下一轮 */ });
+      }, RETRY_INTERVAL_MS);
+    }, RETRY_INTERVAL_MS);
   }
 
   stopScheduler(): void {
@@ -286,6 +284,14 @@ export class Telemetry {
       clearInterval(this.intervalTimer);
       this.intervalTimer = null;
     }
+    if (this.retryInitialTimer) {
+      clearTimeout(this.retryInitialTimer);
+      this.retryInitialTimer = null;
+    }
+    if (this.retryTimer) {
+      clearInterval(this.retryTimer);
+      this.retryTimer = null;
+    }
     mcpLog.info('[telemetry] scheduler stopped');
   }
 
@@ -293,25 +299,87 @@ export class Telemetry {
     if (this.disabled) {
       return true;
     }
+    return this.runExclusive(() => this.performFlush());
+  }
+
+  private async performFlush(): Promise<boolean> {
     if (!this.storageDir) {
       throw new Error('Telemetry not initialized. Call init() first.');
     }
-    mcpLog.info('[telemetry] flush start');
     const files = await this.listPendingFiles();
-    if (files.length === 0) {
-      mcpLog.info('[telemetry] flush: no event files');
-      return true;
-    }
-    mcpLog.info(`[telemetry] flush: ${files.length} file(s) pending`);
     let allOk = true;
     for (const file of files) {
       if (!(await this.flushFile(file))) {
         allOk = false;
       }
     }
-    mcpLog.info(`[telemetry] flush done, allOk=${allOk}`);
     markUploadComplete(this.storageDir);
     return allOk;
+  }
+
+  /**
+   * 重试 failed 目录下上传失败的事件文件（每小时一次，由 startScheduler 调度）。
+   * 范围：failed/telemetry-*.txt 中文件名日期在 7 天内的，重新走 flushFile 上传；
+   * 超过 7 天的文件直接删除。与 flush() 共用 runExclusive 串行化。
+   */
+  async retryFailed(): Promise<boolean> {
+    if (this.disabled) {
+      return true;
+    }
+    return this.runExclusive(() => this.performRetryFailed());
+  }
+
+  private async performRetryFailed(): Promise<boolean> {
+    if (!this.storageDir) {
+      throw new Error('Telemetry not initialized. Call init() first.');
+    }
+    const now = Date.now();
+    let entries: string[];
+    try {
+      entries = await fs.promises.readdir(this.failedDir);
+    } catch {
+      return true;
+    }
+    const files = entries
+      .filter((f) => f.startsWith('telemetry-') && f.endsWith('.txt'))
+      .map((f) => path.join(this.failedDir, f));
+    let allOk = true;
+    for (const file of files) {
+      const baseName = path.basename(file);
+      const eventTime = parseFailedFileDate(baseName);
+      if (eventTime === null) {
+        continue;
+      }
+      if (now - eventTime > FAILED_MAX_AGE_MS) {
+        try {
+          await fs.promises.unlink(file);
+        } catch {
+          // ignore
+        }
+        continue;
+      }
+      // 复用 flushFile：rename → .pending 认领、解密、批量上传；
+      // 失败时 moveToFailed 会把剩余行写回 failedDir/<baseName>（同名），等下轮重试。
+      if (!(await this.flushFile(file))) {
+        allOk = false;
+      }
+    }
+    if (!allOk) {
+      mcpLog.warn('[telemetry] retry failed');
+    }
+    markRetryComplete(this.storageDir);
+    return allOk;
+  }
+
+  /** 串行化 flush / retryFailed：同进程内排队执行，避免并发写同一 failed 文件。 */
+  private runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const run = (): Promise<T> => fn();
+    const result = this.flushChain.then(run, run);
+    this.flushChain = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   }
 
   private async listPendingFiles(): Promise<string[]> {
@@ -331,9 +399,6 @@ export class Telemetry {
     const pendingFile = file + '.pending';
     try {
       await fs.promises.rename(file, pendingFile);
-      mcpLog.info(
-        `[telemetry] flush: renamed ${path.basename(file)} → pending`
-      );
     } catch {
       return false;
     }
@@ -348,19 +413,12 @@ export class Telemetry {
       .map((s) => s.trim())
       .filter(Boolean);
     const lines: string[] = [];
-    let skipped = 0;
     for (const line of rawLines) {
       const plain = decryptTraceLine(line, this.traceFileKey);
       if (plain === null) {
-        skipped++;
         continue;
       }
       lines.push(plain);
-    }
-    if (skipped > 0) {
-      mcpLog.warn(
-        `[telemetry] flush: skipped ${skipped} undecryptable line(s)`
-      );
     }
     if (lines.length === 0) {
       try {
@@ -397,16 +455,14 @@ export class Telemetry {
       }
       const items = this.buildPayloadItems(batch);
       const payload = JSON.stringify(items);
-      mcpLog.info(
-        `[telemetry] flush: uploading batch (${items.length} events, ${Buffer.byteLength(payload, 'utf8')} bytes)`
-      );
       let ok = false;
       try {
         ok = await this.uploader.upload(payload, this.installId);
-      } catch (e) {
-        mcpLog.error('[telemetry] build/upload error:', e);
+      } catch {
+        // upload 异常按失败处理，下面统一 warn
       }
       if (!ok) {
+        mcpLog.warn('[telemetry] upload failed');
         const remaining = lines.slice(batchStart).join('\n') + '\n';
         await this.moveToFailed(pendingFile, remaining);
         return false;
@@ -417,7 +473,6 @@ export class Telemetry {
     } catch {
       // ignore
     }
-    mcpLog.info('[telemetry] flush: file done, pending removed');
     return true;
   }
 
@@ -447,7 +502,6 @@ export class Telemetry {
   ): Promise<void> {
     const baseName = path.basename(pendingFile, '.pending');
     const failedPath = path.join(this.failedDir, baseName);
-    mcpLog.info(`[telemetry] moving to failed: ${baseName}`);
     try {
       const encrypted =
         content
@@ -456,8 +510,8 @@ export class Telemetry {
           .map((line) => encryptTraceLine(line, this.traceFileKey))
           .join('\n') + '\n';
       await fs.promises.appendFile(failedPath, encrypted, 'utf8');
-    } catch (e) {
-      mcpLog.error('[telemetry] move to failed error:', e);
+    } catch {
+      // 写 failed 目录失败静默；保留 .pending 文件等下轮重试，不删
       return;
     }
     try {

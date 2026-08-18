@@ -40,7 +40,7 @@
 
 - 数据目录：`<数据根目录>/TraceLogData/`。数据根目录默认 `~/.local/share/deveco-cli/`，可通过环境变量 `DEVECO_CLI_DATA_DIR` 覆盖。
 - 事件按天分文件落盘（`telemetry-YYYY-MM-DD.txt`），文件使用 **AES-256-GCM 加密**存储。密钥由本机独立的随机密钥（`trace-file-secret`，与安装标识 `uid` 无关）派生，密钥文件仅存在于本机数据目录、不随事件上传，仅用于防止本地文件被直接读取；上传前在内存中解密。
-- 上报失败的事件会加密归档到 `TraceLogData/failed/`，不会自动重传。
+- 上报失败的事件会加密归档到 `TraceLogData/failed/`，并按约 1 小时间隔自动重试（MCP 由调度器定时触发，CLI 由命令结束时按 `isUploadDue` 触发的后台进程触发）；文件名日期超过 7 天的失败文件会被直接删除、不再重试。
 - 删除数据：直接删除 `TraceLogData` 目录即可清空全部打点数据，同时重置安装标识 `uid`（`uid` 存储于该目录内）。
 
 ## 5. 上报

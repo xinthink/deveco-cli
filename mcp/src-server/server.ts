@@ -196,6 +196,8 @@ export class DevecoCliMcpServer {
           'without dropping the client connection. Use to recover from a stuck/ERROR state ' +
           'after fixing the root cause, instead of exiting and reopening the agent. ' +
           'Use target to restart one side only (arkts/cpp) or both (all, default). ' +
+          'Only callable when the project state is ready/idle/error; during discovery/sync/init ' +
+          '(large-project init can take minutes) it returns an error—wait for ready and retry tools instead. ' +
           'Caution: if initialization fails again after a restart, the cause is likely a persistent ' +
           'project/SDK configuration issue—do not call restart repeatedly; ask the user to fix the project first.',
         inputSchema: z.object({
@@ -981,6 +983,48 @@ export class DevecoCliMcpServer {
   }
 
   /**
+   * restart 状态守卫：target 涉及的侧仅在 READY/IDLE/ERROR 时允许；DISCOVERING/SYNCING/
+   * INITIALIZING（健康进行中）返回错误提示，避免 agent 在大工程慢 init 期间误调 restart
+   * 打断 sync/init。IDLE 放行：无 in-progress init 可打断，且偶尔是「卡 IDLE 需手动启动」的兜底
+   *（restartArkts 内已用 initPromise 守 IDLE→DISCOVERING 切换竞态，仅设 needsReinit 延后）。
+   */
+  private assertRestartAllowed(
+    target: 'arkts' | 'cpp' | 'all',
+  ): { content: { type: string; text: string }[]; isError: true } | null {
+    if (target === 'arkts' || target === 'all') {
+      const s = this.projectState;
+      if (s !== ProjectLifecycle.READY && s !== ProjectLifecycle.IDLE && s !== ProjectLifecycle.ERROR) {
+        return {
+          content: [{
+            type: 'text',
+            text:
+              `ArkTS project state: ${this.describeArktsState()}, sync/init in progress, restart unavailable (would interrupt the current flow). ` +
+              'Wait for the state to become ready and retry other tools directly—no restart needed. ' +
+              'restart is only available in ready/idle/error states.',
+          }],
+          isError: true,
+        };
+      }
+    }
+    if (target === 'cpp' || target === 'all') {
+      const cs = this.cppProjectState;
+      if (cs !== CppLifecycle.READY_CPP && cs !== CppLifecycle.IDLE_CPP && cs !== CppLifecycle.ERROR_CPP) {
+        return {
+          content: [{
+            type: 'text',
+            text:
+              `C++ project state: ${this.describeCppState()}, sync/init in progress, restart unavailable (would interrupt the current flow). ` +
+              'Wait for the state to become ready and retry other tools directly—no restart needed. ' +
+              'restart is only available in ready/idle/error states.',
+          }],
+          isError: true,
+        };
+      }
+    }
+    return null;
+  }
+
+  /**
    * restart 工具入口：原地重启 server（重置状态 + 重新 sync/init），客户端连接保持。
    * 按 target 选择重置 ArkTS 侧 / C++ 侧 / 双侧。fire-and-forget，立即返回提示。
    */
@@ -992,6 +1036,12 @@ export class DevecoCliMcpServer {
       raw === 'cpp' ? 'cpp' : raw === 'arkts' ? 'arkts' : 'all';
     if (target === 'cpp' && !this.cppEnabled) {
       return { content: [{ type: 'text', text: 'C++ LSP is disabled, cannot restart. Set DEVECO_CLI_CPP_ENABLED=true to enable.' }], isError: true };
+    }
+    // restart 仅在 READY/IDLE/ERROR 时执行；DISCOVERING/SYNCING/INITIALIZING 是健康进行中状态，
+    // 此时 restart 会打断正在跑的 sync/init（大工程 init 尤其慢，常被 agent 误判卡死而误调）。
+    const guard = this.assertRestartAllowed(target);
+    if (guard) {
+      return guard;
     }
     this.restartProject(target);
     const sides = target === 'all' ? 'ArkTS + C++' : target === 'cpp' ? 'C++' : 'ArkTS';

@@ -14,16 +14,12 @@ import { mcpLog } from '../../mcp/src-server/utils/mcp-logger.js';
 const storageDir = path.join(getCliDataDir(), 'TraceLogData');
 
 telemetry.init(storageDir);
-telemetry
-  .flush()
-  .then((ok) => {
-    if (ok) {
-      mcpLog.info('[telemetry] background upload completed');
-    } else {
-      mcpLog.warn('[telemetry] background upload completed with failures');
-    }
-  })
-  .catch((e) => {
-    mcpLog.error('[telemetry] background upload error:', e);
+(async () => {
+  try {
+    await telemetry.flush();
+    await telemetry.retryFailed();
+  } catch (e) {
+    mcpLog.warn('[telemetry] background upload error:', e);
     process.exit(1);
-  });
+  }
+})();
