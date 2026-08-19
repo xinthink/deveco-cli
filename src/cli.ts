@@ -4,10 +4,6 @@
  * SPDX-License-Identifier: MIT
  */
 
-process.env.GLOBAL_AGENT_ENVIRONMENT_VARIABLE_NAMESPACE = '';
-import { bootstrap } from 'global-agent';
-bootstrap();
-
 import * as path from 'path';
 import { program, type Command } from 'commander';
 import { red } from 'colorette';
