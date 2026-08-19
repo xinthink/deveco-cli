@@ -159,8 +159,6 @@ export class EmulatorManager {
       return 'already-running';
     }
 
-    await this.assertSystemImageAvailable(targetEmulator);
-
     const outcome = await runAllEmulatorStartStrategies(
       listName,
       targetEmulator,
@@ -481,51 +479,6 @@ export class EmulatorManager {
         normalizeToken(entry.deviceType) === deviceToken &&
         (normalizeToken(entry.osVersion) === inputToken ||
           normalizeToken(entry.softwareVersion) === inputToken)
-    );
-  }
-
-  /**
-   * Whether the SDK reports this OS image as downloaded (`-imageList -downloaded true`).
-   * Do not use `imageRoot` on disk: removed images may leave stale paths that still exist.
-   */
-  private async hasDownloadedSystemImage(
-    deviceType: string | undefined,
-    osVersion: string
-  ): Promise<boolean> {
-    const stdout = await this.listEmulatorImages({ downloaded: true });
-    const entries = parseDownloadedImageEntriesFromImageList(stdout);
-    const inputToken = normalizeToken(osVersion);
-    const deviceToken = deviceType?.trim()
-      ? normalizeToken(deviceType)
-      : undefined;
-    return entries.some((entry) => {
-      const versionMatch =
-        normalizeToken(entry.osVersion) === inputToken ||
-        normalizeToken(entry.softwareVersion) === inputToken;
-      if (!versionMatch) {
-        return false;
-      }
-      if (deviceToken === undefined) {
-        return true;
-      }
-      return normalizeToken(entry.deviceType) === deviceToken;
-    });
-  }
-
-  private async assertSystemImageAvailable(emulator: EmulatorInfo): Promise<void> {
-    const osVersion = emulator.osVersion?.trim();
-    if (!osVersion) {
-      throw new Error(
-        'The system image file cannot be found, download it again.'
-      );
-    }
-    if (
-      await this.hasDownloadedSystemImage(emulator.deviceType, osVersion)
-    ) {
-      return;
-    }
-    throw new Error(
-      `The system image file ${osVersion} cannot be found, download it again.`
     );
   }
 
