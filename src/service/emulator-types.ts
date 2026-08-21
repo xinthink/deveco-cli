@@ -20,3 +20,11 @@ export interface EmulatorInfo {
 export function normalizeListNameKey(s: string): string {
   return s.normalize('NFKC').replace(/\s+/g, ' ').trim();
 }
+
+/** Enable hot boot for API 26 and later images. */
+export function supportsHotBoot(osVersion: string): boolean {
+  const apiLevel = osVersion
+    .normalize('NFKC')
+    .match(/\((\d+)(?:\.\d+)*\)/)?.[1];
+  return apiLevel !== undefined && Number(apiLevel) >= 26;
+}
