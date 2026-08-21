@@ -5,6 +5,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
 import { ToolRouter, createToolRouter } from './router.js';
@@ -1419,8 +1420,26 @@ export class DevecoCliMcpServer {
     const projectPath = this.config.projectPath!;
 
     const syncCheck = checkSyncRequired(projectPath);
+    const lockExists = fs.existsSync(path.join(projectPath, 'oh-package-lock.json5'));
+    const ohModulesExists =
+      fs.existsSync(path.join(projectPath, 'oh_modules')) &&
+      fs.readdirSync(path.join(projectPath, 'oh_modules')).length > 0;
+
+    if (lockExists && ohModulesExists) {
+      // lock + oh_modules 都在 → ohpm install 跟着 checkSyncRequired 跳过/执行
+      if (!syncCheck.required) {
+        mcpLog.info(`Sync skipped: ${syncCheck.reason}`);
+        return true;
+      }
+      mcpLog.info(`Sync required: ${syncCheck.reason}`);
+      return this.runSync(projectPath, { skipHvigorSync: false });
+    }
+
+    // lock 或 oh_modules 缺失 → ohpm install 全流程必须跑，hvigor 由 checkSyncRequired 决定
     const skipHvigor = !syncCheck.required;
-    mcpLog.info(`Sync check: skipHvigor=${skipHvigor}, reason=${syncCheck.reason}`);
+    mcpLog.info(
+      `Sync check: skipHvigor=${skipHvigor}, ohpm install forced (lock=${lockExists}, ohModules=${ohModulesExists}), reason=${syncCheck.reason}`
+    );
     return this.runSync(projectPath, { skipHvigorSync: skipHvigor });
   }
 
