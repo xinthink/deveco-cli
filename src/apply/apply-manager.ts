@@ -43,9 +43,9 @@ export class ApplyManager {
 
     // 按文件路径自动归属模块，writeChangedFileLists 不传 activeModuleName → 写所有涉及模块
     const modules = this.writeChangeFileList(ctx, files);
-    // 一次 hvigorw 构建所有模块的 hqf，再一次 quickfix 推送
-    const hqfPaths = await this.buildHqf(ctx, modules);
+    // 先停止应用，再构建 hqf，再一次 quickfix 推送后拉起
     await this.stopApp(ctx);
+    const hqfPaths = await this.buildHqf(ctx, modules);
     await this.installHqf(ctx, hqfPaths);
     await this.launchApp(ctx);
     console.log('[Apply] Apply complete');
