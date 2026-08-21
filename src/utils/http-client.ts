@@ -26,7 +26,6 @@ export class HttpClient {
         'accept-language': NetworkConstants.ACCEPT_LANGUAGE,
       },
       transformResponse: [(data) => data],
-      proxy: false,
     };
 
     this.client = axios.create(axiosConfig);
