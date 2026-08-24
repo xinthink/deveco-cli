@@ -8,6 +8,7 @@ import json5 from 'json5';
 import { CommonUtils } from './common-utils.js';
 import { TraceError } from '../trace/index.js';
 import { debugLog } from './logger.js';
+import { ProjectConstants } from '../config/project.js';
 
 export interface ProductNode {
   name: string;
@@ -262,48 +263,231 @@ export class Project {
       return [];
     }
 
-    const moduleDir = CommonUtils.resolvePathWithinRoot(this.rootDir, moduleNode.srcPath);
-    const pkgPath = path.join(moduleDir, 'oh-package.json5');
+    // Prefer lock.json5 (dependencies/dynamicDependencies written by ohpm install).
+    // Overrides are read from lock top-level and applied during graph walk.
+    const lockDeps = this.readLockFinalLocalModuleDeps(moduleName);
+    if (lockDeps !== null) {
+      return lockDeps;
+    }
+
+    // Fallback to module source oh-package.json5 when no lock (first run)
+    return this.readOhPackageLocalModuleDeps(moduleNode);
+  }
+
+  /**
+   * Read lock.json5: return local module deps from dependencies +
+   * dynamicDependencies. Apply top-level overrides (override-first).
+   * Returns null if lock unavailable → caller falls back.
+   */
+  private readLockFinalLocalModuleDeps(moduleName: string): string[] | null {
+    const lockPath = path.join(this.rootDir, ProjectConstants.LOCK_JSON5_PATH);
+    if (!fs.existsSync(lockPath)) {
+      return null;
+    }
+    let parsed: unknown;
+    try {
+      parsed = json5.parse(fs.readFileSync(lockPath, 'utf-8'));
+    } catch (e) {
+      debugLog(`Failed to parse lock.json5: ${e instanceof Error ? e.message : String(e)}`);
+      return null;
+    }
+    const lockObj = parsed as { modules?: Record<string, unknown>; overrides?: Record<string, unknown> };
+    const modules = lockObj?.modules;
+    if (!modules || typeof modules !== 'object') {
+      return null;
+    }
+    // lock modules keyed by relative path; value.name is the module name
+    const moduleEntry = Object.values(modules).find(
+      (v): v is Record<string, unknown> =>
+        typeof v === 'object' && v !== null && (v as { name?: unknown }).name === moduleName
+    );
+    if (!moduleEntry) {
+      return null;
+    }
+    const overrideMap = this.buildOverrideMap(lockObj.overrides);
+    const deps: string[] = [];
+    const seen = new Set<string>();
+    for (const depKey of ['dependencies', 'dynamicDependencies'] as const) {
+      const depRecord = moduleEntry[depKey];
+      if (!depRecord || typeof depRecord !== 'object') {
+        continue;
+      }
+      this.collectLocalDeps(
+        depRecord as Record<string, unknown>,
+        overrideMap,
+        (dep) => this.resolveLockDepByVersion(dep),
+        deps,
+        seen,
+      );
+    }
+    return deps;
+  }
+
+  /** Resolve a lock dep entry by its version field. */
+  private resolveLockDepByVersion(dep: unknown): string | null {
+    if (typeof dep !== 'object' || dep === null) {
+      return null;
+    }
+    const version = (dep as { version?: unknown }).version;
+    return typeof version === 'string' ? this.resolveLocalDepToModule(version) : null;
+  }
+
+  /**
+   * Resolve a single dep to a local module. Override-first: if depName
+   * matches an override, resolve via override target; otherwise fall back
+   * to version/value.
+   */
+  private resolveDepModule(
+    depName: string,
+    overrideMap: Map<string, string> | null,
+    resolveByValue: () => string | null,
+  ): string | null {
+    if (overrideMap?.has(depName)) {
+      const target = overrideMap.get(depName);
+      if (target) {
+        const m = this.resolveLocalDepToModule(target);
+        if (m) {
+          return m;
+        }
+      }
+    }
+    return resolveByValue();
+  }
+
+  /** Build override Map from { depName: "file:target" } object. Null if empty. */
+  private buildOverrideMap(overrides: unknown): Map<string, string> | null {
+    if (!overrides || typeof overrides !== 'object') {
+      return null;
+    }
+    const map = new Map<string, string>();
+    for (const [k, v] of Object.entries(overrides as Record<string, unknown>)) {
+      if (typeof v === 'string') {
+        map.set(k, v);
+      }
+    }
+    return map.size > 0 ? map : null;
+  }
+
+  /** Map a local dep value (relative-to-root or absolute) to a profile module name. */
+  private resolveLocalDepToModule(value: string): string | null {
+    const p = Project.stripLocalDep(value);
+    if (!p) {
+      return null;
+    }
+    // Normalize path separators (JSON may use forward slashes)
+    const resolved = path.resolve(this.rootDir, p);
+    let depDir: string;
+    try {
+      depDir = CommonUtils.ensurePathWithinRoot(this.rootDir, resolved);
+    } catch {
+      return null;
+    }
+    const depModule = this.profile.modules.find(
+      (m) => path.resolve(this.rootDir, m.srcPath) === depDir
+    );
+    return depModule ? depModule.name : null;
+  }
+
+  /** Strip file: prefix. Returns null for registry versions (e.g. "1.0.25"). */
+  private static stripLocalDep(value: string): string | null {
+    if (!value.startsWith('file:') && !value.startsWith('.') && !value.startsWith('..')) {
+      return null;
+    }
+    return value.startsWith('file:') ? value.substring(5) : value;
+  }
+
+  /**
+   * Fallback: read module source oh-package.json5 deps + dynamicDeps +
+   * root overrides. Used when no lock (first run).
+   */
+  private readOhPackageLocalModuleDeps(moduleNode: ModuleNode): string[] {
+    const pkgPath = path.join(
+      CommonUtils.resolvePathWithinRoot(this.rootDir, moduleNode.srcPath),
+      ProjectConstants.OH_PACKAGE_JSON5,
+    );
     if (!fs.existsSync(pkgPath)) {
       return [];
     }
-
+    const overrideMap = this.readRootOverrideMap();
     const deps: string[] = [];
-
+    const seen = new Set<string>();
     try {
-      const content = fs.readFileSync(pkgPath, 'utf-8');
-      const pkg = json5.parse(content) as { dependencies?: Record<string, string> };
-      const dependencies = pkg?.dependencies || {};
-
-      for (const value of Object.values(dependencies)) {
-        if (typeof value !== 'string') {
+      const pkg = json5.parse(fs.readFileSync(pkgPath, 'utf-8')) as {
+        dependencies?: Record<string, unknown>;
+        dynamicDependencies?: Record<string, unknown>;
+      };
+      // HSP source deps are typically in dynamicDependencies
+      for (const depKey of ['dependencies', 'dynamicDependencies'] as const) {
+        const depRecord = pkg?.[depKey];
+        if (!depRecord || typeof depRecord !== 'object') {
           continue;
         }
-
-        let relativePath = value;
-        const isLocal = relativePath.startsWith('file:') || relativePath.startsWith('.') || relativePath.startsWith('..');
-        if (!isLocal) {
-          continue;
-        }
-
-        if (relativePath.startsWith('file:')) {
-          relativePath = relativePath.substring(5);
-        }
-        const combinedRelativePath = path.join(moduleNode.srcPath, relativePath);
-        const depDir = CommonUtils.resolvePathWithinRoot(this.rootDir, combinedRelativePath);
-        const depModule = this.profile.modules.find(
-          (m) => path.resolve(this.rootDir, m.srcPath) === depDir
+        this.collectLocalDeps(
+          depRecord,
+          overrideMap,
+          (value) => this.resolveOhPackageDepByValue(value, moduleNode),
+          deps,
+          seen,
         );
-
-        if (depModule) {
-          deps.push(depModule.name);
-        }
       }
     } catch (e) {
-      // Ignore unparseable oh-package.json5
       debugLog(`Failed to get module dependencies: ${e instanceof Error ? e.message : String(e)}`);
     }
     return deps;
+  }
+
+  /** Read overrides from project root oh-package.json5. */
+  private readRootOverrideMap(): Map<string, string> | null {
+    const rootPkgPath = path.join(this.rootDir, ProjectConstants.OH_PACKAGE_JSON5);
+    if (!fs.existsSync(rootPkgPath)) {
+      return null;
+    }
+    try {
+      const pkg = json5.parse(fs.readFileSync(rootPkgPath, 'utf-8')) as {
+        overrides?: Record<string, unknown>;
+      };
+      return this.buildOverrideMap(pkg?.overrides);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Resolve an oh-package dep value (relative to module dir) to a module name. */
+  private resolveOhPackageDepByValue(value: unknown, moduleNode: ModuleNode): string | null {
+    return typeof value === 'string' ? this.resolveLocalDepModuleName(value, moduleNode) : null;
+  }
+
+  /** Iterate dep record, resolve each via resolveDepModule (override-first), dedup. */
+  private collectLocalDeps(
+    depRecord: Record<string, unknown>,
+    overrideMap: Map<string, string> | null,
+    resolveValue: (value: unknown) => string | null,
+    deps: string[],
+    seen: Set<string>,
+  ): void {
+    for (const [depName, value] of Object.entries(depRecord)) {
+      const depModuleName = this.resolveDepModule(depName, overrideMap, () =>
+        resolveValue(value),
+      );
+      if (depModuleName && !seen.has(depModuleName)) {
+        seen.add(depModuleName);
+        deps.push(depModuleName);
+      }
+    }
+  }
+
+  /** Map a local dep value (relative to module dir) to a profile module name. */
+  private resolveLocalDepModuleName(value: string, moduleNode: ModuleNode): string | null {
+    const relPath = Project.stripLocalDep(value);
+    if (!relPath) {
+      return null;
+    }
+    const combinedRelativePath = path.join(moduleNode.srcPath, relPath);
+    const depDir = CommonUtils.resolvePathWithinRoot(this.rootDir, combinedRelativePath);
+    const depModule = this.profile.modules.find(
+      (m) => path.resolve(this.rootDir, m.srcPath) === depDir
+    );
+    return depModule ? depModule.name : null;
   }
 
   public collectNonHarDependentModuleList(module: string) {

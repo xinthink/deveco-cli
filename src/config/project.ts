@@ -13,4 +13,6 @@ export const ProjectConstants = {
     BUILD_PROFILE_JSON5: 'build-profile.json5',
     /** hvigor sync 输出文件路径，用于作为 sync 基准时间戳 */
     SYNC_OUTPUT_PATH: '.hvigor/outputs/sync/output.json',
+    /** Lock file written by ohpm install (dependencies/dynamicDependencies resolved) */
+    LOCK_JSON5_PATH: 'oh_modules/.ohpm/lock.json5',
 };
