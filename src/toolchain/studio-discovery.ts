@@ -169,7 +169,7 @@ export async function discoverStudioInstallRoot(): Promise<{
   });
   if (!versioned.length) {
     throw new Error(
-      'DevEco Studio installation not found in default locations.'
+      'DevEco Studio installation not found in default locations. Set DEVECO_CLI_STUDIO_PATH to a DevEco Studio installation, or set DEVECO_CLI_CLT_PATH to a Command Line Tools installation.'
     );
   }
   return versioned.reduce((best, current) =>
