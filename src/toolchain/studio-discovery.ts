@@ -9,6 +9,15 @@ import regedit from 'regedit';
 import { debugLog } from '../utils/logger.js';
 import { compareStudioVersions, readStudioVersion } from './studio-version.js';
 
+/** macOS .app bundle 中用于精确识别 DevEco Studio 的 product name */
+const DEVECO_STUDIO_BUNDLE_NAME = 'DevEco Studio';
+
+/** product-info.json 相对于 .app 根目录的相对路径各段 */
+const PRODUCT_INFO_REL_PATH = ['Contents', 'Resources', 'product-info.json'] as const;
+
+/** product-info.json 中标识产品名称的字段 */
+const PRODUCT_INFO_NAME_KEY = 'name';
+
 function directories(candidates: string[]): string[] {
   return candidates.filter((candidate) => {
     try {
@@ -18,6 +27,36 @@ function directories(candidates: string[]): string[] {
     }
   });
 }
+
+/**
+ * 读取 <app>/Contents/Resources/product-info.json 的 name 字段。
+ * @param appRoot - .app 包的根目录路径
+ * @returns 产品名称，文件缺失或不可解析时返回 undefined
+ */
+function readProductName(appRoot: string): string | undefined {
+  const file = path.join(appRoot, ...PRODUCT_INFO_REL_PATH);
+  if (!fs.existsSync(file)) {
+    return undefined;
+  }
+  try {
+    const json = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    const name = json[PRODUCT_INFO_NAME_KEY];
+    return typeof name === 'string' && name.trim() ? name.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 按 product-info.json 的 name 精确识别是否为 DevEco Studio。
+ * 目录名可被手动修改，不作判断依据。
+ * @param appPath - .app 包的根目录路径
+ * @returns 是否为 DevEco Studio
+ */
+function isDevEcoStudioApp(appPath: string): boolean {
+  return readProductName(appPath) === DEVECO_STUDIO_BUNDLE_NAME;
+}
+
 function macCandidates(): string[] {
   const result: string[] = [];
   for (const directory of [
@@ -28,11 +67,9 @@ function macCandidates(): string[] {
       result.push(
         ...fs
           .readdirSync(directory)
-          .filter(
-            (entry) =>
-              entry.endsWith('.app') && entry.toLowerCase().includes('deveco')
-          )
+          .filter((entry) => entry.endsWith('.app'))
           .map((entry) => path.join(directory, entry))
+          .filter(isDevEcoStudioApp)
       );
     } catch {
       // Application directory is optional.
