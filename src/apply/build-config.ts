@@ -36,6 +36,9 @@ export class BuildConfigManager {
       'utf-8'
     );
     debugLog(`[BuildConfigManager] buildConfig.json written to ${configDir}`);
+    // es2abc 不自动创建 ets 输出目录，需预建
+    const etsOutDir = path.join(moduleDir, 'build', productName, 'intermediates', 'loader_out', productName, 'ets');
+    fs.mkdirSync(etsOutDir, { recursive: true });
   }
 
   private static buildConfig(
@@ -73,12 +76,13 @@ export class BuildConfigManager {
         aceSuperVisualPath: path.join(moduleDir, 'src', 'main', 'supervisual'),
         watchMode: 'true',
       },
+      // 普通构建不启用 hotfix symbol map;热重载用独立的 HotReloadBuildConfigManager
       patchConfig: {
-        enableMap: 'true',
+        enableMap: 'false',
         mode: 'hotReload',
         oldMapFilePath: path.join(loaderOut, 'ets'),
-        changedFileList: path.join(intermediates, 'patch', 'default', 'changedFileList.json'),
-        patchAbcPath: path.join(intermediates, 'patch', 'default', 'ets'),
+        changedFileList: path.join(intermediates, 'patch', productName, 'changedFileList.json'),
+        patchAbcPath: path.join(intermediates, 'patch', productName, 'ets'),
         removeChangedFileListInSdk: 'true',
       },
     };
