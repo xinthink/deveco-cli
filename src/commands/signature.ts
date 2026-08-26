@@ -245,7 +245,7 @@ function getAutoSignOptions(
 
   return {
     productName: options.product || 'default',
-    bundleName: project.getBundleName(),
+    bundleName: project.getBundleName(options.product || 'default'),
     projectPath: project.rootDir,
     teamId: authInfo.teamId,
     force: options.force || false,
