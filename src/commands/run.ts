@@ -353,7 +353,7 @@ async function runHotReloadFlow(
 
   const productName = options.product || 'default';
   project.validateProduct(productName);
-  const bundleName = project.getBundleName();
+  const bundleName = project.getBundleName(productName);
   const mainAbility = resolveMainAbility(project, parsedModules, options.ability);
 
   HotReloadBuildConfigManager.generate(
@@ -411,7 +411,7 @@ async function runHotReloadApplyFlow(
 
   const productName = options.product || 'default';
   project.validateProduct(productName);
-  const bundleName = project.getBundleName();
+  const bundleName = project.getBundleName(productName);
 
   warnUnsupportedModules(project, moduleName, applyFileName);
 
@@ -484,7 +484,7 @@ async function runNormalFlow(
   }
 
   const allArtifacts = collectArtifacts(project, parsedModules, isEmulator, productName);
-  const bundleName = project.getBundleName();
+  const bundleName = project.getBundleName(productName);
   const mainAbility = resolveMainAbility(project, parsedModules, options.ability);
 
   await performDeployment(
@@ -516,7 +516,7 @@ async function runApplyFlow(
 
   const productName = options.product || 'default';
   project.validateProduct(productName);
-  const bundleName = project.getBundleName();
+  const bundleName = project.getBundleName(productName);
   // ability: --ability 指定，否则从 entry 模块取（apply 构建模块从 txt 自动识别，不依赖 --module）
   const entryModule = project.profile.modules.find(
     (m) => project.getModuleType(m.name) === 'entry'

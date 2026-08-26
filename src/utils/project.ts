@@ -12,6 +12,8 @@ import { ProjectConstants } from '../config/project.js';
 
 export interface ProductNode {
   name: string;
+  /** Per-product bundleName override. Falls back to AppScope/app.json5 when absent. */
+  bundleName?: string;
 }
 
 export interface BuildModeNode {
@@ -170,7 +172,15 @@ export class Project {
     }
   }
 
-  public getBundleName(): string {
+  public getBundleName(productName?: string): string {
+    // Prefer per-product bundleName override from build-profile.json5
+    if (productName) {
+      const product = this.profile.app.products?.find((p) => p.name === productName);
+      if (product?.bundleName) {
+        return product.bundleName;
+      }
+    }
+    // Fall back to AppScope/app.json5
     const appJson5Path = path.join(this.rootDir, 'AppScope', 'app.json5');
     if (fs.existsSync(appJson5Path)) {
       try {
