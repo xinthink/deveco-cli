@@ -225,14 +225,14 @@ async function handleText(
     const { hdcPath, deviceId } = await initDevice(options.device);
     const escaped = escapeShellText(text);
     if (x !== undefined) {
-      await runHdcShell(hdcPath, deviceId, ['uitest', 'uiInput', 'inputText', `${x}`, `${y}`, escaped]);
+      await runHdcShell(hdcPath, deviceId, [`uitest uiInput inputText ${x} ${y} ${escaped}`]);
       spinner.succeed(`input ${text} at (${x}, ${y})`);
     } else if (options.id) {
       const { x: cx, y: cy } = await resolveTarget(hdcPath, deviceId, undefined, undefined, options.id, options.window);
-      await runHdcShell(hdcPath, deviceId, ['uitest', 'uiInput', 'inputText', `${cx}`, `${cy}`, escaped]);
+      await runHdcShell(hdcPath, deviceId, [`uitest uiInput inputText ${cx} ${cy} ${escaped}`]);
       spinner.succeed(`input ${text} at (${cx}, ${cy})`);
     } else {
-      await runHdcShell(hdcPath, deviceId, ['uitest', 'uiInput', 'text', escaped]);
+      await runHdcShell(hdcPath, deviceId, [`uitest uiInput text ${escaped}`]);
       spinner.succeed(`input ${text}`);
     }
   });
