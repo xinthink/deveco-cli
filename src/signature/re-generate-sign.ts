@@ -382,7 +382,7 @@ export class ReGenerateSign {
       productName,
       projectPath,
       materialPaths,
-      bundleName: project.getBundleName(),
+      bundleName: project.getBundleName(productName),
       deviceUdids,
       storePassword: await readStorePassword(
         projectPath,
