@@ -1416,15 +1416,25 @@ createEmulatorCmd.action(
 emulatorCommand
   .command('delete <name>')
   .description('Delete a local emulator instance')
-  .action(async (name: string) => {
+  .addOption(
+    new Option('--path, --instance-path <path>', 'Emulator instance path')
+  )
+  .action(async (name: string, opts: { instancePath?: string }) => {
     const event: CommandExecuted = {
       event: EventType.CommandExecuted,
-      args: ['emulator', 'delete'],
+      args: [
+        'emulator',
+        'delete',
+        ...(opts.instancePath !== undefined ? ['--instance-path'] : []),
+      ],
     };
     await withEmulatorTrace(event, async () => {
       const { manager } = await initEmulatorManager();
       console.log(cyan(`Deleting emulator "${name}"...`));
-      const deletedName = await manager.deleteVirtualDevice(name);
+      const deletedName = await manager.deleteVirtualDevice(
+        name,
+        opts.instancePath
+      );
       console.log(green(`Emulator "${deletedName}" deleted successfully.`));
     });
   });

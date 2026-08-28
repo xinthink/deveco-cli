@@ -52,7 +52,7 @@ Manage local emulator instances and system images.
 - `scene <outdoorRunning|outdoorCycling|drivingNavigation>` (Req: `--target`): Start motion simulation.
 - `sensor` (Req: `--target`; one of `--light-intensity`, `--humidity`, `--temperature`, `--steps`, `--heartrate`): Inject sensor data.
 - `create <name>` (Req: `--device-type`, `--os-version`): Create instance. Opts: `--instance-path <path>` (alias `--path`), `--image-root <path>`, `--screen-profile <model>`, `--screen <config...>`, `--storage <2-1023>`, `--memory <2-32>`, `--hot-boot <true|false>`, `--force`. Device type is case-insensitive. `--screen` accepts one quoted configuration or two for a foldable device in the format `width(px) height(px) DPI screen-diagonal-length(inch)`; width/height: 720-3500 px, DPI: 240-640, screen diagonal length: 3.5-9 inch. When combined with `--screen-profile`, `--screen` takes precedence. API 26+ uses hot boot by default unless explicitly disabled.
-- `delete <name>`: Delete instance.
+- `delete <name>`: Delete instance. Opt: `--instance-path <path>` (alias `--path`) — required to delete an instance created with a custom path.
 - `image list`: List downloaded images. Opts: `--device-type <type>`, `--all`, `--format <table|json>`.
 - `image download` / `image remove` (Req: `--device-type`, `--os-version`): Download/remove image. (Takes 30+ min, set long timeout).
 *Device types*: `phone`, `foldable`, `widefold`, `triplefold`, `tablet`, `2in1`, `2in1 foldable`, `wearable`, `tv`.

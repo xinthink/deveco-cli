@@ -690,24 +690,27 @@ devecocli emulator create Foldable \
 
 ### `emulator delete`
 
-创建模拟器
+删除模拟器
 
 **命令格式：**
 
 ```bash
-devecocli emulator delete <name>
+devecocli emulator delete <name> [--instance-path <path>]
 ```
 
 **参数：**
 
-| 参数名  | 说明             |
-| ---- | -------------- |
-| name | 必选，模拟器实例名称或序列号 |
+| 参数名 | 说明 |
+| --- | --- |
+| `name` | 必选，模拟器实例名称或序列号 |
+| `--instance-path` / `--path` | 可选，模拟器实例路径；删除通过自定义路径创建的模拟器时，需传入创建时使用的同一路径 |
 
 **示例：**
 
 ```bash
 devecocli emulator delete MyPhone
+
+devecocli emulator delete MyPhone --instance-path /custom/instance/path
 ```
 
 ### `emulator image list`
