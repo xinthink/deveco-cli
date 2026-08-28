@@ -639,22 +639,53 @@ devecocli emulator sensor --target Phone --heartrate 80
 **命令格式：**
 
 ```bash
-devecocli emulator create <name> --device-type <type> --os-version <version> --force
+devecocli emulator create <name> \
+  --device-type <type> \
+  --os-version <version> \
+  [--instance-path <path>] \
+  [--image-root <path>] \
+  [--screen-profile <model>] \
+  [--screen <config...>] \
+  [--storage <size>] \
+  [--memory <size>] \
+  [--hot-boot <true|false>] \
+  [--force]
 ```
 
 **参数：**
 
-| 参数名           | 说明                                                                                                                              |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| name          | 必选，模拟器名称                                                                                                                        |
-| --device-type | 必选，模拟器设备类型，支持 `phone` ， `foldable` ， `widefold` ， `triplefold` ， `tablet` ， `2in1` ， `2in1 foldable` ， `tv` ， `wearable` ，全小写 |
-| --os-version  | 必选，模拟器镜像版本                                                                                                                      |
-| --force       | 可选，覆盖已有同名的模拟器                                                                                                                   |
+| 参数名 | 说明 |
+| --- | --- |
+| `name` | 必选，模拟器名称 |
+| `--device-type` | 必选，指定模拟器产品类型，支持的产品类型以官方设备支持类型为准，不区分大小写 |
+| `--os-version` | 必选，模拟器镜像版本 |
+| `--instance-path` / `--path` | 可选，模拟器实例路径 |
+| `--image-root` | 可选，模拟器镜像路径 |
+| `--screen-profile` | 可选，模拟器设备型号，例如 `Mate 70 Pro` |
+| `--screen` | 可选，屏幕配置，格式为 `宽度(px) 高度(px) DPI 屏幕对角线长度(inch)`；宽度和高度范围为 720～3500 px，DPI 范围为 240～640，屏幕对角线长度范围为 3.5～9 inch；折叠屏模拟器传入两组配置 |
+| `--storage` | 可选，存储空间，范围 `2–1023`，单位 G |
+| `--memory` | 可选，运行内存，范围 `2–32`，单位 G |
+| `--hot-boot` | 可选，取值为 `true` 或 `false`，从 26.0.0 Beta1 开始支持；API 26 及以上未指定时默认为 `true` |
+| `--force` | 可选，覆盖已有同名的模拟器 |
+
+`--screen-profile` 和 `--screen` 可同时指定，此时使用 `--screen`。
 
 **示例：**
 
 ```bash
 devecocli emulator create MyPhone --device-type phone --os-version "HarmonyOS 6.0.1(21)"
+
+devecocli emulator create MyPhone \
+  --device-type phone \
+  --os-version "HarmonyOS 6.0.1(21)" \
+  --screen-profile "Mate 70 Pro" \
+  --storage 8 \
+  --memory 8
+
+devecocli emulator create Foldable \
+  --device-type foldable \
+  --os-version "HarmonyOS 6.0.1(21)" \
+  --screen "2200 2480 480 7.8" "1080 2480 480 6.4"
 ```
 
 ### `emulator delete`

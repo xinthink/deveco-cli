@@ -16,6 +16,20 @@ export interface EmulatorInfo {
   osVersion?: string;
 }
 
+export interface EmulatorCreateOptions {
+  name: string;
+  deviceType: string;
+  osVersion: string;
+  instancePath?: string;
+  imageRoot?: string;
+  screenProfile?: string;
+  screen?: string[];
+  storage?: number;
+  memory?: number;
+  hotBoot?: boolean;
+  force?: boolean;
+}
+
 /** Match CLI input to `-list` names (unicode / repeated spaces). */
 export function normalizeListNameKey(s: string): string {
   return s.normalize('NFKC').replace(/\s+/g, ' ').trim();

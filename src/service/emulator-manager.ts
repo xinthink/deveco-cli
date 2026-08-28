@@ -4,7 +4,7 @@
  */
 import { execa } from 'execa';
 import { ToolProvider } from '../toolchain/index.js';
-import type { EmulatorInfo } from './emulator-types.js';
+import type { EmulatorCreateOptions, EmulatorInfo } from './emulator-types.js';
 import {
   normalizeListNameKey,
   supportsHotBoot,
@@ -20,7 +20,6 @@ import { debugLog } from '../utils/logger.js';
 import {
   parseAvailableImageEntriesFromImageList,
   parseDownloadedImageEntriesFromImageList,
-  parseDownloadedOsVersionsFromImageList,
   type DownloadedImageEntry,
 } from '../utils/emulator-image-list-parse.js';
 import { TraceError } from '../trace/index.js';
@@ -123,8 +122,12 @@ export class EmulatorManager {
     return spawnEmulatorDetached(this.emulatorPath, this.sdkPath, args);
   }
 
-  public async listEmulators(): Promise<EmulatorInfo[]> {
-    const { stdout } = await this.executeEmulator(['-list', '-details']);
+  public async listEmulators(instancePath?: string): Promise<EmulatorInfo[]> {
+    const args = ['-list', '-details'];
+    if (instancePath !== undefined) {
+      args.push('-instancePath', instancePath);
+    }
+    const { stdout } = await this.executeEmulator(args);
     return parseEmulatorListOutput(stdout);
   }
 
@@ -417,11 +420,6 @@ export class EmulatorManager {
     return stdout;
   }
 
-  public async listDownloadedImageOsVersions(): Promise<string[]> {
-    const stdout = await this.listEmulatorImages({ downloaded: true });
-    return parseDownloadedOsVersionsFromImageList(stdout);
-  }
-
   private async hasMatchingDownloadedImage(opts: {
     deviceType: string;
     osVersion: string;
@@ -538,20 +536,19 @@ export class EmulatorManager {
   }
 
   private async checkExistingVirtualDevice(
-    name: string,
-    force?: boolean
+    opts: EmulatorCreateOptions
   ): Promise<string> {
-    const emulators = await this.listEmulators();
-    const nameKey = normalizeListNameKey(name);
+    const emulators = await this.listEmulators(opts.instancePath);
+    const nameKey = normalizeListNameKey(opts.name);
     const existing = emulators.find(
       (e) => normalizeListNameKey(e.name) === nameKey
     );
     if (existing) {
-      if (force) {
-        await this.deleteVirtualDevice(existing.name);
+      if (opts.force) {
+        await this.deleteVirtualDevice(existing.name, opts.instancePath);
       } else {
         throw new TraceError(
-          `Emulator "${name}" already exists. Use \`--force\` to overwrite.`,
+          `Emulator "${opts.name}" already exists. Use \`--force\` to overwrite.`,
           'Emulator already exists.'
         );
       }
@@ -559,17 +556,7 @@ export class EmulatorManager {
     return nameKey;
   }
 
-  public async createVirtualDevice(opts: {
-    name: string;
-    deviceType: string;
-    osVersion: string;
-    force?: boolean;
-  }): Promise<void> {
-    const nameKey = await this.checkExistingVirtualDevice(
-      opts.name,
-      opts.force
-    );
-
+  private buildCreateVirtualDeviceArgs(opts: EmulatorCreateOptions): string[] {
     const args = [
       '-create',
       opts.name,
@@ -578,9 +565,36 @@ export class EmulatorManager {
       '-osVersion',
       opts.osVersion,
     ];
-    if (supportsHotBoot(opts.osVersion)) {
-      args.push('-hotBoot', 'true');
+    if (opts.instancePath !== undefined) {
+      args.push('-instancePath', opts.instancePath);
     }
+    if (opts.imageRoot !== undefined) {
+      args.push('-imageRoot', opts.imageRoot);
+    }
+    if (opts.screenProfile !== undefined) {
+      args.push('-screenProfile', opts.screenProfile);
+    }
+    if (opts.screen?.length) {
+      args.push('-screen', ...opts.screen);
+    }
+    if (opts.storage !== undefined) {
+      args.push('-storage', String(opts.storage));
+    }
+    if (opts.memory !== undefined) {
+      args.push('-memory', String(opts.memory));
+    }
+    const hotBoot =
+      opts.hotBoot ?? (supportsHotBoot(opts.osVersion) ? true : undefined);
+    if (hotBoot !== undefined) {
+      args.push('-hotBoot', String(hotBoot));
+    }
+    return args;
+  }
+
+  public async createVirtualDevice(opts: EmulatorCreateOptions): Promise<void> {
+    const nameKey = await this.checkExistingVirtualDevice(opts);
+
+    const args = this.buildCreateVirtualDeviceArgs(opts);
     await this.runEmulatorChecked(args, {
       extraReject: [
         /Device create fail/i,
@@ -601,7 +615,10 @@ export class EmulatorManager {
           .join('\n'),
     });
 
-    const created = await this.waitForEmulatorPresenceByList(nameKey);
+    const created = await this.waitForEmulatorPresenceByList(
+      nameKey,
+      opts.instancePath
+    );
     if (!created) {
       throw new TraceError(
           `Emulator "${opts.name}" was reported as created, but it did not appear in the emulator list within the waiting period. Open the device manager list in DevEco Studio, then run this command again.`,
@@ -612,12 +629,13 @@ export class EmulatorManager {
 
   private async waitForEmulatorPresenceByList(
     nameKey: string,
+    instancePath?: string,
     timeoutMs = 10000,
     intervalMs = 500
   ): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      const emulators = await this.listEmulators();
+      const emulators = await this.listEmulators(instancePath);
       const found = emulators.some(
         (e) => normalizeListNameKey(e.name) === nameKey
       );
@@ -629,8 +647,11 @@ export class EmulatorManager {
     return false;
   }
 
-  public async deleteVirtualDevice(userInputName: string): Promise<string> {
-    const emulators = await this.listEmulators();
+  public async deleteVirtualDevice(
+    userInputName: string,
+    instancePath?: string
+  ): Promise<string> {
+    const emulators = await this.listEmulators(instancePath);
     const nameKey = normalizeListNameKey(userInputName);
     const target = emulators.find(
       (e) => normalizeListNameKey(e.name) === nameKey
@@ -650,7 +671,12 @@ export class EmulatorManager {
       );
     }
 
-    await this.runEmulatorChecked(['-delete', listName, '-force'], {
+    const args = ['-delete', listName];
+    if (instancePath !== undefined) {
+      args.push('-instancePath', instancePath);
+    }
+    args.push('-force');
+    await this.runEmulatorChecked(args, {
       printOutputOnSuccess: false,
     });
     return listName;
