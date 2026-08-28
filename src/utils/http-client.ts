@@ -10,6 +10,27 @@ import axios, {
 } from 'axios';
 import { NetworkConstants, TimeConstants } from '../config/constants';
 import type { HttpResponse, HttpRequestConfig } from '../types/http';
+import { getProxyForUrl } from 'proxy-from-env';
+
+/**
+ * Build an axios `proxy` config with DECODED credentials from a proxy URL.
+ * axios's built-in env-proxy path reads URL.username/.password WITHOUT decoding
+ * → wrong Basic → 407. Passing an explicit `proxy` object makes axios read
+ * `proxy.auth` (http.js:292) and build its own tunneling agent with the decoded
+ * creds → correct Proxy-Authorization.
+ */
+function buildProxyConfig(proxyUrl: string) {
+  const u = new URL(proxyUrl);
+  return {
+    protocol: u.protocol,
+    host: u.hostname,
+    port: u.port ? Number.parseInt(u.port, 10) : u.protocol === 'https:' ? 443 : 80,
+    auth: {
+      username: decodeURIComponent(u.username),
+      password: decodeURIComponent(u.password),
+    },
+  };
+}
 
 /**
  * HTTP 客户端类
@@ -30,6 +51,11 @@ export class HttpClient {
 
     this.client = axios.create(axiosConfig);
 
+    this.client.interceptors.request.use((config) => {
+      const proxyUrl = getProxyForUrl(config.url ?? '');
+      config.proxy = proxyUrl ? buildProxyConfig(proxyUrl) : false;
+      return config;
+    });
     this.client.interceptors.response.use(
       (response) => response,
       (error: AxiosError) => {
