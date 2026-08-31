@@ -98,8 +98,12 @@ export interface SkillOperation extends BaseEvent {
   failedErrors?: string[];
   /** list/find：结果总数 */
   resultTotal?: number;
-  /** find：查询词长度（不存原文） */
+  /** find：搜索词原文 */
+  keyword?: string;
+  /** find：搜索词长度 */
   queryLen?: number;
+  /** add/remove：--skill 取值（实际操作的 skill 名称） */
+  skillName?: string;
 }
 
 export interface McpConfigOperation extends BaseEvent {
@@ -125,7 +129,9 @@ export type DocSubAction = 'search' | 'read' | 'catalog';
 export interface DocOperation extends BaseEvent {
   /** 文档操作类型，落 event_detail.sub_action */
   subAction: DocSubAction;
-  /** search：归一化后的搜索词总长度（不存关键词原文） */
+  /** search：搜索词原文数组 */
+  keywords?: string[];
+  /** search：归一化后的搜索词总长度 */
   queryLen?: number;
   /** search：最终生效的文档分类，未指定时为 all */
   catalog?: string;

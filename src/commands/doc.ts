@@ -132,6 +132,7 @@ docCommand
     const event: DocOperation = {
       event: EventType.DocOperation,
       subAction: 'search',
+      keywords: normalizedKeywords,
       queryLen: normalizedKeywords.join(' ').length,
       catalog: opts.catalog ?? 'all',
     };
