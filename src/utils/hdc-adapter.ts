@@ -137,9 +137,52 @@ export class HdcAdapter {
     return await this.runHdc(args);
   }
 
-  public async forceStopApp(target: string, bundleName: string): Promise<string> {
+  public async forceStopApp(
+    target: string,
+    bundleName: string
+  ): Promise<string> {
     CommonUtils.assertBundleNameStrict(bundleName);
     const args = ['-t', target, 'shell', 'aa', 'force-stop', bundleName];
     return await this.runHdc(args, false);
+  }
+
+  /**
+   * Transfer a file between the host and a connected device via
+   * `hdc -t <serial> file <direction> <src> <dst>`.
+   * - 'send' copies a local file onto the device: <local> <remote>.
+   * - 'recv' copies a remote device file to the host: <remote> <local>.
+   * Resolves with the trimmed hdc stdout ("FileTransfer finish") on success,
+   * throws when hdc does not report a clean transfer.
+   */
+  public async transferFile(
+    target: string,
+    direction: 'send' | 'recv',
+    src: string,
+    dst: string
+  ): Promise<string> {
+    const args = ['-t', target, 'file', direction, src, dst];
+    const stdout = await this.runHdc(args, false);
+    if (!stdout.includes('FileTransfer finish')) {
+      throw new Error(
+        `File ${direction} failed: ${stdout.trim() || 'hdc returned no output'}`
+      );
+    }
+    return stdout.trim();
+  }
+
+  /**
+   * Run `hdc -t <target> shell sqlite3 <dbPath> [args...]`, forwarding stdio
+   * so both one-shot queries and the interactive sqlite shell work.
+   */
+  public async runSqlite3(
+    target: string,
+    dbPath: string,
+    sqliteArgs: string[] = []
+  ): Promise<void> {
+    const args = ['-t', target, 'shell', 'sqlite3', dbPath, ...sqliteArgs];
+    await execa(this.toolProvider.hdcPath, args, {
+      stdio: 'inherit',
+      env: { ...process.env },
+    });
   }
 }
