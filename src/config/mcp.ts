@@ -65,7 +65,13 @@ export interface AgentMcpConfig {
 }
 
 /** 支持全局 MCP 配置的 agent 名称列表 */
-export const GLOBAL_MCP_AGENTS = ['opencode', 'cursor', 'claude-code', 'codex'];
+export const GLOBAL_MCP_AGENTS = [
+  'opencode',
+  'pi',
+  'cursor',
+  'claude-code',
+  'codex',
+];
 
 /**
  * 各 AI Agent 的 MCP 配置信息
@@ -88,6 +94,21 @@ export const AGENT_MCP_CONFIG: Record<string, AgentMcpConfig> = {
     projectConfigPath: '.opencode/opencode.json',
     mcpServersKey: 'mcp',
     format: 'opencode',
+  },
+
+  /**
+   * Pi Coding Agent - 支持全局 + 项目级
+   * 全局：~/.pi/agent/mcp.json
+   * 项目级：<project>/.pi/mcp.json
+   */
+  pi: {
+    name: 'pi',
+    displayName: 'Pi Coding Agent',
+    supportsGlobal: true,
+    globalConfigPath: path.join(homedir(), '.pi', 'agent', 'mcp.json'),
+    projectConfigPath: '.pi/mcp.json',
+    mcpServersKey: 'mcpServers',
+    format: 'standard',
   },
 
   /**
