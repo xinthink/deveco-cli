@@ -224,6 +224,7 @@ interface EmulatorListItem {
 
 interface EmulatorListOptions {
   format: EmulatorListFormat;
+  details?: boolean;
 }
 
 function buildEmulatorListRow(item: EmulatorListItem): TableRow {
@@ -1264,6 +1265,12 @@ emulatorCommand
   .command('list')
   .description('List all emulator instances')
   .addOption(
+    new Option(
+      '--details',
+      'Output the raw JSON of `Emulator -list -details` without transformation'
+    ).conflicts('format')
+  )
+  .addOption(
     new Option('--format <format>', 'Output format')
       .choices(['table', 'json'])
       .default('table')
@@ -1271,10 +1278,20 @@ emulatorCommand
   .action(async (options: EmulatorListOptions) => {
     const event: CommandExecuted = {
       event: EventType.CommandExecuted,
-      args: ['emulator', 'list'],
+      args: [
+        'emulator',
+        'list',
+        ...(options.details ? ['--details'] : []),
+        ...(options.format !== 'table' ? ['--format'] : []),
+      ],
     };
     await withEmulatorTrace(event, async () => {
       const { manager, toolProvider } = await initEmulatorManager();
+      if (options.details) {
+        const raw = await manager.listEmulatorDetails();
+        console.log(raw.trimEnd());
+        return;
+      }
       const spinner =
         options.format === 'table'
           ? ora({

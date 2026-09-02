@@ -529,19 +529,22 @@ devecocli check lint [path]
 
 ```bash
 devecocli emulator list [--format <table|json>]
+devecocli emulator list --details
 ```
 
 **参数：**
 
 | 参数名 | 说明 |
 | --- | --- |
-| `--format` | 可选，控制终端输出格式，取值为 `table` 或 `json`，默认为 `table` |
+| `--format` | 可选，控制终端输出格式，取值为 `table` 或 `json`，默认为 `table`；`json` 返回固定的五字段精简结构 |
+| `--details` | 可选，直接输出底层 `Emulator -list -details` 的完整 JSON，不做任何字段裁剪、重命名或补充；与 `--format` 互斥 |
 
 **示例：**
 
 ```bash
 devecocli emulator list
 devecocli emulator list --format json
+devecocli emulator list --details
 ```
 
 ### `emulator start`

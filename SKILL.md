@@ -41,7 +41,7 @@ Run DevEco Code Linter checks for TS/ArkTS code.
 ### `devecocli emulator`
 Manage local emulator instances and system images.
 - **Studio requirement**: DevEco Studio `>= 6.1.0`.
-- `list`: Show instances (status, serial, device type). Opt: `--format <table|json>` (default: `table`).
+- `list`: Show instances (status, serial, device type). Opt: `--format <table|json>` (default: `table`); `--details` (mutually exclusive with `--format`) dumps the raw JSON of `Emulator -list -details` verbatim — no field trimming/renaming.
 - `start <names...>`: Start instances. Quote names with spaces. (See Troubleshooting if blocked).
 - `stop <names...>`: Stop by name or serial (`127.0.0.1:<port>`).
 - Scene control commands require Emulator 7.0 or later. Use `DEVECO_CLI_DEBUG=1` to inspect the underlying `Emulator` command mapping.

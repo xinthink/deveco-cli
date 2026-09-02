@@ -131,6 +131,11 @@ export class EmulatorManager {
     return parseEmulatorListOutput(stdout);
   }
 
+  public async listEmulatorDetails(): Promise<string> {
+    const { stdout } = await this.executeEmulator(['-list', '-details']);
+    return stdout;
+  }
+
   public async getDeviceTypeByName(): Promise<Map<string, string>> {
     const map = new Map<string, string>();
     try {
