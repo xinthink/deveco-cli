@@ -4,6 +4,7 @@
  */
 import * as path from 'path';
 import type { EmulatorInfo } from './emulator-types.js';
+import type { EmulatorSpawnHandle } from '../utils/emulator-spawn.js';
 
 type EmulatorNativeBootMode = 'snapshot';
 
@@ -86,9 +87,12 @@ export function buildEmulatorStartArgCandidates(
 export async function runAllEmulatorStartStrategies(
   listName: string,
   targetEmulator: EmulatorInfo,
-  executeEmulatorDetached: (args: string[]) => Promise<void>,
+  executeEmulatorDetached: (args: string[]) => EmulatorSpawnHandle,
   nativeBootMode?: EmulatorNativeBootMode
-): Promise<{ ok: true } | { ok: false; lastError: Error }> {
+): Promise<
+  | { ok: true; args: string[]; tracker: EmulatorSpawnHandle['tracker'] }
+  | { ok: false; lastError: Error }
+> {
   let lastError: Error = new Error('No start strategy ran');
   const candidates = buildEmulatorStartArgCandidates(
     listName,
@@ -97,10 +101,19 @@ export async function runAllEmulatorStartStrategies(
   );
 
   for (const args of candidates) {
+    let handle: EmulatorSpawnHandle | undefined;
     try {
-      await executeEmulatorDetached(args);
-      return { ok: true };
+      handle = executeEmulatorDetached(args);
+      await handle.started;
+      return { ok: true, args, tracker: handle.tracker };
     } catch (err) {
+      if (handle?.tracker) {
+        try {
+          await handle.tracker.stop();
+        } catch {
+          // ignore tracker stop failure
+        }
+      }
       lastError = err as Error;
     }
   }
