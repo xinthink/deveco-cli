@@ -4,6 +4,7 @@
  */
 import { Command, InvalidArgumentError } from 'commander';
 import { createLintCommand } from '../codelinter/index.js';
+import { createArktsCommand } from '../arktscheck/index.js';
 import {
   handleCheckCommand,
   handleVersionsCommand,
@@ -79,6 +80,7 @@ compatCommand
 const checkCommand = new Command('check')
   .description('Run DevEco project checks')
   .addCommand(compatCommand)
-  .addCommand(createLintCommand());
+  .addCommand(createLintCommand())
+  .addCommand(createArktsCommand());
 
 export default checkCommand;

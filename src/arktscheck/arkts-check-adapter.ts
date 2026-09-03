@@ -1,0 +1,236 @@
+/*
+ * Copyright (c) 2026 Huawei Device Co., Ltd.
+ * SPDX-License-Identifier: MIT
+ */
+import { execa } from 'execa';
+import fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+import { ToolProvider } from '../toolchain/index.js';
+import { debugLog } from '../utils/logger.js';
+import { Project } from '../utils/project.js';
+import type { ArktsCheckRequest, ArktsCheckResult } from './types.js';
+
+const SCRIPT_RESOURCE_REL = path.join('resources', 'arkts-check.cjs');
+
+/** 封装 arkts-check.cjs 脚本定位、命令执行和结果解析。 */
+export class ArktsCheckAdapter {
+  private readonly toolProvider: ToolProvider;
+  private readonly cwd: string;
+
+  constructor(toolProvider: ToolProvider, cwd: string) {
+    this.toolProvider = toolProvider;
+    this.cwd = cwd;
+  }
+
+  /** 执行一次 ArkTS 检查并返回标准化结果。 */
+  public async check(request: ArktsCheckRequest): Promise<ArktsCheckResult> {
+    const projectRoot = this.resolveProjectRoot(request.projectRoot, request.files);
+    const files = this.resolveFiles(projectRoot, request.files);
+    const scriptPath = this.resolveScriptPath();
+    const args = this.buildArgs(scriptPath, projectRoot, files, request.fix);
+    const env = this.buildEnv();
+
+    debugLog(`Executing: ${this.toolProvider.nodePath} ${args.join(' ')}`);
+
+    const result = await execa(this.toolProvider.nodePath, args, {
+      cwd: projectRoot,
+      env,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      reject: false,
+    });
+
+    return this.parseResult(result.stdout, result.stderr, result.exitCode ?? 1);
+  }
+
+  private resolveProjectRoot(explicit?: string, files?: string[]): string {
+    if (explicit) {
+      const resolved = path.resolve(this.cwd, explicit);
+      if (!fs.existsSync(resolved)) {
+        throw new Error(`Project path not found: ${resolved}`);
+      }
+      const stat = fs.statSync(resolved);
+      if (stat.isFile()) {
+        const found = this.findProjectRootAbove(path.dirname(resolved));
+        if (found) { return found; }
+        throw new Error(
+          `--project path is a file, not a project root: ${resolved}\n` +
+            'Could not find a project-level build-profile.json5 above it. ' +
+            'Pass the project root directory instead.'
+        );
+      }
+      const profilePath = path.join(resolved, 'build-profile.json5');
+      if (!fs.existsSync(profilePath) || !this.isProjectLevelProfile(profilePath)) {
+        throw new Error(
+          `Not a valid HarmonyOS project root: ${resolved}\n` +
+            '(project-level build-profile.json5 not found).'
+        );
+      }
+      return resolved;
+    }
+    // 当有文件参数时，优先从文件路径推断项目根目录
+    if (files && files.length > 0) {
+      for (const f of files) {
+        const abs = path.isAbsolute(f) ? f : path.resolve(this.cwd, f);
+        const found = this.findProjectRootAbove(path.dirname(abs));
+        if (found) { return found; }
+      }
+    }
+    // 没有文件参数或文件路径上找不到项目，回退到 cwd
+    try {
+      return Project.discover(this.cwd).rootDir;
+    } catch {
+      // cwd 也不在项目内
+    }
+    throw new Error(
+      'Not in a valid HarmonyOS project directory ' +
+        '(project-level build-profile.json5 not found). ' +
+        'Run this command inside a project, or pass --project <path>.'
+    );
+  }
+
+  /** 从指定目录向上查找包含项目级 build-profile.json5 的目录。 */
+  private findProjectRootAbove(startDir: string): string | undefined {
+    let dir = startDir;
+    while (dir && dir !== path.dirname(dir)) {
+      const profilePath = path.join(dir, 'build-profile.json5');
+      if (fs.existsSync(profilePath) && this.isProjectLevelProfile(profilePath)) {
+        return dir;
+      }
+      dir = path.dirname(dir);
+    }
+    return undefined;
+  }
+
+  /** 项目级 build-profile.json5 包含 "app" 字段，module 级不包含。 */
+  private isProjectLevelProfile(profilePath: string): boolean {
+    try {
+      const content = fs.readFileSync(profilePath, 'utf-8');
+      return /"app"\s*:/.test(content);
+    } catch {
+      return false;
+    }
+  }
+
+  private resolveFiles(projectRoot: string, files: string[]): string[] {
+    if (files.length === 0) {
+      return [];
+    }
+    const resolved = files.map((file) =>
+      path.isAbsolute(file) ? file : path.resolve(projectRoot, file)
+    );
+    // 1. 不存在的文件直接报错
+    const notFound = resolved.filter((f) => !fs.existsSync(f));
+    if (notFound.length > 0) {
+      throw new Error(
+        `File(s) not found:\n` + notFound.map((f) => `  ${f}`).join('\n')
+      );
+    }
+    // 2. 项目外的文件直接报错（无论扩展名）
+    const outside = resolved.filter((file) => {
+      const rel = path.relative(projectRoot, file);
+      return rel.startsWith('..') || path.isAbsolute(rel);
+    });
+    if (outside.length > 0) {
+      throw new Error(
+        `File(s) outside the project root ${projectRoot}:\n` +
+          outside.map((f) => `  ${f}`).join('\n')
+      );
+    }
+    // 3. 过滤出 .ets 文件
+    const etsFiles = resolved.filter(
+      (file) => fs.statSync(file).isFile() && file.endsWith('.ets')
+    );
+    if (etsFiles.length === 0) {
+      throw new Error(
+        `No .ets files found in the given file(s):\n` +
+          resolved.map((f) => `  ${f}`).join('\n')
+      );
+    }
+    return etsFiles;
+  }
+
+  private buildArgs(
+    scriptPath: string,
+    projectRoot: string,
+    files: string[],
+    fix: boolean
+  ): string[] {
+    const args = [scriptPath, '--project', projectRoot];
+    args.push(fix ? '--fix' : '--no-fix');
+    if (files.length > 0) {
+      args.push('--files', ...files);
+    }
+    return args;
+  }
+
+  private buildEnv(): NodeJS.ProcessEnv {
+    return {
+      ...process.env,
+      DEVECO_HOME: this.toolProvider.toolchainRoot,
+    };
+  }
+
+  private parseResult(
+    stdout: string,
+    stderr: string,
+    exitCode: number
+  ): ArktsCheckResult {
+    const trimmed = stdout.trim();
+    if (!trimmed) {
+      const detail = stderr.trim();
+      throw new Error(
+        `arkts-check exited with code ${exitCode} but produced no output` +
+          (detail ? `: ${detail}` : '')
+      );
+    }
+    try {
+      const parsed = JSON.parse(trimmed) as ArktsCheckResult;
+      return {
+        success: parsed.success ?? false,
+        error: parsed.error,
+        errors: parsed.errors ?? [],
+        fixed: parsed.fixed ?? [],
+        alsoModified: parsed.alsoModified ?? [],
+        summary: {
+          errorCount: parsed.summary?.errorCount ?? 0,
+          warnCount: parsed.summary?.warnCount ?? 0,
+          fixedCount: parsed.summary?.fixedCount ?? 0,
+          checkerDiagCount: parsed.summary?.checkerDiagCount,
+          fileCount: parsed.summary?.fileCount ?? 0,
+        },
+      };
+    } catch (error) {
+      throw new Error(
+        `Failed to parse arkts-check output: ${trimmed.slice(0, 500)}`,
+        { cause: error }
+      );
+    }
+  }
+
+  private resolveScriptPath(): string {
+    const currentFilePath = fileURLToPath(import.meta.url);
+    const dir = path.dirname(currentFilePath);
+
+    if (currentFilePath.includes('dist')) {
+      const projectRoot = path.dirname(dir);
+      const candidate = path.join(projectRoot, 'src', SCRIPT_RESOURCE_REL);
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+
+    const srcDir = path.dirname(dir);
+    const projectRoot = path.dirname(srcDir);
+    const candidate = path.join(projectRoot, 'src', SCRIPT_RESOURCE_REL);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+
+    throw new Error(
+      'arkts-check.cjs not found in deveco-cli package resources. ' +
+        'Reinstall deveco-cli.'
+    );
+  }
+}
