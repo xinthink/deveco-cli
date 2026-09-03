@@ -1,6 +1,6 @@
 # 隐私说明
 
-`deveco-cli` 高度重视用户隐私保护。内置的匿名遥测（打点）功能仅用于改进产品体验（如统计命令使用频率、构建耗时、失败率等），**不收集任何敏感或可能关联到用户身份的信息**：不采集源码、文件内容、账号凭据、token、操作系统级硬件标识等，命令参数仅记录 flag 名称、不记录取值。遥测默认开启，但可通过环境变量 `DEVECO_CLI_DISABLE_TELEMETRY=1` 随时一键完全关闭（详见第 6 节），关闭后不再采集任何数据；打点、上报失败也绝不会阻塞或改变任何命令行为。
+`deveco-cli` 高度重视用户隐私保护。内置的匿名遥测（打点）功能仅用于改进产品体验（如统计命令使用频率、构建耗时、失败率等），**不收集任何敏感或可能关联到用户身份的信息**：不采集源码、文件内容、账号凭据、token、操作系统级硬件标识等，命令参数原则上仅记录 flag 名称、不记录取值。遥测默认开启，但可通过环境变量 `DEVECO_CLI_DISABLE_TELEMETRY=1` 随时一键完全关闭（详见第 6 节），关闭后不再采集任何数据；打点、上报失败也绝不会阻塞或改变任何命令行为。
 
 ## 1. 遥测默认开启
 
@@ -14,8 +14,8 @@
 |---|---|---|
 | 命令执行 | `devecocli` 各子命令（build / run / device / emulator / skills / docs / update / create / auth 等） | 命令名、使用的选项（仅 flag 名称，不含参数值）、耗时、成功/失败、错误码、部分命令的内存统计（如构建内存） |
 | MCP 工具调用 | `devecocli serve mcp` 下的工具调用（check / hover / definition / references 等） | 工具名、方向（incoming/outgoing）、文件扩展名、CLI 与语言服务进程内存、成功/失败、错误码 |
-| 技能操作 | `devecocli skills add / list / find / remove` | 子操作名、使用的选项（仅 flag 名称）、下载数据量、安装/移除成功数、失败原因（仅脱敏后的首词，不含具体错误文本） |
-| 文档检索 | `devecocli docs search / read / catalog` | 搜索词长度（不存关键词原文）、目录名、文档 ID |
+| 技能操作 | `devecocli skills add / list / find / remove` | 子操作名、使用的选项（仅 flag 名称）、find 搜索词原文与长度、add/remove 的 --skill 取值、下载数据量、安装/移除成功数、失败原因（仅脱敏后的首词，不含具体错误文本） |
+| 文档检索 | `devecocli docs search / read / catalog` | 搜索词原文与长度、目录名、文档 ID |
 | 语法检查 | `devecocli check lint` / `check compat` | 命令选项（仅 flag 名称）、耗时、成功/失败、错误码、内存统计 |
 
 ### 2.2 每条事件的公共字段
@@ -25,16 +25,15 @@
 - `trace_uuid`：每条事件的随机 ID。
 - 环境信息：操作系统名称与架构、CLI 版本、DevEco Studio 版本、CLT 版本、Node.js 版本。
 - 耗时、成功/失败、错误码。
-- 预定义枚举值：与 CLI 管理的固定系统选项对应的取值，如文档目录名（catalog）、目标 agent 名、来源分类（user_project/sdk/system）、输出格式等白名单值。仅收集固定、预定义的选项值，不收集用户自定义的自由输入。
-- 异常信息：出错时采集脱敏后的错误信息（打点异常上报脱敏后的 `traceMessage`；其余异常仅上报错误码或错误类型名），不采集堆栈轨迹，不携带原始错误详情。
+- 预定义枚举值：与 CLI 管理的固定系统选项对应的取值，如文档目录名（catalog）、目标 agent 名、来源分类（user_project/sdk/system）、输出格式等白名单值。仅收集固定、预定义的选项值。
+- 异常信息：出错时仅采集脱敏后的错误信息——TraceError 取其脱敏的 `traceMessage`，其余异常仅上报错误码（如 `ENOENT`/`EACCES`）或异常类型名，不采集堆栈轨迹，不携带原始错误消息。
 
 ## 3. 不采集的内容
 
 - **不采集**：源码、文件内容、工程内数据、命令输出、终端输入。
-- **不采集**：用户创建的输入内容与外部标识符，如本地文件路径、Maven 坐标、自定义项目名、搜索关键词（仅记录长度）。
+- **不采集**：除 skills find / docs search 的搜索词原文与 skills add/remove 的 --skill 取值外，不采集用户创建的输入内容与外部标识符，如本地文件路径、Maven 坐标、自定义项目名。
 - **不采集**：DevEco 账号、登录凭据、token、Cookie 等敏感信息。
 - **不采集**：操作系统级硬件标识（Windows `MachineGuid`、macOS `IOPlatformUUID`、Linux `machine-id` 等）及 MAC 地址。安装标识 `uid` 为纯随机生成，与硬件完全无关。
-- 命令选项仅记录 flag 名称（如 `--module`），不记录 flag 对应的参数值。
 
 ## 4. 本地存储与加密
 

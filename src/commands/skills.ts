@@ -386,7 +386,11 @@ function trackSkillsAdd(options: AddOptions): Promise<void> {
     'add',
     async () => {
       const { diskBytes, results } = await handleAddCommand(options);
-      return { diskUsage: formatBytesMb(diskBytes), ...computeOpCounts(results) };
+      return {
+        diskUsage: formatBytesMb(diskBytes),
+        ...(options.skill ? { skillName: options.skill } : {}),
+        ...computeOpCounts(results),
+      };
     },
     buildSkillsArgs('add', options)
   );
@@ -604,7 +608,7 @@ skillsCommand
           if (skills.length === 0) {
             console.log(yellow(`No skills found matching '${keyword}'.`));
             spinner.stop();
-            return { resultTotal: 0, queryLen: keyword.length };
+            return { resultTotal: 0, queryLen: keyword.length, keyword };
           }
 
           spinner.succeed(`Found ${skills.length} skills.`);
@@ -615,7 +619,7 @@ skillsCommand
             console.log(dim(skill.description));
             console.log();
           }
-          return { resultTotal: skills.length, queryLen: keyword.length };
+          return { resultTotal: skills.length, queryLen: keyword.length, keyword };
         } finally {
           spinner.stop();
         }
@@ -669,7 +673,7 @@ skillsCommand
     try {
       await trackSkillsOperation('remove', async () => {
         const results = await handleRemoveCommand(options.skill!, options);
-        return computeOpCounts(results);
+        return { skillName: options.skill!, ...computeOpCounts(results) };
       }, buildSkillsArgs('remove', options));
     } catch (error: unknown) {
       console.error(red((error as Error).message));
