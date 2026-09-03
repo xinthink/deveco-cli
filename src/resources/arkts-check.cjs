@@ -754,9 +754,16 @@ function validatePageEntryCount(etsFile, projectPath, pagePath) {
 // needs the struct's own decorator plus its members' decorators, no cross-file
 // type resolution (unlike the separate "@State property type is @ObservedV2"
 // check, which is out of scope here).
+// Mirrors hvigor's COMPONENT_MEMBER_DECORATOR_V1 (ets-loader/lib/constant_define.js),
+// which is what validateStructDecorator tests for 10905339. '@BuilderParam' is
+// deliberately NOT here even though it is a V1 decorator: @ComponentV2 structs
+// support it too (ets-loader/lib/process_struct_componentV2.js has its own
+// processBuilderParamProperty and a dedicated 10905107 diagnostic for it), so
+// listing it made the legal `@ComponentV2 struct { @BuilderParam content: () => void }`
+// a hard error. '@Watch' is likewise excluded -- hvigor allows it in both versions.
 const V1_ONLY_MEMBER_DECORATORS = new Set([
   'State', 'Prop', 'Link', 'Provide', 'Consume', 'ObjectLink',
-  'StorageLink', 'StorageProp', 'LocalStorageLink', 'LocalStorageProp', 'BuilderParam',
+  'StorageLink', 'StorageProp', 'LocalStorageLink', 'LocalStorageProp',
 ]);
 const V2_ONLY_MEMBER_DECORATORS = new Set([
   'Local', 'Param', 'Once', 'Event', 'Provider', 'Consumer',
@@ -886,15 +893,22 @@ const CLASS_DECL_RE = /^(\s*)((?:@\w+(?:\([^)]*\))?\s*)*)(?:export\s+(?:default\
 // shape and guessing at it risks false positives for no observed payoff.
 const STATE_PROPERTY_TYPE_RE = /^\s*@(State|Prop|Provide|Consume)\b(?:\([^)]*\))?\s+\w+\s*:\s*([A-Za-z_$][\w$]*)\b(?!\s*[<[.])/;
 
-// ArkUI/SDK classes that are @ObservedV2 internally but never appear as a
-// declaration in project source, so collectObservedV2ClassNames' file scan
-// can never see them. Real bootstrap failure (10905348, task-011): `@Prop
-// navPathStack: NavPathStack` compiled clean through arkts_check but failed
-// hvigor with the same "@State/@Prop property can not be a class decorated
-// with '@ObservedV2'" error, because NavPathStack is declared inside the
-// OpenHarmony SDK's .d.ets, not anywhere in the checked file set. Add names
-// here as they're confirmed by a real compiler error; do not guess.
-const SDK_OBSERVED_V2_CLASSES = new Set(['NavPathStack']);
+// SDK classes that hvigor treats as @ObservedV2 but that never appear as a
+// declaration in project source, so collectObservedV2ClassNames' file scan can
+// never see them. EMPTY ON PURPOSE, and adding a name is almost certainly wrong:
+// hvigor's 10905348 check (ets-loader/lib/validate_ui_syntax.js,
+// validatePropertyInStruct -> validatePropertyType -> parsePropertyType) reads
+// the resolved type's own `symbol.valueDeclaration` decorators through the TS
+// checker, and no class in the ArkUI component declarations carries @ObservedV2
+// -- `ets/component/*.d.ts` mentions it only as the
+// `declare const ObservedV2: ClassDecorator` definition. The SDK classes that do
+// carry it live in `@ohos.arkui.advanced.{ArcSlider,DialogV2,SubHeaderV2,
+// ProgressButtonV2,SegmentButtonV2,ToolBarV2}.d.ets` and are never used as
+// @State/@Prop property types. 'NavPathStack' was seeded here from a
+// misattributed bootstrap failure -- `declare class NavPathStack` in
+// `ets/component/navigation.d.ts` carries no decorators at all -- and it made the
+// legal `@Prop pathStack: NavPathStack = new NavPathStack()` a hard error.
+const SDK_OBSERVED_V2_CLASSES = new Set();
 
 // The @ObservedV2 class index must be built from the WHOLE project, not just
 // the checked `files`: the decorated class lives in a model file while the
@@ -1284,15 +1298,34 @@ function validateRegularPropertyInit(files, projectPath) {
 
 // An @Entry component's build() must contain exactly one root node, and that
 // node must be a container (10905210). Two adjacent top-level components, or a
-// single non-container like Text/Image, both fail the build. Counting top-level
+// single non-container like Image, both fail the build. Counting top-level
 // statements inside build() is a brace-depth question, not a typing one.
+//
+// hvigor does NOT curate a container list: component_map.js sorts every entry of
+// ets-loader/components/*.json by its own `atomic` flag into AUTOMIC_COMPONENT vs
+// BUILDIN_CONTAINER_COMPONENT, and checkContainer() tests the latter. So this set
+// is that derivation -- every non-atomic component in the SDK's component
+// descriptors (API 20) -- not a hand-picked subset. Hand-picking is what made
+// `Text() { ... }` as an @Entry root a false error: Text is non-atomic (it takes
+// Span/ImageSpan children) and hvigor accepts it as the root, as do Button,
+// Checkbox, Menu, Select, Toggle and ~40 others the curated list omitted. Four
+// names it wrongly INCLUDED (AlphabetIndexer, ContentSlot, NodeContainer,
+// RemoteWindow) are atomic and are now correctly absent. Regenerate from the SDK
+// rather than editing by hand; XComponent is container-capable only with an
+// object-literal argument, a distinction this line-based check cannot make and
+// deliberately resolves in the permissive direction.
 const CONTAINER_COMPONENTS = new Set([
-  'Column', 'Row', 'Stack', 'Flex', 'RelativeContainer', 'GridRow', 'GridCol',
-  'List', 'Grid', 'Scroll', 'Swiper', 'Tabs', 'Navigation', 'Navigator', 'NavDestination',
-  'WaterFlow', 'SideBarContainer', 'Refresh', 'FolderStack', 'XComponent',
-  'Panel', 'Badge', 'ColumnSplit', 'RowSplit', 'FlowItem', 'ListItem', 'ListItemGroup',
-  'TabContent', 'GridItem', 'Counter', 'AlphabetIndexer', 'Stepper', 'StepperItem',
-  'EffectComponent', 'RemoteWindow', 'NodeContainer', 'ContentSlot', 'Hyperlink',
+  'ArcList', 'ArcListItem', 'ArcScrollBar', 'ArcSwiper', 'Badge', 'Button', 'Calendar', 'Canvas',
+  'Checkbox', 'CheckboxGroup', 'ColorPicker', 'ColorPickerDialog', 'Column', 'ColumnSplit',
+  'ContainerSpan', 'Counter', 'DataPanel', 'DatePicker', 'EffectComponent', 'Flex', 'FlowItem',
+  'FolderStack', 'FormLink', 'Gauge', 'Grid', 'GridCol', 'GridContainer', 'GridItem', 'GridRow',
+  'Hyperlink', 'IsolatedComponent', 'LazyVGridLayout', 'List', 'ListItem', 'ListItemGroup', 'Menu',
+  'MenuItem', 'MenuItemGroup', 'NavDestination', 'NavRouter', 'Navigation', 'Navigator', 'Option',
+  'Panel', 'Piece', 'PluginComponent', 'QRCode', 'Rating', 'Refresh', 'RelativeContainer',
+  'Repeat', 'RootScene', 'Row', 'RowSplit', 'Screen', 'Scroll', 'ScrollBar', 'Section', 'Select',
+  'Shape', 'Sheet', 'SideBarContainer', 'Stack', 'Stepper', 'StepperItem', 'Swiper', 'TabContent',
+  'Tabs', 'Text', 'TextClock', 'TextPicker', 'TextTimer', 'TimePicker', 'Toggle', 'ToolBarItem',
+  'WaterFlow', 'WindowScene', 'WithTheme', 'XComponent', 'XComponentNode',
 ]);
 
 // The API surface the checker type-checks against, read from the project's own
@@ -1397,22 +1430,26 @@ function readProjectSdkConfig(projectPath, devecoHome) {
 // second, more confusing error alongside it (a `ColorPicker` struct also drew
 // `Cannot find name 'ColorPickerAttribute'`, and that one disappeared on rename).
 //
-// Deliberately not the full component list. A name only collides if the SDK
-// really declares it, and a too-eager set would reject legitimate names -- the
-// cost of a false positive here is blocking a name the compiler accepts, so this
-// covers CONTAINER_COMPONENTS plus the leaf and picker components observed in
-// use. Growing it is safe only against a real SDK d.ets listing.
+// hvigor tests INNER_COMPONENT_NAMES, which component_map.js fills with EVERY key
+// of ets-loader/components/*.json regardless of `atomic`. Together with
+// CONTAINER_COMPONENTS (the non-atomic half) this set -- the atomic half -- is that
+// full list, derived rather than curated. The previous hand-picked version both
+// missed real collisions and invented five that do not exist: Chip, ChipGroup,
+// CalendarPickerDialog, MovingPhotoView and SecurityUIExtensionComponent are not
+// built-in components at all but ordinary exports from `@ohos.arkui.advanced.*` /
+// `@ohos.multimedia.movingphotoview`, so a struct may legally take those names and
+// flagging them blocked a name the compiler accepts. Regenerate from the SDK
+// component descriptors rather than editing by hand.
 const BUILTIN_LEAF_COMPONENTS = new Set([
-  'Text', 'Image', 'Button', 'TextInput', 'TextArea', 'Span', 'ImageSpan',
-  'Divider', 'Blank', 'Checkbox', 'CheckboxGroup', 'Radio', 'Toggle', 'Slider',
-  'Progress', 'Rating', 'Search', 'Select', 'Marquee', 'QRCode', 'Gauge',
-  'DataPanel', 'LoadingProgress', 'PatternLock', 'RichText', 'RichEditor',
-  'Web', 'Video', 'Canvas', 'Shape', 'Circle', 'Ellipse', 'Line', 'Polyline',
-  'Polygon', 'Path', 'Rect', 'SymbolGlyph', 'Menu', 'MenuItem', 'MenuItemGroup',
-  'ColorPicker', 'DatePicker', 'TimePicker', 'TextPicker', 'CalendarPicker',
-  'CalendarPickerDialog', 'TextClock', 'TextTimer', 'Chip', 'ChipGroup',
-  'FormComponent', 'PluginComponent', 'UIExtensionComponent', 'EmbeddedComponent',
-  'SecurityUIExtensionComponent', 'IsolatedComponent', 'MovingPhotoView',
+  'AbilityComponent', 'AlphabetIndexer', 'Animator', 'ArcAlphabetIndexer', 'Blank',
+  'CalendarPicker', 'Camera', 'Circle', 'Component3D', 'ContentSlot', 'Divider', 'DotMatrix',
+  'Ellipse', 'EmbeddedComponent', 'FormComponent', 'FrictionMotion', 'GeometryView', 'Image',
+  'ImageAnimator', 'ImageSpan', 'IndicatorComponent', 'Line', 'LoadingProgress', 'LocationButton',
+  'Marquee', 'MediaCachedImage', 'NodeContainer', 'PageTransitionEnter', 'PageTransitionExit',
+  'Particle', 'PasteButton', 'Path', 'PatternLock', 'Polygon', 'Polyline', 'Progress', 'Radio',
+  'Rect', 'RemoteWindow', 'RichEditor', 'RichText', 'SaveButton', 'ScrollMotion', 'Search',
+  'Slider', 'Span', 'SpringMotion', 'SpringProp', 'SymbolGlyph', 'SymbolSpan', 'TextArea',
+  'TextInput', 'UIExtensionComponent', 'Video', 'Web',
 ]);
 
 function isBuiltinComponentName(name) {
@@ -1615,6 +1652,288 @@ function validateBuilderBodyStatements(files, projectPath) {
 
 // Single-file V1/V2 member-decorator rules that the ArkTS linter accepts but
 // hvigor rejects. Each is a local, syntactic judgement about one member line.
+// --- Navigation runtime correctness ---
+// These three shapes all compile cleanly and all fail only at runtime, as a
+// white screen or a wrong page. The checker cannot see them because each is a
+// legal call; what is wrong is the semantics.
+
+// `.navDestination(builder)` is a property method, not an event subscription:
+// calling it more than once on the same Navigation replaces the registration
+// rather than adding to it, so only the LAST builder is ever used and every
+// pushPath renders that one page regardless of its name.
+function validateNavDestinationRegistration(files, projectPath) {
+  const diagnostics = [];
+  for (const filePath of files) {
+    let content;
+    try { content = fs.readFileSync(filePath, 'utf-8'); } catch { continue; }
+    const lines = content.split('\n');
+    const relFile = path.relative(projectPath, filePath);
+
+    // Attribute chains attach to the Navigation() they follow, so grouping by
+    // the nearest preceding Navigation() keeps two separate Navigations in one
+    // file from being merged into a false positive.
+    let navLine = -1;
+    const hits = [];
+    const flush = () => {
+      if (hits.length > 1) {
+        diagnostics.push({
+          file: relFile,
+          line: hits[1].line,
+          column: 1,
+          severity: 'error',
+          rule: 'nav-destination-single-builder',
+          message:
+            `'.navDestination' is a property method, so chaining it ${hits.length} times does not register ${hits.length} routes — ` +
+            `each call replaces the previous one and only the last builder ('${hits[hits.length - 1].builder}') is ever used, ` +
+            `making every pushPath open that page. Call '.navDestination' once with a single @Builder that dispatches on the ` +
+            `route name: '@Builder routeMap(name: string, param: object) { if (name === \'A\') { ... } else if (name === \'B\') { ... } }'.`,
+        });
+      }
+      hits.length = 0;
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.trim().startsWith('//')) continue;
+      if (/\bNavigation\s*\(/.test(line)) {
+        flush();
+        navLine = i;
+      }
+      const m = /^\s*\.navDestination\s*\(\s*(?:this\s*\.\s*)?([A-Za-z_$][\w$]*)/.exec(line);
+      if (m && navLine >= 0) hits.push({ line: i + 1, builder: m[1] });
+    }
+    flush();
+  }
+  return diagnostics;
+}
+
+// `.hideNavBar(true)` hides the whole navigation bar area — title bar, TOOLBAR
+// AND the Navigation's own content child. When the home page is written inside
+// `Navigation { ... }`, that blanks the launch screen. `.hideTitleBar(true)` is
+// what "remove the system title" means.
+function validateHideNavBarUsage(files, projectPath) {
+  const diagnostics = [];
+  for (const filePath of files) {
+    let content;
+    try { content = fs.readFileSync(filePath, 'utf-8'); } catch { continue; }
+    const lines = content.split('\n');
+    const relFile = path.relative(projectPath, filePath);
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim().startsWith('//')) continue;
+      if (!/^\s*\.hideNavBar\s*\(\s*true\s*\)/.test(lines[i])) continue;
+
+      // Only a Navigation that actually has a content child loses something.
+      // Find the Navigation this chain belongs to and check whether its body
+      // holds a component rather than being empty.
+      let navIdx = -1;
+      for (let j = i; j >= 0; j--) {
+        if (/\bNavigation\s*\(/.test(lines[j])) { navIdx = j; break; }
+      }
+      if (navIdx < 0) continue;
+      if (!/\{\s*$/.test(lines[navIdx])) continue;
+
+      const state = { quote: null, inBlockComment: false };
+      const bodyEnd = findStructBodyEnd(lines, navIdx, state);
+      let hasChild = false;
+      for (let j = navIdx + 1; j < bodyEnd && j < lines.length; j++) {
+        const trimmed = lines[j].trim();
+        if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('.') || trimmed.startsWith('}')) continue;
+        if (/^([A-Z][\w$]*)\s*[({]/.test(trimmed)) { hasChild = true; break; }
+      }
+      if (!hasChild) continue;
+
+      diagnostics.push({
+        file: relFile,
+        line: i + 1,
+        column: 1,
+        severity: 'error',
+        rule: 'hide-nav-bar-hides-content',
+        message:
+          `'.hideNavBar(true)' hides the entire navigation bar — title bar, tool bar AND the content written inside ` +
+          `'Navigation { ... }' — so this page renders blank at runtime even though it compiles. ` +
+          `Use '.hideTitleBar(true)' to remove only the system title, and delete '.hideNavBar(true)'.`,
+      });
+    }
+  }
+  return diagnostics;
+}
+
+// A route builder branch must produce a `NavDestination` root. Pushing to a
+// branch that renders a bare business component leaves the destination with no
+// mountable root, which shows as a white screen after pushPath.
+//
+// There are two correct shapes and both must pass: the builder wraps its
+// branches itself, OR the target page uses NavDestination as its own build()
+// root. Only a branch that satisfies neither is reported, so the component is
+// resolved across the project before judging it.
+function collectNavDestinationRootComponents(files, projectPath) {
+  const names = new Set();
+  const declarationFiles = projectPath ? unionProjectFiles(files, projectPath) : files;
+  for (const filePath of declarationFiles) {
+    let content;
+    try { content = fs.readFileSync(filePath, 'utf-8'); } catch { continue; }
+    const lines = content.split('\n');
+    const structs = collectStructs(lines);
+    for (const { lineIdx, name } of structs) {
+      const state = { quote: null, inBlockComment: false };
+      const bodyEnd = findStructBodyEnd(lines, lineIdx, state);
+      for (let i = lineIdx + 1; i < bodyEnd && i < lines.length; i++) {
+        if (!/^\s*build\s*\(\s*\)\s*\{/.test(lines[i])) continue;
+        // First component named in build() is its root node.
+        for (let j = i + 1; j < bodyEnd && j < lines.length; j++) {
+          const trimmed = lines[j].trim();
+          if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('.')) continue;
+          const comp = /^([A-Z][\w$]*)\s*[({]/.exec(trimmed);
+          if (comp) {
+            if (comp[1] === 'NavDestination') names.add(name);
+            break;
+          }
+          break;
+        }
+        break;
+      }
+    }
+  }
+  return names;
+}
+
+function validateNavDestinationRoot(files, projectPath) {
+  const diagnostics = [];
+  const wrappedPages = collectNavDestinationRootComponents(files, projectPath);
+  // Components the project itself declares. A branch rendering anything else
+  // (a library page, an unresolvable import) cannot be judged: its root node is
+  // not in the sources we can read, so staying silent is the only safe choice.
+  const localComponents = new Set();
+  const declarationFiles = projectPath ? unionProjectFiles(files, projectPath) : files;
+  for (const declFile of declarationFiles) {
+    let declContent;
+    try { declContent = fs.readFileSync(declFile, 'utf-8'); } catch { continue; }
+    for (const { name } of collectStructs(declContent.split('\n'))) localComponents.add(name);
+  }
+
+  for (const filePath of files) {
+    let content;
+    try { content = fs.readFileSync(filePath, 'utf-8'); } catch { continue; }
+    const lines = content.split('\n');
+    const relFile = path.relative(projectPath, filePath);
+
+    // Only builders actually registered as a route map are subject to this.
+    const registered = new Set();
+    for (const line of lines) {
+      const m = /\.navDestination\s*\(\s*(?:this\s*\.\s*)?([A-Za-z_$][\w$]*)/.exec(line);
+      if (m) registered.add(m[1]);
+    }
+    if (registered.size === 0) continue;
+
+    for (let i = 0; i < lines.length; i++) {
+      const header = /^\s*(?:@Builder\s+)?([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*(?::[^{]+)?\{\s*$/.exec(lines[i]);
+      if (!header || !registered.has(header[1])) continue;
+      const isBuilder = /^\s*@Builder\b/.test(lines[i]) || (i > 0 && /^\s*@Builder\s*$/.test(lines[i - 1]));
+      if (!isBuilder) continue;
+
+      const state = { quote: null, inBlockComment: false };
+      const bodyEnd = findStructBodyEnd(lines, i, state);
+      let mentionsND = false;
+      const branches = [];
+      for (let j = i + 1; j < bodyEnd && j < lines.length; j++) {
+        const trimmed = lines[j].trim();
+        if (!trimmed || trimmed.startsWith('//')) continue;
+        if (/\bNavDestination\s*\(/.test(trimmed)) { mentionsND = true; break; }
+        // Match both `Page(...)` and `Container() {` so a container opening a
+        // block is recognized as the root rather than skipped, which would let
+        // one of its children be reported instead.
+        const comp = /^([A-Z][\w$]*)\s*[({]/.exec(trimmed);
+        if (!comp) continue;
+        const name = comp[1];
+        // A container root means this branch builds its own subtree — that is a
+        // missing NavDestination, but the container IS the root, so stop here
+        // rather than descending into its children.
+        if (CONTAINER_COMPONENTS.has(name)) { branches.push({ line: j + 1, name }); break; }
+        if (wrappedPages.has(name)) continue;
+        if (!localComponents.has(name)) continue;
+        branches.push({ line: j + 1, name });
+      }
+      if (mentionsND || branches.length === 0) continue;
+
+      const target = branches[0];
+      const isContainer = CONTAINER_COMPONENTS.has(target.name);
+      diagnostics.push({
+        file: relFile,
+        line: target.line,
+        column: 1,
+        severity: 'error',
+        rule: 'nav-destination-root-node',
+        message:
+          `Route builder '${header[1]}' renders '${target.name}' without a 'NavDestination' root, so pushing this route ` +
+          `shows a white screen at runtime even though it compiles. ` +
+          (isContainer
+            ? `Wrap this branch's content as 'NavDestination() { ${target.name}() { ... } }'.`
+            : `Wrap each branch as 'NavDestination() { ${target.name}(...) }', or make 'NavDestination' the root node of ` +
+              `that page's own build().`),
+      });
+    }
+  }
+  return diagnostics;
+}
+
+// V1 `AppStorage` cannot store a V2 (`@ObservedV2`) class instance: the call
+// throws at startup, so the app crashes on launch. V2 state belongs in
+// `AppStorageV2.connect` / `PersistenceV2.connect`.
+function validateAppStorageV2Mixing(files, projectPath) {
+  // Only a class the project itself decorates '@ObservedV2' crashes here, which is
+  // exactly what this index holds while SDK_OBSERVED_V2_CLASSES stays empty. If a
+  // name is ever seeded there, re-check whether it also crashes AppStorage before
+  // letting it reach this rule.
+  const observedV2Classes = collectObservedV2ClassNames(files, projectPath);
+  if (observedV2Classes.size === 0) return [];
+
+  const diagnostics = [];
+  for (const filePath of files) {
+    let content;
+    try { content = fs.readFileSync(filePath, 'utf-8'); } catch { continue; }
+    const lines = content.split('\n');
+    const relFile = path.relative(projectPath, filePath);
+
+    // Local `name: Type` declarations, so a bare `this.viewModel` argument can
+    // be resolved back to its @ObservedV2 class.
+    const declaredTypes = new Map();
+    for (const line of lines) {
+      const decl = /^\s*(?:@\w+(?:\([^)]*\))?\s*)*(?:private\s+|readonly\s+|public\s+)*([A-Za-z_$][\w$]*)\s*(?:\?|!)?\s*:\s*([A-Za-z_$][\w$]*)\s*=/.exec(line);
+      if (decl) declaredTypes.set(decl[1], decl[2]);
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim().startsWith('//')) continue;
+      const call = /AppStorage\s*\.\s*setOrCreate\s*(?:<\s*([A-Za-z_$][\w$]*)\s*>)?\s*\(\s*([^,]+),\s*([^),]+)/.exec(lines[i]);
+      if (!call) continue;
+
+      const explicit = call[1];
+      const argExpr = call[3].trim();
+      const argName = /^(?:this\s*\.\s*)?([A-Za-z_$][\w$]*)$/.exec(argExpr);
+      const newed = /^new\s+([A-Za-z_$][\w$]*)/.exec(argExpr);
+      const resolved =
+        (explicit && observedV2Classes.has(explicit) && explicit) ||
+        (newed && observedV2Classes.has(newed[1]) && newed[1]) ||
+        (argName && observedV2Classes.has(declaredTypes.get(argName[1])) && declaredTypes.get(argName[1]));
+      if (!resolved) continue;
+
+      diagnostics.push({
+        file: relFile,
+        line: i + 1,
+        column: 1,
+        severity: 'error',
+        rule: 'appstorage-observedv2-mixing',
+        message:
+          `'AppStorage.setOrCreate' cannot store '${resolved}', which is decorated '@ObservedV2': V1 AppStorage and V2 ` +
+          `observation cannot be mixed and this throws at startup, crashing the app on launch. ` +
+          `Use 'AppStorageV2.connect(${resolved}, 'key', () => new ${resolved}())' (or 'PersistenceV2.connect' to persist).`,
+      });
+    }
+  }
+  return diagnostics;
+}
+
 function validateV2MemberDecoratorRules(files, projectPath) {
   const diagnostics = [];
   for (const filePath of files) {
@@ -2515,6 +2834,10 @@ function computeProjectDiagnostics(files, env, hasExplicitFiles) {
     ...validateEntryBuildRootNode(files, projectPath),
     ...validateBuilderBodyStatements(files, projectPath),
     ...validateV2MemberDecoratorRules(files, projectPath),
+    ...validateNavDestinationRegistration(files, projectPath),
+    ...validateHideNavBarUsage(files, projectPath),
+    ...validateNavDestinationRoot(files, projectPath),
+    ...validateAppStorageV2Mixing(files, projectPath),
   ];
   // 项目级校验器（不依赖 files 参数）仅在检查整个项目时运行，
   // 指定具体文件时跳过，避免因被检查文件不在列表中而误报。
@@ -3270,6 +3593,8 @@ module.exports = {
   validateStructNameCollisions, isBuiltinComponentName, BUILTIN_LEAF_COMPONENTS,
   validateBuilderBodyStatements, collectBuilderBodies, BUILDER_LOCAL_DECL_RE,
   validateV2MemberDecoratorRules,
+  validateNavDestinationRegistration, validateHideNavBarUsage,
+  validateNavDestinationRoot, validateAppStorageV2Mixing,
   validateObjectLinkTypes, collectObservedClassNames,
   validateRouteMapProfile, ROUTE_MAP_ALLOWED_KEYS, ROUTE_MAP_REQUIRED_KEYS,
   validateRouteMapBuildFunction,

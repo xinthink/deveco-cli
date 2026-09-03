@@ -39,7 +39,7 @@ Run DevEco Code Linter checks for TS/ArkTS code.
 - Set `DEVECO_CLI_CLT_PATH` to the Command Line Tools root when DevEco Studio is not installed; CLT is not discovered automatically from PATH or default installation directories.
 
 ### `devecocli check arkts`
-Run ArkTS static checks on `.ets` source files using DevEco's `etsStandaloneChecker`.
+Run this command once after a round of edits, right before the build. Catches most ArkTS errors faster than a full build. Do not run it per edit.
 - `[files...]`: Specific `.ets` files to check. Defaults to all `.ets` files in the project.
 - `--fix`: Auto-fix high-confidence errors (e.g., missing `export` keywords) before reporting.
 - `--project <path>`: Project root directory. Defaults to auto-detection from cwd via `build-profile.json5`.
