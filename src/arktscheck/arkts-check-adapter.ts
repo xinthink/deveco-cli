@@ -25,7 +25,10 @@ export class ArktsCheckAdapter {
 
   /** 执行一次 ArkTS 检查并返回标准化结果。 */
   public async check(request: ArktsCheckRequest): Promise<ArktsCheckResult> {
-    const projectRoot = this.resolveProjectRoot(request.projectRoot, request.files);
+    const projectRoot = this.resolveProjectRoot(
+      request.projectRoot,
+      request.files
+    );
     const files = this.resolveFiles(projectRoot, request.files);
     const scriptPath = this.resolveScriptPath();
     const args = this.buildArgs(scriptPath, projectRoot, files, request.fix);
@@ -52,18 +55,19 @@ export class ArktsCheckAdapter {
       }
       const stat = fs.statSync(resolved);
       if (stat.isFile()) {
-        const found = this.findProjectRootAbove(path.dirname(resolved));
-        if (found) { return found; }
+        const found = this.discoverRootFrom(path.dirname(resolved));
+        if (found) {
+          return found;
+        }
         throw new Error(
           `--project path is a file, not a project root: ${resolved}\n` +
             'Could not find a project-level build-profile.json5 above it. ' +
             'Pass the project root directory instead.'
         );
       }
-      const profilePath = path.join(resolved, 'build-profile.json5');
-      if (!fs.existsSync(profilePath) || !this.isProjectLevelProfile(profilePath)) {
+      if (this.discoverRootFrom(resolved) !== resolved) {
         throw new Error(
-          `Not a valid HarmonyOS project root: ${resolved}\n` +
+          `Not a valid Harmony project root: ${resolved}\n` +
             '(project-level build-profile.json5 not found).'
         );
       }
@@ -73,43 +77,30 @@ export class ArktsCheckAdapter {
     if (files && files.length > 0) {
       for (const f of files) {
         const abs = path.isAbsolute(f) ? f : path.resolve(this.cwd, f);
-        const found = this.findProjectRootAbove(path.dirname(abs));
-        if (found) { return found; }
+        const found = this.discoverRootFrom(path.dirname(abs));
+        if (found) {
+          return found;
+        }
       }
     }
     // 没有文件参数或文件路径上找不到项目，回退到 cwd
-    try {
-      return Project.discover(this.cwd).rootDir;
-    } catch {
-      // cwd 也不在项目内
+    const fromCwd = this.discoverRootFrom(this.cwd);
+    if (fromCwd) {
+      return fromCwd;
     }
     throw new Error(
-      'Not in a valid HarmonyOS project directory ' +
+      'Not in a valid Harmony project directory ' +
         '(project-level build-profile.json5 not found). ' +
         'Run this command inside a project, or pass --project <path>.'
     );
   }
 
-  /** 从指定目录向上查找包含项目级 build-profile.json5 的目录。 */
-  private findProjectRootAbove(startDir: string): string | undefined {
-    let dir = startDir;
-    while (dir && dir !== path.dirname(dir)) {
-      const profilePath = path.join(dir, 'build-profile.json5');
-      if (fs.existsSync(profilePath) && this.isProjectLevelProfile(profilePath)) {
-        return dir;
-      }
-      dir = path.dirname(dir);
-    }
-    return undefined;
-  }
-
-  /** 项目级 build-profile.json5 包含 "app" 字段，module 级不包含。 */
-  private isProjectLevelProfile(profilePath: string): boolean {
+  /** 从指定目录向上查找项目根（复用 Project.discover），找不到返回 undefined。 */
+  private discoverRootFrom(startDir: string): string | undefined {
     try {
-      const content = fs.readFileSync(profilePath, 'utf-8');
-      return /"app"\s*:/.test(content);
+      return Project.discover(startDir).rootDir;
     } catch {
-      return false;
+      return undefined;
     }
   }
 
@@ -138,9 +129,12 @@ export class ArktsCheckAdapter {
           outside.map((f) => `  ${f}`).join('\n')
       );
     }
-    // 3. 过滤出 .ets 文件
+    // 3. 过滤出待检查的 .ets 文件（.d.ets 为声明文件，与 cjs 侧过滤保持一致）
     const etsFiles = resolved.filter(
-      (file) => fs.statSync(file).isFile() && file.endsWith('.ets')
+      (file) =>
+        fs.statSync(file).isFile() &&
+        file.endsWith('.ets') &&
+        !file.endsWith('.d.ets')
     );
     if (etsFiles.length === 0) {
       throw new Error(

@@ -120,12 +120,11 @@ function renderDiagnostics(
   renderWarnings(errors, warnCount);
 }
 
-function renderWarnings(
-  errors: ArktsDiagnostic[],
-  warnCount?: number
-): void {
+function renderWarnings(errors: ArktsDiagnostic[], warnCount?: number): void {
   const warnings = errors.filter((d) => d.severity !== 'error');
-  if (warnings.length === 0) { return; }
+  if (warnings.length === 0) {
+    return;
+  }
   const count = warnCount ?? warnings.length;
   console.warn(yellow(`\nWarnings (${count}):`));
   for (const d of warnings) {
