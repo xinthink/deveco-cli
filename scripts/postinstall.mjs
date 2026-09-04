@@ -15,19 +15,15 @@ if (!existsSync(initScript)) {
   process.exit(0);
 }
 
-const child = spawn(
-  process.execPath,
-  [initScript],
-  {
-    detached: true,
-    stdio: ['ignore', 'ignore', 'ignore'],
-    env: {
-      ...process.env,
-      DEVECO_CLI_SKIP_VERSION_CHECK: '1',
-      DEVECO_CLI_POSTINSTALL: '1',
-    },
-  }
-);
+const child = spawn(process.execPath, [initScript], {
+  detached: true,
+  stdio: ['ignore', 'ignore', 'ignore'],
+  env: {
+    ...process.env,
+    DEVECO_CLI_SKIP_VERSION_CHECK: '1',
+    DEVECO_CLI_POSTINSTALL: '1',
+  },
+});
 
 child.unref();
 process.exit(0);
