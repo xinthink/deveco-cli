@@ -121,17 +121,28 @@ function collectProjectEtsFiles(projectPath) {
     }
   }
 
-  let moduleDirs;
-  try {
-    moduleDirs = fs.readdirSync(projectPath, { withFileTypes: true }).filter((d) => d.isDirectory());
-  } catch {
-    moduleDirs = [];
+  // 模块可嵌套于分组目录（如 commons/lib_foundation、components/address_management），
+  // 故递归查找任意深度的 src/main/ets，而不是只枚举一层 {mod}/src/main/ets。
+  function findModuleEtsDirs(dir, depth) {
+    if (depth > 6) return;
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name === 'node_modules' || entry.name === 'oh_modules' || entry.name === 'build') continue;
+      if (entry.name.startsWith('.')) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.name === 'src') {
+        const etsDir = path.join(full, 'main', 'ets');
+        if (fs.existsSync(etsDir)) {
+          walk(etsDir);
+          continue;
+        }
+      }
+      findModuleEtsDirs(full, depth + 1);
+    }
   }
-  for (const mod of moduleDirs) {
-    if (mod.name === 'node_modules' || mod.name === 'oh_modules' || mod.name.startsWith('.')) continue;
-    const srcDir = path.join(projectPath, mod.name, 'src', 'main', 'ets');
-    if (fs.existsSync(srcDir)) walk(srcDir);
-  }
+  findModuleEtsDirs(projectPath, 0);
 
   projectEtsFileCache.set(projectPath, results);
   return results;
@@ -3411,7 +3422,9 @@ function runCheck(args) {
   // 用户是否显式指定了有效的 .ets 文件（用于跳过项目级校验器）
   const hasExplicitFiles = files.length > 0;
   if (files.length === 0) {
-    files = collectEtsFiles(args.project);
+    // 全模块收集：entry-only 版本在多模块工程（products/features/commons 等，
+    // 无 entry 模块）下返回空集，导致静默 0 文件空跑。
+    files = collectProjectEtsFiles(args.project);
   }
 
   if (files.length === 0) {
