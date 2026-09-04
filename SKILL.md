@@ -153,11 +153,11 @@ MUTUALLY EXCLUSIVE modes for setup:
 1. `--skill` (Default): Install `deveco-cli` skill to AI agents.
 2. `--mcp`: Configure `deveco-mcp` server (ArkTS/C++ syntax checking).
 *Options*:
-- `--agent <agents>`: Comma-separated (e.g. `opencode,cursor`). Omitting targets all.
+- `--agent <agents>`: Comma-separated (e.g. `opencode,pi,cursor`). Omitting targets all.
 - `--project <path>`: Project-level config (Abs path for MCP).
 - `--path <path>`: Direct skill install path.
 - `-f, --force`: Overwrite existing config.
-*MCP Rules*: Global MCP (no `--project`) only supports `opencode` and `cursor`. Others require `--project`.
+*MCP Rules*: All configured MCP agents support global (no `--project`) and project-level MCP, except `qoder` (not supported).
 
 ### `devecocli auth login`
 Sign in to your Huawei Developer account. Opens a browser for OAuth authentication. Required before `signature generate`.
@@ -218,7 +218,7 @@ Validation order: `files` + `--modules` mutually exclusive → `--source-version
 - **`Not logged in. Run devecocli auth login first`**: Run `devecocli auth login` to authenticate.
 - **`Provision number exceeds limit`**: Test provision quota is full. Delete old test provisions in DevEco Studio (Signing Configs) or AGC console, then retry `devecocli signature generate`.
 - **`Invalid AccessToken. Sign in and try again`**: Token expired. Run `devecocli auth login` again.
-- **`skills add` agent not found**: Valid: `atomcode`, `codebuddy`, `cursor`, `opencode`, `qoder`, `trae-cn`.
+- **`skills add` agent not found**: Valid: `atomcode`, `codebuddy`, `claude-code`, `codex`, `cursor`, `deveco`, `opencode`, `pi`, `qoder`, `trae-cn`.
 - **`emulator start` / `image download` blocked on agreement**: User MUST accept agreements. Interactive: `devecocli emulator license` (requires TTY). Non-interactive (CI/scripts): `devecocli emulator license accept`. Agents cannot run the interactive form; suggest the user run it, or use `license accept` if a non-TTY flow is acceptable. Do not retry until accepted.
 - **`image download` failure / timeout**: Do NOT auto-retry. Give the command to the user to run manually in their terminal.
 - **`emulator create` timeout**: Treat as user-action step. Ask user to open DevEco Studio -> Device Manager. Check `emulator list` after user confirms. Do NOT auto-retry or edit SDK files.

@@ -38,6 +38,10 @@ export const AGENT_SKILLS_CONFIG = {
     path: '.config/opencode/skills',
     displayName: 'opencode',
   },
+  pi: {
+    path: '.pi/agent/skills',
+    displayName: 'pi',
+  },
   deveco: {
     path: '.config/deveco/skills',
     displayName: 'deveco',
