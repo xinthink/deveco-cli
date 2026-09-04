@@ -829,6 +829,56 @@ devecocli device view -t "My Device Name"
 devecocli device view -t 127.0.0.1:5555 --format json
 ```
 
+### `device file`
+
+在主机与设备（真机或模拟器）之间传输文件，底层映射为 `hdc -t <serial> file send/recv <src> <dst>`。
+
+**命令格式：**
+
+```bash
+devecocli device file [--device <name|serial>] send <src> <dst>
+devecocli device file [--device <name|serial>] recv <src> <dst>
+```
+
+**参数：**
+
+| 参数名 | 说明 |
+| --- | --- |
+| --device | 可选，目标设备名称或序列号。单设备可省略，多设备时必填 |
+| send <src> <dst> | 子命令，上传本地文件到设备 `<src>`(本地) → `<dst>`(设备端) |
+| recv <src> <dst> | 子命令，下载设备文件到主机 `<src>`(设备端) → `<dst>`(本地) |
+
+**示例：**
+
+```bash
+devecocli device file send ./local.txt /data/local/tmp/remote.txt
+devecocli device file recv /data/local/tmp/remote.txt ./local.txt --device 127.0.0.1:5555
+```
+
+### `device sqlite3`
+
+在设备上执行 `sqlite3`，底层映射为 `hdc -t <serial> shell sqlite3 <db-path> [args...]`，后续参数原样透传给设备的 `sqlite3`。
+
+**命令格式：**
+
+```bash
+devecocli device sqlite3 [--device <name|serial>] <db-path> [args...]
+```
+
+**参数：**
+
+| 参数名 | 说明 |
+| --- | --- |
+| --device | 可选，目标设备名称或序列号。单设备可省略，多设备时必填 |
+| db-path | 设备端 SQLite 数据库文件路径 |
+| args | 可选，透传给设备 `sqlite3` 的参数，如 `-json`、`-header`、`-readonly`、SQL 语句、点命令等 |
+
+**示例：**
+
+```bash
+devecocli device sqlite3 /data/app/el2/100/database/com.example.app/foo.db "select * from user limit 5" -json
+```
+
 ### `ui screenshot`
 
 对真机或模拟器执行 UI 截图。

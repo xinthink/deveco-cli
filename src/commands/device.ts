@@ -4,6 +4,8 @@
  */
 import { Command, Option } from 'commander';
 import { ToolProvider } from '../toolchain/index.js';
+import { HdcAdapter } from '../utils/hdc-adapter.js';
+import { resolveDeviceSerial } from '../utils/device-selector.js';
 import { EmulatorManager } from '../service/emulator-manager.js';
 import { normalizeListNameKey } from '../service/emulator-types.js';
 import {
@@ -237,6 +239,56 @@ async function viewAction(
   }
 }
 
+async function fileAction(
+  toolProvider: ToolProvider,
+  direction: 'send' | 'recv',
+  src: string,
+  dst: string,
+  device?: string
+): Promise<void> {
+  const serial = await resolveDeviceSerial(toolProvider, device);
+  const adapter = new HdcAdapter(toolProvider);
+  const isSend = direction === 'send';
+  const spinner = ora({
+    text: isSend
+      ? `Sending ${src} to ${dst} on ${serial}...`
+      : `Receiving ${src} from ${serial} to ${dst}...`,
+    color: 'cyan',
+  }).start();
+
+  try {
+    await adapter.transferFile(serial, direction, src, dst);
+    spinner.stop();
+    const summary = isSend ? 'Sent to device' : 'Received from device';
+    console.log(`${summary} (${serial}): ${src} -> ${dst}`);
+  } catch (error) {
+    spinner.stop();
+    const verb = isSend ? 'Send' : 'Recv';
+    throw new TraceError(
+      `File ${verb} failed: ${(error as Error).message}`,
+      `File ${verb} failed.`
+    );
+  }
+}
+
+async function sqlite3Action(
+  toolProvider: ToolProvider,
+  dbPath: string,
+  sqliteArgs: string[],
+  device?: string
+): Promise<void> {
+  const serial = await resolveDeviceSerial(toolProvider, device);
+  const adapter = new HdcAdapter(toolProvider);
+  try {
+    await adapter.runSqlite3(serial, dbPath, sqliteArgs);
+  } catch (error) {
+    throw new TraceError(
+      `sqlite3 failed: ${(error as Error).message}`,
+      'sqlite3 failed.'
+    );
+  }
+}
+
 async function initDeviceManager(): Promise<{
   manager: DeviceManager;
   toolProvider: ToolProvider;
@@ -268,7 +320,11 @@ deviceCommand
   .action(async (options: { format: DeviceOutputFormat }) => {
     const event: CommandExecuted = {
       event: EventType.CommandExecuted,
-      args: ['device', 'list', ...(options.format === 'json' ? ['--format', 'json'] : [])],
+      args: [
+        'device',
+        'list',
+        ...(options.format === 'json' ? ['--format', 'json'] : []),
+      ],
     };
     await withDeviceTrace(event, async () => {
       const { manager, toolProvider } = await initDeviceManager();
@@ -298,7 +354,8 @@ deviceCommand
     const event: CommandExecuted = {
       event: EventType.CommandExecuted,
       args: [
-        'device', 'view',
+        'device',
+        'view',
         ...(options.target ? ['--target'] : []),
         ...(options.format === 'json' ? ['--format', 'json'] : []),
       ],
@@ -308,5 +365,74 @@ deviceCommand
       await viewAction(manager, options.target, options.format);
     });
   });
+
+const fileCommand = deviceCommand
+  .command('file')
+  .description('Transfer files between the host and a connected device');
+
+fileCommand
+  .command('send')
+  .description('Send a local file to a device')
+  .option('--device <name|serial>', 'Target device (name or serial)')
+  .argument('<src>', 'Local file path to upload')
+  .argument('<dst>', 'Remote path on the device')
+  .action(async (src: string, dst: string, options: { device?: string }) => {
+    const { device } = options;
+    const event: CommandExecuted = {
+      event: EventType.CommandExecuted,
+      args: ['device', 'file', 'send', ...(device ? ['--device'] : [])],
+    };
+    await withDeviceTrace(event, async () => {
+      const { toolProvider } = await initDeviceManager();
+      await fileAction(toolProvider, 'send', src, dst, device);
+    });
+  });
+
+fileCommand
+  .command('recv')
+  .description('Receive a file from a device to the host')
+  .option('--device <name|serial>', 'Target device (name or serial)')
+  .argument('<src>', 'Remote path on the device')
+  .argument('<dst>', 'Local file path to save')
+  .action(async (src: string, dst: string, options: { device?: string }) => {
+    const { device } = options;
+    const event: CommandExecuted = {
+      event: EventType.CommandExecuted,
+      args: ['device', 'file', 'recv', ...(device ? ['--device'] : [])],
+    };
+    await withDeviceTrace(event, async () => {
+      const { toolProvider } = await initDeviceManager();
+      await fileAction(toolProvider, 'recv', src, dst, device);
+    });
+  });
+
+deviceCommand
+  .command('sqlite3')
+  .description('Run sqlite3 on a connected device')
+  .allowUnknownOption()
+  .option('--device <name|serial>', 'Target device (name or serial)')
+  .argument('<db-path>', 'SQLite database path on the device')
+  .argument('[args...]', 'Arguments forwarded to sqlite3 as-is')
+  .action(
+    async (
+      dbPath: string,
+      sqliteArgs: string[],
+      options: { device?: string }
+    ) => {
+      const event: CommandExecuted = {
+        event: EventType.CommandExecuted,
+        args: [
+          'device',
+          'sqlite3',
+          dbPath,
+          ...(options.device ? ['--device'] : []),
+        ],
+      };
+      await withDeviceTrace(event, async () => {
+        const { toolProvider } = await initDeviceManager();
+        await sqlite3Action(toolProvider, dbPath, sqliteArgs, options.device);
+      });
+    }
+  );
 
 export default deviceCommand;

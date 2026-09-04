@@ -73,6 +73,8 @@ Search/read local HarmonyOS docs.
 ### `devecocli device`
 - `list`: Show active real devices and running emulators. Opt: `--format <table|json>` (default: `table`).
 - `view`: Detailed info. Req `-t <name|serial>` on multi-device hosts. Opt: `--format <table|json>` (default: `table`).
+- `file`: Transfer files between the host and a device. Opt: `--device <name|serial>` (optional when exactly one device is connected, required when multiple). `send <local> <remote>` pushes a local file onto the device; `recv <remote> <local>` pulls a file back. Maps to `hdc -t <serial> file send/recv <src> <dst>`; the operation only succeeds when hdc reports `FileTransfer finish`.
+- `sqlite3`: Run `sqlite3` on a device. Opt: `--device <name|serial>` (optional when exactly one device is connected, required when multiple). `db-path` is the on-device SQLite file; all further args are forwarded to the device `sqlite3` as-is (e.g. `-json`, `-readonly`, SQL strings, dot-commands). Maps to `hdc -t <serial> shell sqlite3 <db-path> [args...]`.
 
 ### `devecocli run` `[Outside sandbox]`
 Build, install, and launch.
