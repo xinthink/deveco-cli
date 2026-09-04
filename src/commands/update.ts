@@ -15,6 +15,7 @@ import {
 import { VersionCache } from '../update/version-cache.js';
 import { getCliDataDir } from '../utils/cli-data-dir.js';
 import { debugLog } from '../utils/logger.js';
+import { detectInstallMismatch } from '../install-check/index.js';
 import { telemetry, EventType } from '../trace/index.js';
 import type { CommandExecuted, TrackMeasurement } from '../trace/index.js';
 
@@ -102,10 +103,9 @@ async function trackUpdateCheck(
 
 updateCommand.action(async () => {
   if (getUpdateDisableMode() === 'all') {
-    throw new Error(
-      'devecocli update is disabled (DEVECO_CLI_DISABLE_UPDATE=all).'
-    );
+    throw new Error('devecocli update is disabled (DEVECO_CLI_DISABLE_UPDATE=all).');
   }
+  await detectInstallMismatch(getPackageName());
   const start = Date.now();
   const currentVersion = getCurrentVersion();
   const publishTag = getPublishTag();
