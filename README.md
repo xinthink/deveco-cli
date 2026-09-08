@@ -172,7 +172,7 @@ Usage: devecocli [options] [command]
 HarmonyOS application development command line tool
 
 Options:
-  -V, --version          output the version number
+  -V, -v, --version      output the version number
   -h, --help             display help for command
 
 Commands:
