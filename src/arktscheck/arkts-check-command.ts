@@ -5,13 +5,44 @@
 import { red, yellow, green } from 'colorette';
 import { Command } from 'commander';
 import { ToolProvider } from '../toolchain/index.js';
+import { telemetry, EventType } from '../trace/index.js';
+import type { CheckCommand, TrackMeasurement } from '../trace/index.js';
 import { SpinnerHelper } from '../utils/spinner-helper.js';
+import { readProcessRss, formatBytesMb } from '../utils/process-rss.js';
 import { ArktsCheckAdapter } from './arkts-check-adapter.js';
 import type { ArktsCheckResult, ArktsDiagnostic } from './types.js';
 
 interface ArktsOptions {
   fix: boolean;
   project?: string;
+}
+
+function deriveArktsErrorCode(error: unknown): string {
+  const e = error as NodeJS.ErrnoException;
+  return e.code ?? e.name ?? 'UnknownError';
+}
+
+async function trackArkts(
+  start: number,
+  success: boolean,
+  errorCode: string | null,
+  cmdArgs: string[]
+): Promise<void> {
+  const rssKb = await readProcessRss(process.pid);
+  const mcpMemory =
+    rssKb !== null ? formatBytesMb(Number(rssKb) * 1024) : 'unknown';
+  const event: CheckCommand = {
+    event: EventType.CheckCommand,
+    args: cmdArgs,
+    mcpMemory,
+    lspMemory: 'unknown',
+  };
+  const measurement: TrackMeasurement = {
+    duration_ms: Date.now() - start,
+    success,
+    error_code: errorCode,
+  };
+  await telemetry.track(event, measurement).catch(() => {});
 }
 
 export function createArktsCommand(): Command {
@@ -32,34 +63,43 @@ async function handleArktsCommand(
   files: string[],
   options: ArktsOptions
 ): Promise<void> {
-  const toolProvider = await ToolProvider.new();
-  const adapter = new ArktsCheckAdapter(toolProvider, process.cwd());
-  const spinner = new SpinnerHelper();
-  if (process.stderr.isTTY) {
-    spinner.start('Checking ArkTS...');
-  }
-
-  let result: ArktsCheckResult;
+  const start = Date.now();
+  const cmdArgs = ['check', 'arkts'];
   try {
-    result = await adapter.check({
-      files,
-      fix: options.fix,
-      projectRoot: options.project,
-    });
+    const toolProvider = await ToolProvider.new();
+    const adapter = new ArktsCheckAdapter(toolProvider, process.cwd());
+    const spinner = new SpinnerHelper();
+    if (process.stderr.isTTY) {
+      spinner.start('Checking ArkTS...');
+    }
+
+    let result: ArktsCheckResult;
+    try {
+      result = await adapter.check({
+        files,
+        fix: options.fix,
+        projectRoot: options.project,
+      });
+    } catch (error) {
+      spinner.fail('ArkTS check failed');
+      throw error;
+    }
+
+    if (result.error && result.errors.length === 0) {
+      spinner.fail('ArkTS check failed');
+      console.error(red(result.error));
+      process.exitCode = 1;
+      await trackArkts(start, false, 'CheckFailed', cmdArgs);
+      return;
+    }
+
+    spinner.stop();
+    renderResult(result);
+    await trackArkts(start, true, null, cmdArgs);
   } catch (error) {
-    spinner.fail('ArkTS check failed');
+    await trackArkts(start, false, deriveArktsErrorCode(error), cmdArgs);
     throw error;
   }
-
-  if (result.error && result.errors.length === 0) {
-    spinner.fail('ArkTS check failed');
-    console.error(red(result.error));
-    process.exitCode = 1;
-    return;
-  }
-
-  spinner.stop();
-  renderResult(result);
 }
 
 function renderResult(result: ArktsCheckResult): void {
@@ -113,7 +153,9 @@ function renderDiagnostics(
   for (const d of fatal) {
     const ruleSuffix = d.rule ? ` (${d.rule})` : '';
     console.error(
-      red(`${d.file}:${d.line}:${d.column} - ${d.severity}: ${d.message}${ruleSuffix}`)
+      red(
+        `${d.file}:${d.line}:${d.column} - ${d.severity}: ${d.message}${ruleSuffix}`
+      )
     );
   }
 
@@ -130,7 +172,9 @@ function renderWarnings(errors: ArktsDiagnostic[], warnCount?: number): void {
   for (const d of warnings) {
     const ruleSuffix = d.rule ? ` (${d.rule})` : '';
     console.warn(
-      yellow(`${d.file}:${d.line}:${d.column} - ${d.severity}: ${d.message}${ruleSuffix}`)
+      yellow(
+        `${d.file}:${d.line}:${d.column} - ${d.severity}: ${d.message}${ruleSuffix}`
+      )
     );
   }
 }

@@ -4,6 +4,7 @@
  */
 import { execa } from 'execa';
 import fs from 'fs';
+import os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { ToolProvider } from '../toolchain/index.js';
@@ -108,9 +109,18 @@ export class ArktsCheckAdapter {
     if (files.length === 0) {
       return [];
     }
-    const resolved = files.map((file) =>
-      path.isAbsolute(file) ? file : path.resolve(projectRoot, file)
-    );
+    // 相对路径先按 cwd 解析（与 resolveProjectRoot 的发现逻辑一致），
+    // 文件不存在时再按 projectRoot 兜底（覆盖 --project 指向其它目录的场景）。
+    const resolved = files.map((file) => {
+      if (path.isAbsolute(file)) {
+        return file;
+      }
+      const fromCwd = path.resolve(this.cwd, file);
+      if (fs.existsSync(fromCwd)) {
+        return fromCwd;
+      }
+      return path.resolve(projectRoot, file);
+    });
     // 1. 不存在的文件直接报错
     const notFound = resolved.filter((f) => !fs.existsSync(f));
     if (notFound.length > 0) {
@@ -162,8 +172,24 @@ export class ArktsCheckAdapter {
   private buildEnv(): NodeJS.ProcessEnv {
     return {
       ...process.env,
-      DEVECO_HOME: this.toolProvider.toolchainRoot,
+      DEVECO_HOME: this.resolveDevecoHome(),
     };
+  }
+
+  /**
+   * 推导 DEVECO_HOME：SDK 必须位于 <DEVECO_HOME>/sdk 下。
+   * macOS Studio 场景 toolchainRoot 是剥掉 Contents 的 .app 根（见
+   * normalizeMacStudioRoot），而 SDK 实际在 <app>/Contents/sdk 下，需补回。
+   */
+  private resolveDevecoHome(): string {
+    const root = this.toolProvider.toolchainRoot;
+    if (os.platform() === 'darwin' && !fs.existsSync(path.join(root, 'sdk'))) {
+      const contents = path.join(root, 'Contents');
+      if (fs.existsSync(path.join(contents, 'sdk'))) {
+        return contents;
+      }
+    }
+    return root;
   }
 
   private parseResult(

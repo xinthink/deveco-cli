@@ -7,7 +7,8 @@ const fs = require('fs');
 // --- Argument parsing ---
 
 function parseArgs(argv) {
-  const args = { project: '', files: [], fix: true, serve: false };
+  // 默认只读检查；--fix 才改写源文件，避免直跑脚本时静默修改代码。
+  const args = { project: '', files: [], fix: false, serve: false };
   let i = 2;
   while (i < argv.length) {
     if (argv[i] === '--project' && argv[i + 1]) {
@@ -2866,6 +2867,16 @@ function computeProjectDiagnostics(files, env, hasExplicitFiles) {
 // Runs etsStandaloneChecker over `files` and returns the filtered diagnostics
 // (relative paths, binding/FA false positives removed). `env` carries the
 // resolved paths so we don't re-detect the SDK on every call.
+function cleanupCheckerCache(projectPath) {
+  const cachePath = path.join(projectPath, '.cache', 'arkts-check');
+  try { fs.rmSync(cachePath, { recursive: true, force: true }); } catch { /* best-effort */ }
+  // `.cache` 可能被其它工具使用，仅在为空时移除。
+  try {
+    const parent = path.dirname(cachePath);
+    if (fs.readdirSync(parent).length === 0) fs.rmdirSync(parent);
+  } catch { /* best-effort */ }
+}
+
 function runChecker(files, env) {
   const { devecoHome, etsLoaderPath, projectPath, aceModuleJsonPath } = env;
   // Carried on env when runCheck computed it (one profile read per request);
@@ -2973,6 +2984,9 @@ function runChecker(files, env) {
     console.log = origLog;
     console.error = origError;
     console.warn = origWarn;
+    // 缓存只在单次检查期间有效（下次运行前会重建），结束后清掉，
+    // 避免在用户工程根残留 .cache/arkts-check 目录。
+    cleanupCheckerCache(projectPath);
   }
 
   // Thrown after console is restored so the message is not swallowed by capture.
@@ -3523,7 +3537,7 @@ function serve() {
       handleRequest(line);
     }
   });
-  process.stdin.on('end', () => process.exit(0));
+  process.stdin.on('end', () => { process.exitCode = 0; });
 }
 
 function handleRequest(line) {
@@ -3581,7 +3595,9 @@ function main() {
   }
   const result = runCheck(args);
   process.stdout.write(JSON.stringify(result, null, 2));
-  process.exit(result.error || (result.summary && result.summary.errorCount > 0) ? 1 : 0);
+  // 用 exitCode + 自然退出而非 process.exit：POSIX 上 stdout 指向 pipe 时写入
+  // 是异步的，process.exit 可能截断未 flush 的大体积 JSON 结果。
+  process.exitCode = result.error || (result.summary && result.summary.errorCount > 0) ? 1 : 0;
 }
 
 // Exported for unit testing without a DevEco SDK.
