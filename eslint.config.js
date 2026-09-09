@@ -6,10 +6,12 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
+  {
+    ignores: ['dist', 'src/resources/**'],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    ignores: ['dist'],
     rules: {
       curly: ['error', 'all'],
       'max-lines-per-function': [

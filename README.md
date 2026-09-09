@@ -137,6 +137,7 @@ devecocli init --path D:\work\ARKTS\NewData
 | `devecocli create`        | 创建新的 HarmonyOS 项目                         |
 | `devecocli build`         | 构建项目并产出 `.hap` / `.hsp` / `.har` / `.app` |
 | `devecocli check lint`    | 检查代码规范并输出实践建议与报告                      |
+| `devecocli check arkts`   | 对 `.ets` 源文件执行 ArkTS 静态检查                      |
 | `devecocli run`           | 安装并运行应用                                   |
 | `devecocli device list`   | 查看当前连接设备                                  |
 | `devecocli emulator list` | 查看本地模拟器实例                                 |
@@ -520,6 +521,37 @@ devecocli check lint [path]
 | `--limit <number>`           | 未指定 `--output-path` 时，限制终端显示的问题数量                      |
 
 `emulator` 版本要求： DevEco Studio ≥ 6.1.0
+
+### `check arkts`
+
+对 `.ets` 源文件执行 ArkTS 静态检查，基于 DevEco Studio 的 `etsStandaloneChecker`。
+
+**命令格式：**
+
+```bash
+devecocli check arkts [files...] [--fix] [--project <path>]
+```
+
+**参数：**
+
+| 参数名 | 说明 |
+| --- | --- |
+| `[files...]` | 可选，待检查的 `.ets` 文件列表；默认检查项目内所有 `.ets` 文件 |
+| `--fix` | 自动修复高置信度错误（如缺失的 `export` 关键字） |
+| `--project <path>` | 项目根目录；默认从当前目录自动检测 `build-profile.json5` |
+
+**示例：**
+
+```bash
+# 检查整个项目
+devecocli check arkts
+
+# 检查指定文件并自动修复
+devecocli check arkts --fix entry/src/main/ets/pages/Index.ets
+
+# 指定项目路径
+devecocli check arkts --project /path/to/project
+```
 
 ### `emulator list`
 
