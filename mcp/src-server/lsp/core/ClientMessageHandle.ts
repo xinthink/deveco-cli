@@ -29,6 +29,21 @@ type MessageCallback = (msg?: LspMessage) => void;
 const DIAGNOSTIC_TIMEOUT_MS = 20 * 1000;
 /** 请求等待的默认超时（ms）。 */
 const REQUEST_TIMEOUT_MS = 30 * 1000;
+/** 标准协议退出等待超时（ms）。默认 300；DEVECO_CLI_LSP_STANDARD_EXIT_TIMEOUT_MS 覆盖（<300 按 300）。 */
+const DEFAULT_STANDARD_EXIT_TIMEOUT_MS = 300;
+const MIN_STANDARD_EXIT_TIMEOUT_MS = 300;
+
+function resolveStandardExitTimeoutMs(): number {
+    const raw = process.env.DEVECO_CLI_LSP_STANDARD_EXIT_TIMEOUT_MS;
+    if (raw === undefined || raw === '') {
+        return DEFAULT_STANDARD_EXIT_TIMEOUT_MS;
+    }
+    const parsed = parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) {
+        return DEFAULT_STANDARD_EXIT_TIMEOUT_MS;
+    }
+    return Math.max(MIN_STANDARD_EXIT_TIMEOUT_MS, parsed);
+}
 
 /**
  * ClientMessageHandle：LSP 服务端消息处理入口（标准 LSP 协议）。
@@ -72,7 +87,7 @@ export class ClientMessageHandle {
                 logger.info('[ClientMessageHandle] Sending exit notification');
                 this.client.sendNotification(LSP_METHOD.EXIT, null);
                 logger.info('[ClientMessageHandle] Waiting for LSP process to exit');
-                await this.client.waitForExitOrTimeout(300);
+                await this.client.waitForExitOrTimeout(resolveStandardExitTimeoutMs());
                 logger.info('[ClientMessageHandle] LSP exit wait completed, calling stop');
                 this.client.stop();
             })();
