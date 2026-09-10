@@ -17,13 +17,24 @@ npm run build      # tsup → dist/cli.js (prepublishOnly runs lint → license 
 npm run dev        # tsx watch mode
 npm start          # tsx one-shot, no build
 npm run lint       # eslint src
+npm test           # Vitest: src/**/*.test.ts
 npm run lint:fix   # eslint --fix
 npm run format     # prettier --write src
 npm run license    # regenerate THIRD-PARTY-LICENSES
 npm run build:index # regenerate index.zip for `devecocli docs` search
 ```
 
-There is **no test framework** (no vitest/jest, no `*.test.ts`). Verification = `npm run lint` + manual smoke. `prepublishOnly` is the closest thing to CI locally.
+## Agent workflows
+
+Root `SKILL.md` is the published product-use guide. Repository development workflows live under `.agents/skills/`.
+
+| Task | Workflow |
+|---|---|
+| Review code changes or merge requests | [deveco-code-review](.agents/skills/deveco-code-review/SKILL.md) |
+| Select checks before committing, pushing, or reporting validation results | [deveco-check-changes](.agents/skills/deveco-check-changes/SKILL.md) |
+| Write or diagnose tests involving subprocesses, locks, cancellation, timing, or shared state | [deveco-test-reliability](.agents/skills/deveco-test-reliability/SKILL.md) |
+| Refactor or audit for duplicated rules and simplification candidates | [deveco-find-simplifications](.agents/skills/deveco-find-simplifications/SKILL.md) |
+| Write or review documentation, comments, or diagnostics | [deveco-docs-and-prose](.agents/skills/deveco-docs-and-prose/SKILL.md) |
 
 ## Conventions that bite
 
@@ -64,7 +75,7 @@ index/                        # Source for `npm run build:index` (regenerates in
 ```
 
 **Real entrypoints**: `src/cli.ts` is the user-facing bin. `src/internal/doc-init-background.ts` is a tsup entry spawned after install to populate the docs search index. `src/internal/telemetry-upload-background.ts` is a tsup entry spawned (detached) by the CLI when `isUploadDue` is true (OR: pending events >5min OR failed files due for 1h retry), to run `flush()` + `retryFailed()` for non-MCP commands. `mcp/src-server/index.ts → createMcpServer` is the MCP orchestrator started by `devecocli serve mcp`.
-**Toolchain resolution**: `toolchain/tool-provider.ts` finds DevEco Studio (Win: registry → `C:\Program Files\Huawei\DevEco Studio`; macOS: `~/Applications` + `/Applications` for `*DevEco*.app`; **Linux unsupported**). It resolves `nodePath` / `ohpmJsPath` / `hvigorJsPath` / `javaPath` / `hdcPath` / `emulatorPath` / `sdkPath`. hilog is not a separate binary — it runs through `hdc shell hilog`.
+**Toolchain resolution**: [ToolProvider](src/toolchain/tool-provider.ts) owns Studio/CLT discovery and component paths consumed by the CLI and MCP. Linux has a CLT path; capabilities that require Studio still check `assertStudio()`. Do not infer that every component exists on every platform. hilog runs through `hdc shell hilog`.
 **Build pipeline**: `commands/build.ts` runs `ohpm install --all → hvigor --sync → hvigor assemble*`. The artifact path resolver lives in `utils/project.ts → findArtifactPath`.
 **Apply**: `commands/run.ts --apply <fileName>` fast-incremental-deploys changed files — writes the list to `.hvigor/<fileName>`, drives hvigor `assembleDevHqf` to produce signed hqf, installs via `bm quickfix -a -f -o`, then restarts. Modules auto-detected from file paths. Requires DevEco Studio ≥6.1.1 (hvigor `assembleDevHqf`); below is rejected with an upgrade hint. Prereq: `devecocli run` once first (generates `buildConfig.json` cache); on failure falls back to a full `devecocli run`.
 **Device selection**: `service/device-manager.ts` is the single source for "what's connected". Commands that accept a device use a shared resolver that maps a user-supplied name or serial to a concrete serial.
@@ -101,7 +112,7 @@ src/<domain>/
 Rules (enforced by convention; not lint):
 
 1. **One barrel per domain.** `src/<domain>/index.ts` is the only thing `src/commands/*` imports from. **Never** import from `src/<domain>/<capability>/*` directly.
-2. **Three-layer split inside each capability**: `types.ts` → pure helpers (parsers, fold/collapse, normalizers) → adapter class that composes the helpers with external IO (hdc, http, fs). The pure layer is the only thing that should be unit-testable in isolation.
+2. **Three-layer split inside each capability**: `types.ts` → pure helpers (parsers, fold/collapse, normalizers) → adapter class that composes the helpers with external IO (hdc, http, fs). Test pure logic directly and test adapter orchestration, cancellation and cleanup through controlled IO dependencies.
 3. **Cross-capability coupling goes through the adapter**, not through shared types. If capability A needs data from capability B, A's adapter instantiates B's adapter and calls it — don't duplicate B's types into A's `types.ts`.
 4. **Adapter methods are case-shaped**, not verb-shaped. Expose specific methods like `getFullTree(serial, depth, windowId)` and `getCollapsedTree(...)`, not one generic `get(options)`. Keep the IO orchestration (`buildRemoteX → recv → parse → cleanup`) as private methods on the adapter.
 5. **Commands stay thin**: `Options` interface + commander option chain + `handle*` async function that does spinner → call adapter → format output. Renderers (`renderTree`, `renderTable`, JSON shape) live in the command file or a small util, not in the domain.
