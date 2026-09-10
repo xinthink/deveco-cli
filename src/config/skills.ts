@@ -71,4 +71,9 @@ export const AGENT_SKILLS_CONFIG = {
     path: '.atomcode/skills',
     displayName: 'atomcode',
   },
+  dsh: {
+    path: '.dsh/skills',
+    projectPath: '.dsh/skills',
+    displayName: 'deepseek harness',
+  },
 } as const;
