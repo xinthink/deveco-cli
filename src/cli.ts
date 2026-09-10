@@ -70,6 +70,13 @@ program
   .description(`HarmonyOS application development command line tool\n\nPrivacy: ${AgreementConfig.PRIVACY_URL}`)
   .version(process.env.npm_package_version || '0.1.0');
 
+// Commander's .version() only allows one short flag. Normalize -v → -V in
+// argv for parsing (see below), and show both flags in --help output.
+const versionOption = program.options.find((o) => o.long === '--version');
+if (versionOption) {
+  versionOption.flags = '-V, -v, --version';
+}
+
 program.addCommand(buildCommand);
 program.addCommand(runCommand);
 program.addCommand(updateCommand);
@@ -86,6 +93,19 @@ program.addCommand(docCommand);
 program.addCommand(uiCommand);
 program.addCommand(checkCommand);
 program.addCommand(signatureCommand);
+
+// Commander's version option only supports one short flag (-V). Map -v → -V
+// in argv before the first subcommand so both print the version.
+for (let i = 2; i < process.argv.length; i++) {
+  const arg = process.argv[i];
+  if (arg === '-v') {
+    process.argv[i] = '-V';
+    break;
+  }
+  if (!arg.startsWith('-')) {
+    break; // Stop at first non-option (subcommand name)
+  }
+}
 
 // Allow `devecocli <command> help` as an alias for `devecocli <command> --help`.
 // Commander only supports this automatically for commands that have sub-commands,
