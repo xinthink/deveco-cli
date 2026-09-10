@@ -1281,6 +1281,12 @@ devecocli run --hotreload stop
 devecocli run --hotreload-apply changes.txt
 ```
 
+**说明：**
+
+- 应用启动成功后（含 `--apply` 增量部署重启后），默认自动执行**冒烟检查**：确认应用进程仍存活，并对屏幕截图做纯色空白检测（pHash）。通过时输出 `Smoke: PASS`；进程已退出时输出 `Smoke: FAIL_CRASH`（附带 `crash_log:` 崩溃日志路径），检测到空白屏时输出 `Smoke: FAIL_BLANK`（附带 `screenshot:` 截图路径），检查失败时命令以非零码退出。证据仅在失败时落盘于工程 `.hvigor/smoke/` 下的本次运行独立目录：失败的截图与崩溃日志自检查结束起**保留 24 小时**（期间任何后续 run 都不会删除），之后由下一次 run 自动清理；`PASS` 的截图在判定后连同目录一并删除。进行中的并发检查互不影响，`.hvigor/` 不会随 run 次数堆积。
+- 无可启动的 `Ability`，或使用 `--hotreload` / `--hotreload-apply` 时，跳过冒烟检查。
+- 冒烟检查取证前默认等待 `1000` 毫秒（供应用完成冷启动），可通过环境变量 `DEVECO_CLI_SMOKE_WAIT_MS`（毫秒）调整：设为 `0` 立即取证；冷启动较慢的设备可适当调大以避免误报。
+
 ### `log`
 
 查看`hilog`普通日志或崩溃日志

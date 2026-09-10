@@ -539,37 +539,39 @@ export class HilogAdapter {
   }
 
   /**
-   * 获取设备的崩溃日志工具路径
-   * @param deviceId - 设备 ID
-   * @param bundleName - 应用包名（可选）
-   * @returns 崩溃日志内容
-   * @throws 如果获取失败则抛出错误
+   * Fetch the latest crash log content; returns undefined when the device has
+   * no crash files (distinct from a query failure).
+   * @param deviceId - Device ID
+   * @param bundleName - Bundle name (optional, used for filtering)
+   * @returns Crash log content, or undefined when no crash files exist
+   * @throws When the query fails
    */
-  async getCrashLog(deviceId: string, bundleName?: string): Promise<string> {
+  async getLatestCrashLog(
+    deviceId: string,
+    bundleName?: string
+  ): Promise<string | undefined> {
     debugLog(`Fetching crash logs from device: ${deviceId}`);
     const hdcPath = this.toolProvider.hdcPath;
 
-    // 1. 列出崩溃日志文件
+    // 1. List crash log files
     const filenames = await this.listCrashLogs(hdcPath, deviceId, bundleName);
 
-    // 2. 检查是否有日志文件
+    // 2. No crash files → undefined
     if (filenames.length === 0) {
-      return bundleName
-        ? `No crash logs found for bundle '${bundleName}'.`
-        : 'No crash logs found.';
+      return undefined;
     }
 
-    // 3. 按照文件名末尾的时间戳进行排序，取最新的一个
+    // 3. Sort by the trailing timestamp in the filename, take the latest
     const sortedFilenames = [...filenames].sort((a, b) => {
       const aTs = a.split('-').pop() || '';
       const bTs = b.split('-').pop() || '';
-      // 降序排序，最新的在前
+      // Descending: newest first
       return bTs.localeCompare(aTs);
     });
 
     const latestFilename = sortedFilenames[0];
 
-    // 4. 获取最新日志内容
+    // 4. Fetch the latest log content
     const content = await this.fetchCrashLogContent(
       hdcPath,
       deviceId,
@@ -577,6 +579,24 @@ export class HilogAdapter {
     );
 
     return `--- Latest Crash Log File: ${latestFilename} ---${content}`;
+  }
+
+  /**
+   * Fetch the device's crash log (returns a notice message when no crash files
+   * exist, for direct display by `log --crash`).
+   * @param deviceId - Device ID
+   * @param bundleName - Bundle name (optional)
+   * @returns Crash log content, or a "no logs" notice message
+   * @throws When the query fails
+   */
+  async getCrashLog(deviceId: string, bundleName?: string): Promise<string> {
+    const content = await this.getLatestCrashLog(deviceId, bundleName);
+    if (content !== undefined) {
+      return content;
+    }
+    return bundleName
+      ? `No crash logs found for bundle '${bundleName}'.`
+      : 'No crash logs found.';
   }
 
   /**

@@ -95,7 +95,7 @@ export class ApplyManager {
       await adapter.launchApp(ctx.targetDeviceId, ctx.bundleName, ctx.abilityName);
       console.log('[Apply] app launched');
     } catch (e) {
-      console.warn(`[Apply] launch app failed: ${(e as Error).message}`);
+      throw new Error(`[Apply] launch app failed: ${(e as Error).message}`, { cause: e });
     }
   }
 }

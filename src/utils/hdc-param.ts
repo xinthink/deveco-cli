@@ -43,6 +43,40 @@ export function classifyHdcOutput(text: string | undefined): HdcOutputClass {
   return 'ok';
 }
 
+const PID_LIST_RE = /(?:^|\s)(\d{2,})(?:\s|$)/;
+
+export type PidofOutcome = 'alive' | 'dead' | 'query-failed';
+
+/**
+ * Classify a `hdc shell pidof <bundle>` result (after runHdcWithRetry).
+ * - `alive`: clean exit with pid digits on stdout.
+ * - `dead`: confirmed no process — pidof's standard no-match (exit 1, no
+ *   output) or a clean exit with empty stdout.
+ * - `query-failed`: transport/spawn trouble or hdc error text — the process
+ *   state is UNKNOWN and must never be treated as "dead" (a transient
+ *   disconnect is not a crash).
+ */
+export function classifyPidofResult(result: HdcCommandResult): PidofOutcome {
+  const stdout = result.stdout.trim();
+  const stderr = result.stderr.trim();
+  if (
+    classifyHdcOutput(stdout) !== 'ok' ||
+    classifyHdcOutput(stderr) !== 'ok'
+  ) {
+    return 'query-failed';
+  }
+  if (result.exitCode === 0) {
+    if (!stdout) {
+      return 'dead';
+    }
+    return PID_LIST_RE.test(stdout) ? 'alive' : 'dead';
+  }
+  if (result.exitCode === 1 && !stdout && !stderr) {
+    return 'dead';
+  }
+  return 'query-failed';
+}
+
 /** Backoff schedule for transient hdc failures. ~4.8 s total wall time. */
 const RETRY_DELAYS_MS = [800, 1500, 2500];
 

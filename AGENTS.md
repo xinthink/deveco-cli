@@ -38,6 +38,7 @@ There is **no test framework** (no vitest/jest, no `*.test.ts`). Verification = 
 - `DEVECO_CLI_SKIP_INSTALL_CHECK=1` — bypass the install-location consistency check that runs before `devecocli update` proceeds. Warns (non-blocking) when the running binary's install root differs from `npm root -g`'s output (typical of multi-nvm / multi-node setups where `devecocli update` would land in a different prefix than the binary in PATH); see `src/install-check/`.
 - `DEVECO_CLI_DATA_DIR` — override user data root (default `~/.local/share/deveco-cli`). Derives `docs/.index/search.db`, `logs/doc-init.log`, `TraceLogData/upload-state.json`, etc.
 - `DEVECO_CLI_CPP_ENABLED` — set to `false` or `0` to disable C++ LSP in the MCP server (skips `compileNative` + `clangd`; C++ tools return "disabled"). Default: enabled.
+- `DEVECO_CLI_SMOKE_WAIT_MS` — settle wait in ms before `run`'s post-launch smoke check collects evidence (default `1000`; `0` checks immediately; non-numeric or negative values fall back to the default). See `src/smoke/smoke-inspector.ts`.
 - `HTTP_PROXY` / `HTTPS_PROXY` — honoured by `global-agent` bootstrapped in `src/cli.ts`.
 
 ## Architecture
