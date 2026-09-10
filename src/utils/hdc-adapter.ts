@@ -8,6 +8,7 @@ import { ToolProvider } from '../toolchain/index.js';
 import { debugLog } from './logger.js';
 import { DeviceManager } from '../service/device-manager.js';
 import { CommonUtils } from './common-utils.js';
+import { classifyPidofResult, runHdcWithRetry } from './hdc-param.js';
 
 export interface DeviceInfo {
   name: string;
@@ -135,6 +136,36 @@ export class HdcAdapter {
       bundleName,
     ];
     return await this.runHdc(args);
+  }
+
+  /**
+   * Whether `hdc shell pidof <bundle>` reports a live process.
+   * Strict: queries the full bundle name only — no tail-segment fallback
+   * (another app sharing the tail segment must never mask a crash).
+   * Goes through runHdcWithRetry so transient hdc windows are waited out.
+   * @throws when the probe itself fails (transport/spawn error, hdc error
+   * text) — the process state is unknown, never "dead".
+   */
+  public async pidofBundle(
+    target: string,
+    bundleName: string
+  ): Promise<boolean> {
+    CommonUtils.assertBundleNameStrict(bundleName);
+    const args = ['-t', target, 'shell', 'pidof', bundleName];
+    const hdcPath = this.toolProvider.hdcPath;
+    debugLog(`Executing: ${hdcPath} ${args.join(' ')}`);
+    const result = await runHdcWithRetry(hdcPath, args);
+    const outcome = classifyPidofResult(result);
+    if (outcome === 'query-failed') {
+      const detail = [result.stdout, result.stderr]
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .join(' ');
+      throw new Error(
+        `pidof query failed for '${bundleName}': ${detail || `exit ${result.exitCode}`}`
+      );
+    }
+    return outcome === 'alive';
   }
 
   public async forceStopApp(

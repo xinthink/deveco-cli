@@ -77,7 +77,7 @@ Search/read local HarmonyOS docs.
 - `sqlite3`: Run `sqlite3` on a device. Opt: `--device <name|serial>` (optional when exactly one device is connected, required when multiple). `db-path` is the on-device SQLite file; all further args are forwarded to the device `sqlite3` as-is (e.g. `-json`, `-readonly`, SQL strings, dot-commands). Maps to `hdc -t <serial> shell sqlite3 <db-path> [args...]`.
 
 ### `devecocli run` `[Outside sandbox]`
-Build, install, and launch.
+Build, install, and launch. After a successful ability launch (and after a successful `--apply`), runs a **default smoke check**. Success prints `Smoke: PASS`; failures print `Smoke: FAIL_CRASH` or `Smoke: FAIL_BLANK` (crash log path via `crash_log:`, blank screenshot via `screenshot:`) and exit non-zero. Smoke is skipped when there is no ability to launch, and for `--hotreload` / `--hotreload-apply`.
 - `--module <module>`: Target module (auto-selected if only one runnable).
 - `--device <name|serial>`: Target device (Req if multiple connected).
 - `--product <product>` / `--build-mode <mode>`: Defaults: `default` / `debug`.

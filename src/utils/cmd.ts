@@ -146,7 +146,10 @@ export async function runCommand(
     const error = err as ExecFileError;
     return {
       stdout: error.stdout?.trim() || '',
-      stderr: error.stderr?.trim() || error.message,
+      // ?? (not ||): an empty stderr must stay empty — backfilling it with
+      // node's generic "Command failed" message would mask the
+      // exit-1-with-no-output signal callers classify on (e.g. pidof probes).
+      stderr: error.stderr?.trim() ?? error.message,
       exitCode: typeof error.code === 'number' ? error.code : 1,
     };
   }

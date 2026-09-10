@@ -24,6 +24,7 @@ import {
 } from '../apply/hotreload/hotreload-manager.js';
 import { withBuildLock } from '../utils/build-lock.js';
 import { executeBuildSteps, processModuleTasks } from './build.js';
+import { runPostLaunchSmoke } from '../smoke/index.js';
 import { telemetry, EventType, toTraceErrorCode, type CommandExecuted, type TrackMeasurement, TraceError } from '../trace/index.js';
 
 interface RunOptions {
@@ -495,6 +496,17 @@ async function runNormalFlow(
     mainAbility,
     !!options.uninstall
   );
+
+  if (mainAbility) {
+    await runPostLaunchSmoke({
+      toolProvider,
+      projectRoot: project.rootDir,
+      hdcAdapter,
+      targetDeviceId,
+      bundleName,
+    });
+  }
+
   return memStats;
 }
 
@@ -534,16 +546,23 @@ async function runApplyFlow(
       bundleName,
       abilityName,
     });
-    console.log(
-      yellow('[Apply] 完成。若改动未生效，请检查 <module>/build/config/buildConfig.json 是否有内容，或执行 devecocli run 全量构建。')
-    );
-    return;
   } catch (e) {
     console.warn(yellow(`[Apply] 失败：${(e as Error).message}`));
     console.warn(yellow('[Apply] 自动回退到全量 devecocli run...'));
+    await runNormalFlow(options, project, toolProvider);
+    return;
   }
 
-  await runNormalFlow(options, project, toolProvider);
+  console.log(
+    yellow('[Apply] 完成。若改动未生效，请检查 <module>/build/config/buildConfig.json 是否有内容，或执行 devecocli run 全量构建。')
+  );
+
+  await runPostLaunchSmoke({
+    toolProvider,
+    projectRoot: project.rootDir,
+    targetDeviceId,
+    bundleName,
+  });
 }
 
 export default runCommand;
