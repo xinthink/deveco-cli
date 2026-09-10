@@ -209,7 +209,7 @@ devecocli init --agent <agents> --project <path> --path <path> --skill --mcp --f
 
 | 参数名         | 说明                                                                                        |
 | ----------- | ----------------------------------------------------------------------------------------- |
-| --agent     | 可选，智能体名称，多个智能体名称以英文逗号分隔。支持 `trae-cn`、`opencode`、`pi`、`cursor`、`codebuddy`、`qoder`、`claude-code`、`codex`。缺省时配置到所有已检测到的智能体中 |
+| --agent     | 可选，智能体名称，多个智能体名称以英文逗号分隔。缺省时配置到所有已检测到的智能体中 |
 | --project   | 可选，指定工程路径，将`deveco-cli` `Skill` 或 `MCP` 服务安装到该工程项目中                                       |
 | --path      | 可选，指定 `deveco-cli` `Skill` 的配置路径。不可与 `--project` 、`--agent` 、 `--mcp` 同时使用                |
 | --skill     | 可选，安装 `deveco-cli` `Skill`。不可与 `--mcp` 同时使用。`--mcp` 与 `--skill` 都缺省时，执行 `--skill`         |
