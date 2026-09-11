@@ -186,19 +186,22 @@ async function executeMcpInstallations(
   resolvedProject: string | undefined,
   options: InitOptions
 ): Promise<void> {
-  // 只有用户明确指定 --agent qoder 时才报错
+  // 用户明确指定了不支持 MCP 的 agent 时报错
+  const mcpUnsupportedAgents = ['qoder', 'dsh'];
   if (options.agent) {
     const specifiedAgents = options.agent.split(',').map(a => a.trim());
-    if (specifiedAgents.includes('qoder')) {
-      throw new Error('Qoder does not support MCP configuration via DevEco CLI. Use other supported agents instead.');
+    for (const agent of mcpUnsupportedAgents) {
+      if (specifiedAgents.includes(agent)) {
+        throw new Error(`${agent} does not support MCP configuration via DevEco CLI. Use --skill instead, or use other supported agents for MCP.`);
+      }
     }
   }
 
   const force = options.force ?? false;
 
-  // 过滤掉 qoder，不对其进行 MCP 配置
-  const filteredProjectAgents = targets.projectAgents.filter(p => p.agent !== 'qoder');
-  const filteredAgents = targets.agents.filter(a => a !== 'qoder');
+  // 过滤掉不支持 MCP 的 agent
+  const filteredProjectAgents = targets.projectAgents.filter(p => !mcpUnsupportedAgents.includes(p.agent));
+  const filteredAgents = targets.agents.filter(a => !mcpUnsupportedAgents.includes(a));
 
   const filteredTargets = {
     ...targets,
