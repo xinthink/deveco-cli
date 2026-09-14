@@ -29,6 +29,7 @@ import {
   runEmulatorLicenseView,
 } from '../utils/emulator-license.js';
 import { ToolProvider } from '../toolchain/index.js';
+import { formatBytesMb } from '../utils/process-rss.js';
 import { telemetry, EventType, toTraceErrorCode, TraceError, type CommandExecuted, type TrackMeasurement } from '../trace/index.js';
 
 async function withEmulatorTrace(
@@ -538,36 +539,71 @@ async function waitForEmulatorHdcState(
   return false;
 }
 
+function argsIncludeSnapshot(args: string[] | undefined): boolean | null {
+  if (!args) {
+    return null;
+  }
+  const i = args.indexOf('-bootmode');
+  return i >= 0 && i + 1 < args.length && args[i + 1] === 'snapshot';
+}
+
+interface EmulatorStartOutcome {
+  started: boolean;
+  memoryBytes: number;
+  hotBoot: boolean | null;
+}
+
+interface EmulatorStartTelemetry {
+  emulatorMemory: string;
+  hotBoot: boolean | null;
+}
+
 async function startOneEmulator(
   emulatorManager: EmulatorManager,
   hdcPath: string,
   name: string
-): Promise<void> {
-  const outcome = await emulatorManager.startEmulator(name);
-  if (outcome === 'already-running') {
+): Promise<EmulatorStartOutcome> {
+  const result = await emulatorManager.startEmulator(name);
+  if (result.status === 'already-running') {
     console.log(yellow(`Emulator "${name}" is already running.`));
-    return;
+    return { started: false, memoryBytes: 0, hotBoot: null };
   }
 
   console.log(cyan(`Starting emulator "${name}"...`));
 
-  const confirmed = await waitForEmulatorHdcState(hdcPath, name, true);
-  if (confirmed) {
-    console.log(green(`Emulator "${name}" started successfully.`));
-  } else {
-    console.log(
-      yellow(
-        `Emulator "${name}" was launched but did not appear in hdc list targets within the timeout.`
-      )
-    );
+  const tracker = result.tracker;
+  let memoryBytes = 0;
+  const hotBoot = argsIncludeSnapshot(result.args);
+
+  try {
+    const confirmed = await waitForEmulatorHdcState(hdcPath, name, true);
+    if (confirmed) {
+      console.log(green(`Emulator "${name}" started successfully.`));
+    } else {
+      console.log(
+        yellow(
+          `Emulator "${name}" was launched but did not appear in hdc list targets within the timeout.`
+        )
+      );
+    }
+  } finally {
+    if (tracker) {
+      try {
+        memoryBytes = await tracker.stop();
+      } catch {
+        // 采集失败不得改变模拟器启动结果
+      }
+    }
   }
+
+  return { started: true, memoryBytes, hotBoot };
 }
 
 async function startAction(
   emulatorManager: EmulatorManager,
   hdcPath: string,
   names: string[]
-) {
+): Promise<EmulatorStartTelemetry> {
   const results = await Promise.allSettled(
     names.map((name) => startOneEmulator(emulatorManager, hdcPath, name))
   );
@@ -575,6 +611,30 @@ async function startAction(
   if (reportSettledFailures(results, names, 'start')) {
     throw new TraceError('One or more emulators failed to start.');
   }
+
+  const startedOutcomes = results
+    .filter(
+      (r): r is PromiseFulfilledResult<EmulatorStartOutcome> =>
+        r.status === 'fulfilled'
+    )
+    .map((r) => r.value)
+    .filter((o) => o.started);
+
+  const anyUnknown =
+    startedOutcomes.length === 0 ||
+    startedOutcomes.some((o) => o.memoryBytes === 0);
+
+  return {
+    emulatorMemory: anyUnknown
+      ? 'unknown'
+      : formatBytesMb(
+          startedOutcomes.reduce((sum, o) => sum + o.memoryBytes, 0)
+        ),
+    hotBoot:
+      startedOutcomes.length === 0
+        ? null
+        : startedOutcomes.every((o) => o.hotBoot === true),
+  };
 }
 
 async function resolveEmulatorListName(
@@ -1284,6 +1344,8 @@ emulatorCommand
     const event: CommandExecuted = {
       event: EventType.CommandExecuted,
       args: ['emulator', 'start'],
+      emulatorMemory: 'unknown',
+      hotBoot: null,
     };
     await withEmulatorTrace(event, async () => {
       const { manager, toolProvider } = await initEmulatorManager();
@@ -1297,7 +1359,9 @@ emulatorCommand
           'Missing required emulator name.'
         );
       }
-      await startAction(manager, toolProvider.hdcPath, names);
+      const result = await startAction(manager, toolProvider.hdcPath, names);
+      event.emulatorMemory = result.emulatorMemory;
+      event.hotBoot = result.hotBoot;
     });
   });
 

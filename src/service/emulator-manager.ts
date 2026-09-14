@@ -9,7 +9,10 @@ import {
   normalizeListNameKey,
   supportsHotBoot,
 } from './emulator-types.js';
-import { spawnEmulatorDetached } from '../utils/emulator-spawn.js';
+import {
+  spawnEmulatorDetached,
+  type EmulatorSpawnHandle,
+} from '../utils/emulator-spawn.js';
 import { runAllEmulatorStartStrategies } from './emulator-start-strategies.js';
 import {
   getEmulatorBatteryChargingState,
@@ -119,7 +122,7 @@ export class EmulatorManager {
     });
   }
 
-  private executeEmulatorDetached(args: string[]): Promise<void> {
+  private executeEmulatorDetached(args: string[]): EmulatorSpawnHandle {
     return spawnEmulatorDetached(this.emulatorPath, this.sdkPath, args);
   }
 
@@ -143,9 +146,14 @@ export class EmulatorManager {
     return map;
   }
 
-  public async startEmulator(
-    name: string
-  ): Promise<'started' | 'already-running'> {
+  public async startEmulator(name: string): Promise<
+    | {
+        status: 'started';
+        args: string[];
+        tracker: EmulatorSpawnHandle['tracker'];
+      }
+    | { status: 'already-running' }
+  > {
     const emulators = await this.listEmulators();
     const nameKey = normalizeListNameKey(name);
     const targetEmulator = emulators.find(
@@ -159,7 +167,7 @@ export class EmulatorManager {
     const listName = targetEmulator.name;
 
     if (await this.isAlreadyRunning(listName, targetEmulator)) {
-      return 'already-running';
+      return { status: 'already-running' };
     }
 
     const outcome = await runAllEmulatorStartStrategies(
@@ -169,11 +177,15 @@ export class EmulatorManager {
       'snapshot'
     );
     if (outcome.ok) {
-      return 'started';
+      return {
+        status: 'started',
+        args: outcome.args,
+        tracker: outcome.tracker,
+      };
     }
 
     if (await this.isAlreadyRunning(listName)) {
-      return 'already-running';
+      return { status: 'already-running' };
     }
 
     throw new TraceError(

@@ -4,6 +4,8 @@
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { debugLog } from './logger.js';
+import { startMemoryTracker } from './process-rss.js';
+import { isTelemetryDisabled } from '../trace/index.js';
 
 const EMULATOR_SPAWN_GRACE_MS = 2500;
 
@@ -83,26 +85,36 @@ function attachDetachedEmulatorLifecycle(
   );
 }
 
-/**
- * Start Emulator.exe detached; fail fast on spawn error or non‑zero exit within grace window.
- */
+export interface EmulatorSpawnHandle {
+  pid: number | undefined;
+  started: Promise<void>;
+  tracker: { stop: () => Promise<number> } | undefined;
+}
+
 export function spawnEmulatorDetached(
   emulatorPath: string,
   sdkPath: string,
   args: string[]
-): Promise<void> {
+): EmulatorSpawnHandle {
   debugLog(`Spawning emulator: ${emulatorPath} ${args.join(' ')}`);
 
-  return new Promise((resolve, reject) => {
-    const stderrChunks: Buffer[] = [];
-    const child = spawn(emulatorPath, args, {
-      detached: true,
-      stdio: ['ignore', 'ignore', 'pipe'],
-      env: { ...process.env, DEVECO_SDK_HOME: sdkPath },
-      windowsHide: true,
-    });
-    child.stderr?.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+  const stderrChunks: Buffer[] = [];
+  const child = spawn(emulatorPath, args, {
+    detached: true,
+    stdio: ['ignore', 'ignore', 'pipe'],
+    env: { ...process.env, DEVECO_SDK_HOME: sdkPath },
+    windowsHide: true,
+  });
+  child.stderr?.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+
+  const tracker =
+    child.pid !== undefined && !isTelemetryDisabled()
+      ? startMemoryTracker(child.pid, 500, true)
+      : undefined;
+
+  const started = new Promise<void>((resolve, reject) => {
     attachDetachedEmulatorLifecycle(child, stderrChunks, resolve, reject);
   });
-}
 
+  return { pid: child.pid, started, tracker };
+}
