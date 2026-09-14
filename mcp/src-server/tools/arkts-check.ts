@@ -5,7 +5,6 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { z } from 'zod';
 import {
   cleanupOldSiblingDirs,
   detectStandardProtocol,
@@ -91,29 +90,6 @@ export class ArktsCheckTool {
   /** 注册配置文件变化回调，透传给 ArktsLspManager */
   setOnConfigChanged(callback: () => void): void {
     this.onConfigChangedCallback = callback;
-  }
-
-  static getToolDefinition() {
-    return {
-      name: 'check_ets_files',
-      description:
-        '对传入的ets文件进行静态语法检查(ArkTS-Check)并实时返回诊断信息。',
-      inputSchema: z.object({
-        files: z
-          .array(z.string())
-          .describe(
-            '待检查的 ETS 文件路径列表，格式为 ["file1.ets","file2.ets",...]'
-          ),
-      }),
-    };
-  }
-
-  isInitializing(): boolean {
-    return this.initializing;
-  }
-
-  isInitialized(): boolean {
-    return this.initialized;
   }
 
   async initialize(): Promise<void> {
@@ -330,7 +306,7 @@ export class ArktsCheckTool {
 
     const validFiles = this.collectValidFiles(args.files, errors);
     if (validFiles.length === 0) {
-      const text = errors.length > 0 ? errors.join('\n') : '没有有效的 .ets 文件';
+      const text = errors.length > 0 ? errors.join('\n') : 'No valid .ets files';
       return {
         content: [{ type: 'text', text }],
         isError: true,
@@ -357,7 +333,7 @@ export class ArktsCheckTool {
     const resolved = this.resolveSingleFile(args.file);
     if (!resolved) {
       return {
-        content: [{ type: 'text', text: `文件不存在或不是 .ets 文件: ${args.file}` }],
+        content: [{ type: 'text', text: `File does not exist or is not a .ets file: ${args.file}` }],
         isError: true,
       };
     }
@@ -470,7 +446,7 @@ export class ArktsCheckTool {
     const resolved = this.resolveSingleFile(file);
     if (!resolved) {
       return {
-        content: [{ type: 'text', text: `文件不存在或不是 .ets 文件: ${file}` }],
+        content: [{ type: 'text', text: `File does not exist or is not a .ets file: ${file}` }],
         isError: true,
       };
     }
@@ -513,7 +489,7 @@ export class ArktsCheckTool {
     const resolved = this.resolveSingleFile(args.file);
     if (!resolved) {
       return {
-        content: [{ type: 'text', text: `文件不存在或不是 .ets 文件: ${args.file}` }],
+        content: [{ type: 'text', text: `File does not exist or is not a .ets file: ${args.file}` }],
         isError: true,
       };
     }
@@ -559,220 +535,7 @@ export class ArktsCheckTool {
     }
   }
 
-  /**
-   * codeAction：获取指定位置的快速修复建议。
-   * 入参 {file, line, character}，params 需要 range + context。
-   */
-  async handleCodeAction(
-    args: { file: string; line: number; character: number }
-  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
-    if (!this.initialized) {
-      return this.buildNotReadyResponse();
-    }
-    const resolved = this.resolveSingleFile(args.file);
-    if (!resolved) {
-      return { content: [{ type: 'text', text: `文件不存在或不是 .ets 文件: ${args.file}` }], isError: true };
-    }
 
-    mcpLog.info(`handleCodeAction: file=${resolved} line=${args.line} char=${args.character}`);
-    try {
-      const result = await this.withOpenFile(resolved, async (uri) => {
-        const pos = { line: args.line, character: args.character };
-        return this.manager!.sendFeatureRequest(LSP_METHOD.CODE_ACTION, {
-          textDocument: { uri },
-          range: { start: pos, end: pos },
-          context: { diagnostics: [] },
-        });
-      });
-      const text = result == null ? 'codeAction: no result' : `codeAction: ${JSON.stringify(result, null, 2)}`;
-      return { content: [{ type: 'text', text }] };
-    } catch (err) {
-      return this.buildErrorResponse('codeAction', err);
-    }
-  }
-
-  /**
-   * rename：重命名符号。两步请求 prepareRename → rename。
-   * 入参 {file, line, character, newName}。
-   */
-  async handleRename(
-    args: { file: string; line: number; character: number; newName: string }
-  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
-    if (!this.initialized) {
-      return this.buildNotReadyResponse();
-    }
-    const resolved = this.resolveSingleFile(args.file);
-    if (!resolved) {
-      return { content: [{ type: 'text', text: `文件不存在或不是 .ets 文件: ${args.file}` }], isError: true };
-    }
-
-    mcpLog.info(`handleRename: file=${resolved} line=${args.line} char=${args.character} newName=${args.newName}`);
-    try {
-      const result = await this.withOpenFile(resolved, async (uri) => {
-        const pos = { line: args.line, character: args.character };
-        const prepareResult = await this.manager!.sendFeatureRequest(LSP_METHOD.PREPARE_RENAME, {
-          textDocument: { uri }, position: pos,
-        });
-        if (prepareResult == null) {
-          throw new Error('Symbol at this position cannot be renamed');
-        }
-        return this.manager!.sendFeatureRequest(LSP_METHOD.RENAME, {
-          textDocument: { uri }, position: pos, newName: args.newName,
-        });
-      });
-      const text = result == null ? 'rename: no result' : `rename: ${JSON.stringify(result, null, 2)}`;
-      return { content: [{ type: 'text', text }] };
-    } catch (err) {
-      return this.buildErrorResponse('rename', err);
-    }
-  }
-
-  /**
-   * typeHierarchy：查询类型继承关系。两步请求 prepareTypeHierarchy → supertypes/subtypes。
-   * direction: 'supertypes' = 父类型链；'subtypes' = 子类型链。
-   */
-  async handleTypeHierarchy(
-    args: { file: string; line: number; character: number; direction: 'supertypes' | 'subtypes' }
-  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
-    if (!this.initialized) {
-      return this.buildNotReadyResponse();
-    }
-    const resolved = this.resolveSingleFile(args.file);
-    if (!resolved) {
-      return { content: [{ type: 'text', text: `文件不存在或不是 .ets 文件: ${args.file}` }], isError: true };
-    }
-
-    mcpLog.info(`handleTypeHierarchy: file=${resolved} line=${args.line} char=${args.character} direction=${args.direction}`);
-    try {
-      const result = await this.fetchTypeHierarchy(resolved, args.line, args.character, args.direction);
-      const text = `typeHierarchy (${args.direction}): ${JSON.stringify(result, null, 2)}`;
-      return { content: [{ type: 'text', text }] };
-    } catch (err) {
-      return this.buildErrorResponse('typeHierarchy', err);
-    }
-  }
-
-  /**
-   * completionItem/resolve：解析补全项详情（文档、参数等）。
-   * 入参为 completion 返回的 item 对象，无需文件路径。
-   */
-  async handleCompletionItemResolve(
-    item: unknown
-  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
-    if (!this.initialized) {
-      return this.buildNotReadyResponse();
-    }
-    mcpLog.info('handleCompletionItemResolve');
-    try {
-      const result = await this.manager!.sendFeatureRequest(LSP_METHOD.COMPLETION_ITEM_RESOLVE, { item });
-      const text = result == null ? 'completionItemResolve: no result' : `completionItemResolve: ${JSON.stringify(result, null, 2)}`;
-      return { content: [{ type: 'text', text }] };
-    } catch (err) {
-      return this.buildErrorResponse('completionItemResolve', err);
-    }
-  }
-
-  /**
-   * typeHierarchy 内部方法：两步请求 prepareTypeHierarchy → supertypes/subtypes。
-   * 返回准备项列表及展平后的层级结果。
-   */
-  private async fetchTypeHierarchy(
-    file: string,
-    line: number,
-    character: number,
-    direction: 'supertypes' | 'subtypes'
-  ): Promise<{ items: unknown[]; results: unknown[] }> {
-    return this.withOpenFile(file, async (uri) => {
-      const prepareResult = await this.manager!.sendFeatureRequest(LSP_METHOD.PREPARE_TYPE_HIERARCHY, {
-        textDocument: { uri }, position: { line, character },
-      });
-      const items = Array.isArray(prepareResult) ? prepareResult : (prepareResult ? [prepareResult] : []);
-      if (items.length === 0) {
-        return { items: [], results: [] };
-      }
-      
-      const method = direction === 'supertypes' ? LSP_METHOD.SUPERTYPES : LSP_METHOD.SUBTYPES;
-      const results = await this.collectHierarchyItems(method, items);
-      return { items, results };
-    });
-  }
-
-  /**
-   * 遍历准备项，向 LSP 发送 supertypes/subtypes 请求并展平结果。
-   */
-  private async collectHierarchyItems(method: string, items: unknown[]): Promise<unknown[]> {
-    const allResults: unknown[] = [];
-    for (const item of items) {
-      const res = await this.manager!.sendFeatureRequest(method, { item });
-      if (Array.isArray(res)) {
-        allResults.push(...res);
-      } else if (res) {
-        allResults.push(res);
-      }
-    }
-    return allResults;
-  }
-
-  // ---------- 低价值方法（实现但不暴露为 tool） ----------
-
-  /** inlayHint：获取文件内的内联类型提示。需要 range。 */
-  async handleInlayHint(
-    file: string
-  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
-    if (!this.initialized) {
-      return this.buildNotReadyResponse();
-    }
-    const resolved = this.resolveSingleFile(file);
-    if (!resolved) {
-      return { content: [{ type: 'text', text: `文件不存在或不是 .ets 文件: ${file}` }], isError: true };
-    }
-    try {
-      const content = await fs.promises.readFile(resolved, 'utf8');
-      const lineCount = content.split('\n').length;
-      const result = await this.withOpenFile(resolved, async (uri) => {
-        return this.manager!.sendFeatureRequest(LSP_METHOD.INLAY_HINT, {
-          textDocument: { uri },
-          range: { start: { line: 0, character: 0 }, end: { line: lineCount, character: 0 } },
-        });
-      });
-      const text = result == null ? 'inlayHint: no result' : `inlayHint: ${JSON.stringify(result, null, 2)}`;
-      return { content: [{ type: 'text', text }] };
-    } catch (err) {
-      return this.buildErrorResponse('inlayHint', err);
-    }
-  }
-
-  /** documentLink：获取文件内的可点击链接。 */
-  async handleDocumentLink(
-    file: string
-  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
-    if (!this.initialized) {
-      return this.buildNotReadyResponse();
-    }
-    const resolved = this.resolveSingleFile(file);
-    if (!resolved) {
-      return { content: [{ type: 'text', text: `文件不存在或不是 .ets 文件: ${file}` }], isError: true };
-    }
-    try {
-      const result = await this.withOpenFile(resolved, async (uri) => {
-        return this.manager!.sendFeatureRequest(LSP_METHOD.DOCUMENT_LINK, { textDocument: { uri } });
-      });
-      const text = result == null ? 'documentLink: no result' : `documentLink: ${JSON.stringify(result, null, 2)}`;
-      return { content: [{ type: 'text', text }] };
-    } catch (err) {
-      return this.buildErrorResponse('documentLink', err);
-    }
-  }
-
-  /** 统一错误响应构造。 */
-  private buildErrorResponse(
-    label: string,
-    err: unknown
-  ): { content: { type: string; text: string }[]; isError: boolean } {
-    const msg = err instanceof Error ? err.message : String(err);
-    mcpLog.error(`${label} failed: ${msg}`);
-    return { content: [{ type: 'text', text: `${label} failed: ${msg}` }], isError: true };
-  }
 
   /**
    * 打开文件 → 执行 action → 关闭文件。
@@ -824,10 +587,10 @@ export class ArktsCheckTool {
     isError: boolean;
   } {
     const msg = this.initializing
-      ? 'LSP 正在初始化中，请稍后再试'
+      ? 'LSP is initializing, please retry later'
       : !this.projectPath
-        ? '没有配置工程路径，请配置PROJECT_PATH参数'
-        : 'LSP未初始化';
+        ? 'No project path configured; set the PROJECT_PATH parameter'
+        : 'LSP not initialized';
     return {
       content: [{ type: 'text', text: msg }],
       isError: true,
@@ -842,16 +605,16 @@ export class ArktsCheckTool {
       const resolved = path.resolve(path.isAbsolute(fileArg) ? fileArg : path.join(workspacePath, fileArg));
 
       if (!fs.existsSync(resolved)) {
-        errors.push(`文件不存在: ${fileArg}`);
+        errors.push(`File does not exist: ${fileArg}`);
         continue;
       }
       const stat = fs.statSync(resolved);
       if (!stat.isFile()) {
-        errors.push(`不是普通文件: ${fileArg}`);
+        errors.push(`Not a regular file: ${fileArg}`);
         continue;
       }
       if (!resolved.endsWith('.ets')) {
-        errors.push(`不是 .ets 文件: ${fileArg}`);
+        errors.push(`Not a .ets file: ${fileArg}`);
         continue;
       }
       validFiles.push(resolved);
@@ -893,7 +656,7 @@ export class ArktsCheckTool {
     let content = parts.join('\n').trim();
     const isError = errors.length > 0;
     if (!isError && infoMsgs.length === 0) {
-      content = '未收集到诊断信息';
+      content = 'No diagnostics collected';
     }
     return {
       content: [{ type: 'text', text: content }],

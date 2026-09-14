@@ -547,14 +547,14 @@ async function runApplyFlow(
       abilityName,
     });
   } catch (e) {
-    console.warn(yellow(`[Apply] 失败：${(e as Error).message}`));
-    console.warn(yellow('[Apply] 自动回退到全量 devecocli run...'));
+    console.warn(yellow(`[Apply] failed: ${(e as Error).message}`));
+    console.warn(yellow('[Apply] Falling back to full "devecocli run"...'));
     await runNormalFlow(options, project, toolProvider);
     return;
   }
 
   console.log(
-    yellow('[Apply] 完成。若改动未生效，请检查 <module>/build/config/buildConfig.json 是否有内容，或执行 devecocli run 全量构建。')
+    yellow('[Apply] Done. If changes did not take effect, check <module>/build/config/buildConfig.json for content, or run "devecocli run" for a full build.')
   );
 
   await runPostLaunchSmoke({
