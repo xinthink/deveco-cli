@@ -637,7 +637,7 @@ async function initEmulatorManager(): Promise<{
 
 async function runEmulatorControlAction(
   options: EmulatorTargetOptions,
-  actionFactory: () => EmulatorControlAction,
+  actionFactory: () => EmulatorControlAction | EmulatorControlAction[],
   subCommand: string
 ): Promise<void> {
   const event: CommandExecuted = {
@@ -646,20 +646,23 @@ async function runEmulatorControlAction(
   };
   await withEmulatorTrace(event, async () => {
     const target = assertTarget(options.target);
-    const action = actionFactory();
+    const produced = actionFactory();
+    const actions = Array.isArray(produced) ? produced : [produced];
     const { manager, toolProvider } = await initEmulatorManager();
     const instanceName = await resolveEmulatorListName(
       toolProvider.hdcPath,
       target
     );
-    await manager.controlEmulator(instanceName, action);
+    for (const action of actions) {
+      await manager.controlEmulator(instanceName, action);
+    }
     console.log(green(`Emulator "${target}" operation completed.`));
   });
 }
 
-function firstGeolocationAction(
+function geolocationActions(
   options: GeolocationOptions
-): EmulatorControlAction {
+): EmulatorControlAction[] {
   const actions: EmulatorControlAction[] = [];
   addGpsAction(actions, 'longitude', options.longitude, -180, 180, 8);
   addGpsAction(actions, 'latitude', options.latitude, -90, 90, 8);
@@ -673,10 +676,21 @@ function firstGeolocationAction(
     2,
     '--direction'
   );
-  return singleAction(actions, 'Specify one geolocation option.');
+  if (actions.length === 0) {
+    throw new Error('Specify at least one geolocation option.');
+  }
+  // 经纬度建议同传：单独设置 longitude 或 latitude 无法构成有效坐标点，只警告不阻断
+  if (options.longitude === undefined || options.latitude === undefined) {
+    console.warn(
+      yellow(
+        'Warning: --longitude and --latitude should be specified together to form a valid location.'
+      )
+    );
+  }
+  return actions;
 }
 
-function firstSensorAction(options: SensorOptions): EmulatorControlAction {
+function sensorActions(options: SensorOptions): EmulatorControlAction[] {
   const actions: EmulatorControlAction[] = [];
   addSensorAction(
     actions,
@@ -691,20 +705,10 @@ function firstSensorAction(options: SensorOptions): EmulatorControlAction {
   addSensorAction(actions, 'temperature', options.temperature, -273.1, 100, false);
   addSensorAction(actions, 'steps', options.steps, 0, 10000, true);
   addSensorAction(actions, 'heartrate', options.heartrate, 0, 255, true);
-  return singleAction(actions, 'Specify one sensor option.');
-}
-
-function singleAction(
-  actions: EmulatorControlAction[],
-  emptyMessage: string
-): EmulatorControlAction {
   if (actions.length === 0) {
-    throw new Error(emptyMessage);
+    throw new Error('Specify at least one sensor option.');
   }
-  if (actions.length > 1) {
-    throw new Error('Only one operation option can be specified.');
-  }
-  return actions[0];
+  return actions;
 }
 
 function addGpsAction(
@@ -744,26 +748,59 @@ function addSensorAction(
   actions.push({ type: 'sensor', key, value });
 }
 
-function batteryAction(options: BatteryOptions): EmulatorControlAction {
+function batteryAction(options: BatteryOptions): EmulatorControlAction[] {
   const actions: EmulatorControlAction[] = [];
+  // Push status before level. When the user explicitly passes
+  // --status charging, mark the battery action assumedCharging so controlEmulator
+  // statically allows --level 0 without relying on -batteryStatus → hidumper
+  // propagation timing.
+  if (options.status !== undefined) {
+    const status: 0 | 1 = options.status === 'charging' ? 1 : 0;
+    actions.push({ type: 'battery-status', status });
+  }
   if (options.level !== undefined) {
     actions.push({
       type: 'battery',
       level: parseRangeInteger('--level', options.level, 0, 100),
+      assumedCharging: options.status === 'charging',
     });
   }
-  if (options.status !== undefined) {
-    actions.push({
-      type: 'battery-status',
-      status: options.status === 'charging' ? 1 : 0,
-    });
+
+  if (actions.length === 0) {
+    throw new Error('Specify --level or --status.');
   }
-  return singleAction(actions, 'Specify --level or --status.');
+  // Battery level 0 is only valid while charging; combining --level 0 with
+  // --status discharging is an invalid target state.
+  const hasLevelZero = actions.some(
+    (a) => a.type === 'battery' && a.level === 0
+  );
+  const hasDischarging = actions.some(
+    (a) => a.type === 'battery-status' && a.status === 0
+  );
+  if (hasLevelZero && hasDischarging) {
+    throw new Error(
+      'Battery level 0 is only allowed while charging; --level 0 cannot be combined with --status discharging.'
+    );
+  }
+  return actions;
 }
 
 const emulatorCommand = new Command('emulator').description(
   'Manage emulator instances'
 );
+
+emulatorCommand.configureOutput({
+  outputError: (str, write) => {
+    write(str);
+    if (/too many arguments/i.test(str)) {
+      write(
+        `\n${yellow('Tip: ')}${gray('An option value containing spaces/parentheses must be quoted. Use:')}\n` +
+          `  ${cyan('devecocli emulator <subcommand> --<option> "value with spaces"')}\n` +
+          `  ${cyan('devecocli emulator <subcommand> --<option>="value with spaces"')}\n`
+      );
+    }
+  },
+});
 
 emulatorCommand.hook('preAction', async () => {
   const toolProvider = await ToolProvider.new();
@@ -1260,7 +1297,7 @@ emulatorCommand
 
 emulatorCommand
   .command('battery')
-  .description('Set battery level or charging status')
+  .description('Set battery level and/or charging status')
   .requiredOption('--target <nameOrSerial>', 'Target emulator name or serial')
   .option(
     '--level <0-100>',
@@ -1285,7 +1322,7 @@ emulatorCommand
   .option('--altitude <value>', 'Altitude (-10000.0 to 10000.0)')
   .option('--direction <value>', 'Heading direction in degrees (0.00 to 359.99)')
   .action((options: GeolocationOptions) =>
-    runEmulatorControlAction(options, () => firstGeolocationAction(options), 'geolocation')
+    runEmulatorControlAction(options, () => geolocationActions(options), 'geolocation')
   );
 
 emulatorCommand
@@ -1318,7 +1355,7 @@ emulatorCommand
   .option('--steps <value>', 'Steps sensor (integer 0 to 10000)')
   .option('--heartrate <value>', 'Heart rate sensor (integer 0 to 255)')
   .action((options: SensorOptions) =>
-    runEmulatorControlAction(options, () => firstSensorAction(options), 'sensor')
+    runEmulatorControlAction(options, () => sensorActions(options), 'sensor')
   );
 
 emulatorCommand
@@ -1442,19 +1479,6 @@ const createEmulatorCmd = emulatorCommand
     ])
   )
   .option('--force', 'Overwrite an existing emulator instance');
-
-createEmulatorCmd.configureOutput({
-  outputError: (str, write) => {
-    write(str);
-    if (/too many arguments/i.test(str)) {
-      write(
-        `\n${yellow('Tip: ')}${gray('Values containing spaces must be double-quoted, otherwise the shell splits them into separate arguments. For example:')}\n` +
-          `  ${cyan('devecocli emulator create MyPhone --device-type phone --os-version "HarmonyOS 6.0.1(21)" --screen-profile "Mate 70 Pro"')}\n` +
-          `  ${cyan('devecocli emulator create MyPhone --device-type phone --os-version="HarmonyOS 6.0.1(21)" --screen-profile="Mate 70 Pro"')}\n`
-      );
-    }
-  },
-});
 
 createEmulatorCmd.action(
   async (name: string, opts: EmulatorCreateCliOptions) => {

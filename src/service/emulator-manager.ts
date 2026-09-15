@@ -38,7 +38,7 @@ export type EmulatorControlAction =
   | { type: 'rotation'; direction: 'left' | 'right' }
   | { type: 'volume'; direction: 'up' | 'down' }
   | { type: 'folded-state'; state: string }
-  | { type: 'battery'; level: number }
+  | { type: 'battery'; level: number; assumedCharging?: boolean }
   | { type: 'battery-status'; status: 0 | 1 }
   | {
       type: 'gps';
@@ -255,10 +255,12 @@ export class EmulatorManager {
       throw new TraceError(`Emulator "${instance}" is not running.`, 'Emulator instance is not running.');
     }
     if (action.type === 'battery') {
-      const charging = await getEmulatorBatteryChargingState(
-        this.hdcPath,
-        target.name
-      );
+      // When the user explicitly passes --status charging in the same call,
+      // trust it for level=0 validation instead of querying the guest battery
+      // state — decouples from -batteryStatus → hidumper propagation timing.
+      const charging = action.assumedCharging
+        ? true
+        : await getEmulatorBatteryChargingState(this.hdcPath, target.name);
       if (!charging && action.level === 0) {
         throw new Error(
           'Battery level must be an integer in [1, 100] while the emulator is not charging.'

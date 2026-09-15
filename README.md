@@ -643,7 +643,8 @@ devecocli emulator volume up --target Phone
 devecocli emulator fold half-open --target Phone
 devecocli emulator battery --target Phone --level 90
 devecocli emulator battery --target Phone --status charging
-devecocli emulator geolocation --target Phone --longitude 116.400244
+devecocli emulator battery --target Phone --level 80 --status charging
+devecocli emulator geolocation --target Phone --longitude 116.40024 --latitude 39.908
 devecocli emulator scene outdoorRunning --target Phone
 devecocli emulator sensor --target Phone --heartrate 80
 ```
@@ -651,11 +652,14 @@ devecocli emulator sensor --target Phone --heartrate 80
 **说明：**
 
 - `--target` 支持模拟器名称或 `127.0.0.1:<port>` 序列号。
+- `battery --level` 与 `battery --status` 可同时传入（一次调用同时设置电量与充电状态）。
 - `battery --level` 会自动查询模拟器当前充电状态：充电时取值范围为整数 `[0, 100]`，未充电时为 `[1, 100]`。
 - `battery --status` 取值为 `charging` 或 `discharging`。
+- `--level 0` 与 `--status discharging` 组合非法（电量 0 仅在充电时允许），会被拒绝。
 - `geolocation` 支持 `--longitude`、`--latitude`、`--altitude`、`--direction`。
 - `scene` 取值为 `outdoorRunning`、`outdoorCycling`、`drivingNavigation`。
-- `sensor` 支持 `--light-intensity`、`--humidity`、`--temperature`、`--steps`、`--heartrate`。
+- `sensor` 支持 `--light-intensity`、`--humidity`、`--temperature`、`--steps`、`--heartrate`，可同时传入多个。
+- `geolocation`/`battery`/`sensor` 多参数为逐项串行下发、非原子：第 N 项失败时前 N−1 项已生效且不回滚，建议失败后整体重跑。
 - `fold <state>` 会根据目标模拟器的设备类型校验状态，设备与参数必须匹配：
 
   | 设备类型 | 支持的 `state` |
