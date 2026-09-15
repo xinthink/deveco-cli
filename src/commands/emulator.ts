@@ -2,12 +2,12 @@
  * Copyright (c) 2026 Huawei Device Co., Ltd.
  * SPDX-License-Identifier: MIT
  */
-import { Argument, Command, Option } from 'commander';
+import { Argument, Command, InvalidArgumentError, Option } from 'commander';
 import { tryGetHdcShellParams } from '../utils/hdc-param.js';
 import { green, cyan, red, yellow, gray } from 'colorette';
 import ora, { type Ora } from 'ora';
 import { renderTable, type TableRow } from '../utils/text-table.js';
-import type { EmulatorInfo } from '../service/emulator-types.js';
+import type { EmulatorCreateOptions, EmulatorInfo } from '../service/emulator-types.js';
 import { normalizeListNameKey } from '../service/emulator-types.js';
 import {
   EmulatorManager,
@@ -205,72 +205,6 @@ function parseRangeNumber(
   );
 }
 
-function validateVirtualDeviceName(name: string): void {
-  const n = name.trim();
-  if (!n || !/^[A-Za-z0-9_ ]+$/.test(n)) {
-    throw new Error(
-      'The virtual device name can only contain letters, spaces, numbers, and underscores (_).'
-    );
-  }
-}
-
-function validateEmulatorOsVersionArg(version: string): void {
-  const v = version.trim();
-  if (!v) {
-    throw new Error('--os-version must not be empty.');
-  }
-  if (/^\d+$/.test(v)) {
-    throw new Error(
-      `--os-version "${version}" is invalid. use the full image label, e.g. HarmonyOS 5.1.1(19).`
-    );
-  }
-  if (!/^HarmonyOS\s+/i.test(v)) {
-    if (/^HarmonyOS$/i.test(v)) {
-      throw new Error(
-        '--os-version is incomplete (only "HarmonyOS"). On PowerShell/cmd, quote the full label, e.g. --os-version "HarmonyOS 6.0.1(21)".'
-      );
-    }
-    throw new Error(
-      `Invalid --os-version "${version}". It must start with "HarmonyOS " (e.g. "HarmonyOS 5.1.1(19)").`
-    );
-  }
-}
-
-function assertOsVersionAgainstDownloadedImages(
-  osVersion: string,
-  downloaded: string[]
-): void {
-  const norm = (s: string) => s.normalize('NFKC').trim();
-  const user = norm(osVersion);
-  if (downloaded.length === 0) {
-    console.error(
-      yellow(
-        'Could not parse any downloaded images from `emulator -imageList -downloaded true` (JSON array expected).'
-      )
-    );
-    console.error(
-      yellow(
-        'Run `devecocli emulator image download ...` followed by `devecocli emulator image list` and then copy an `osVersion` string exactly.'
-      )
-    );
-    throw new Error(
-      'No downloaded osVersion values parsed; cannot validate --os-version.'
-    );
-  }
-  if (!downloaded.some((d) => norm(d) === user)) {
-    console.error(
-      red(
-        `--os-version does not match any downloaded image (exact string required).`
-      )
-    );
-    console.log(yellow('Use one of these --os-version values:'));
-    for (const v of downloaded) {
-      console.log(`  ${v}`);
-    }
-    throw new Error(`No downloaded image matches --os-version "${osVersion}".`);
-  }
-}
-
 const EMULATOR_LIST_TABLE_HEADERS = [
   'Name',
   'Status',
@@ -291,6 +225,7 @@ interface EmulatorListItem {
 
 interface EmulatorListOptions {
   format: EmulatorListFormat;
+  details?: boolean;
 }
 
 function buildEmulatorListRow(item: EmulatorListItem): TableRow {
@@ -855,6 +790,81 @@ function deviceTypeOption(required: boolean): Option {
   return required ? opt.makeOptionMandatory() : opt;
 }
 
+interface EmulatorCreateCliOptions {
+  deviceType: string;
+  osVersion: string;
+  instancePath?: string;
+  imageRoot?: string;
+  screenProfile?: string;
+  screen?: string[];
+  storage?: string;
+  memory?: string;
+  hotBoot?: 'true' | 'false';
+  force?: boolean;
+}
+
+function createDeviceTypeOption(): Option {
+  return new Option(
+    '--device-type <type>',
+    'Emulator device type (case-insensitive)'
+  )
+    .argParser((value) => {
+      if (!value.trim()) {
+        throw new InvalidArgumentError('--device-type must not be empty.');
+      }
+      return value;
+    })
+    .makeOptionMandatory();
+}
+
+function parseCreateScreen(screen?: string[]): string[] | undefined {
+  if (screen === undefined) {
+    return undefined;
+  }
+  if (
+    screen.length >= 4 &&
+    screen.length % 4 === 0 &&
+    screen.every((value) => /^\d+(?:\.\d+)?$/.test(value))
+  ) {
+    throw new Error(
+      '--screen value must be quoted: --screen "1316 2832 560 6.9".'
+    );
+  }
+  if (screen.length > 2) {
+    throw new Error('--screen accepts one or two configurations.');
+  }
+  for (const [index, configuration] of screen.entries()) {
+    const values = configuration.trim().split(/\s+/);
+    const label =
+      screen.length === 1 ? '--screen' : `--screen configuration ${index + 1}`;
+    if (values.length !== 4 || values.some((value) => value.length === 0)) {
+      throw new Error(
+        `${label} must contain four values: width(px), height(px), DPI, and screen diagonal length(inch).`
+      );
+    }
+    parseRangeNumber(`${label} width`, values[0], 720, 3500);
+    parseRangeNumber(`${label} height`, values[1], 720, 3500);
+    parseRangeNumber(`${label} DPI`, values[2], 240, 640);
+    parseRangeNumber(`${label} screen diagonal length`, values[3], 3.5, 9);
+  }
+  return screen;
+}
+
+function selectedCreateOptionNames(opts: EmulatorCreateCliOptions): string[] {
+  return [
+    '--device-type',
+    '--os-version',
+    ...(opts.instancePath !== undefined ? ['--instance-path'] : []),
+    ...(opts.imageRoot !== undefined ? ['--image-root'] : []),
+    ...(opts.screenProfile !== undefined ? ['--screen-profile'] : []),
+    ...(opts.screen !== undefined ? ['--screen'] : []),
+    ...(opts.storage !== undefined ? ['--storage'] : []),
+    ...(opts.memory !== undefined ? ['--memory'] : []),
+    ...(opts.hotBoot !== undefined ? ['--hot-boot'] : []),
+    ...(opts.force ? ['--force'] : []),
+  ];
+}
+
 type ImageListFormat = 'table' | 'json';
 
 function getRecordValue(obj: Record<string, unknown>, keys: string[]): unknown {
@@ -1315,6 +1325,12 @@ emulatorCommand
   .command('list')
   .description('List all emulator instances')
   .addOption(
+    new Option(
+      '--details',
+      'Output the raw JSON of `Emulator -list -details` without transformation'
+    ).conflicts('format')
+  )
+  .addOption(
     new Option('--format <format>', 'Output format')
       .choices(['table', 'json'])
       .default('table')
@@ -1322,10 +1338,20 @@ emulatorCommand
   .action(async (options: EmulatorListOptions) => {
     const event: CommandExecuted = {
       event: EventType.CommandExecuted,
-      args: ['emulator', 'list'],
+      args: [
+        'emulator',
+        'list',
+        ...(options.details ? ['--details'] : []),
+        ...(options.format !== 'table' ? ['--format'] : []),
+      ],
     };
     await withEmulatorTrace(event, async () => {
       const { manager, toolProvider } = await initEmulatorManager();
+      if (options.details) {
+        const raw = await manager.listEmulatorDetails();
+        console.log(raw.trimEnd());
+        return;
+      }
       const spinner =
         options.format === 'table'
           ? ora({
@@ -1391,52 +1417,78 @@ const createEmulatorCmd = emulatorCommand
   .description(
     'Create a local emulator instance.'
   )
-  .addOption(deviceTypeOption(true))
+  .addOption(createDeviceTypeOption())
   .requiredOption(
     '--os-version <version>',
     'Downloaded image label. which will be quoted in PowerShell (e.g. "HarmonyOS 6.0.1(21)") or be used in the format --os-version="…";For details, run`devecocli emulator image list`'
   )
-  .option('--force', 'Overwrite if supported');
+  .addOption(
+    new Option('--path, --instance-path <path>', 'Emulator instance path')
+  )
+  .option('--image-root <path>', 'Emulator image path')
+  .option('--screen-profile <model>', 'Emulator screen profile')
+  .addOption(
+    new Option(
+      '--screen <config...>',
+      'Screen: "width(px) height(px) DPI screen-diagonal-length(inch)" (720-3500, 720-3500, 240-640, 3.5-9); pass two values for a foldable device'
+    )
+  )
+  .option('--storage <size>', 'Storage size in GB (2-1023)')
+  .option('--memory <size>', 'Memory size in GB (2-32)')
+  .addOption(
+    new Option('--hot-boot <boolean>', 'Enable or disable hot boot').choices([
+      'true',
+      'false',
+    ])
+  )
+  .option('--force', 'Overwrite an existing emulator instance');
 
 createEmulatorCmd.configureOutput({
   outputError: (str, write) => {
     write(str);
     if (/too many arguments/i.test(str)) {
       write(
-        `\n${yellow('Tip: ')}${gray('Unquoted --os-version values with spaces/parentheses are split into multiple arguments. Use:')}\n` +
-          `  ${cyan('devecocli emulator create 123 --device-type phone --os-version "HarmonyOS 6.0.1(21)"')}\n` +
-          `  ${cyan('devecocli emulator create 123 --device-type phone --os-version="HarmonyOS 6.0.1(21)"')}\n`
+        `\n${yellow('Tip: ')}${gray('Values containing spaces must be double-quoted, otherwise the shell splits them into separate arguments. For example:')}\n` +
+          `  ${cyan('devecocli emulator create MyPhone --device-type phone --os-version "HarmonyOS 6.0.1(21)" --screen-profile "Mate 70 Pro"')}\n` +
+          `  ${cyan('devecocli emulator create MyPhone --device-type phone --os-version="HarmonyOS 6.0.1(21)" --screen-profile="Mate 70 Pro"')}\n`
       );
     }
   },
 });
 
 createEmulatorCmd.action(
-  async (
-    name: string,
-    opts: {
-      deviceType: string;
-      osVersion: string;
-      force?: boolean;
-    }
-  ) => {
+  async (name: string, opts: EmulatorCreateCliOptions) => {
     const event: CommandExecuted = {
       event: EventType.CommandExecuted,
-      args: ['emulator', 'create', '--device-type', '--os-version', ...(opts.force ? ['--force'] : [])],
+      args: ['emulator', 'create', ...selectedCreateOptionNames(opts)],
     };
     await withEmulatorTrace(event, async () => {
-      validateVirtualDeviceName(name);
-      validateEmulatorOsVersionArg(opts.osVersion);
-      const { manager } = await initEmulatorManager();
-      const downloaded = await manager.listDownloadedImageOsVersions();
-      assertOsVersionAgainstDownloadedImages(opts.osVersion, downloaded);
-      console.log(cyan(`Creating emulator "${name}"...`));
-      await manager.createVirtualDevice({
+      if (!opts.osVersion.trim()) {
+        throw new Error('--os-version must not be empty.');
+      }
+      const createOptions: EmulatorCreateOptions = {
         name,
         deviceType: opts.deviceType,
         osVersion: opts.osVersion,
+        instancePath: opts.instancePath,
+        imageRoot: opts.imageRoot,
+        screenProfile: opts.screenProfile,
+        screen: parseCreateScreen(opts.screen),
+        storage:
+          opts.storage === undefined
+            ? undefined
+            : parseRangeNumber('--storage', opts.storage, 2, 1023),
+        memory:
+          opts.memory === undefined
+            ? undefined
+            : parseRangeNumber('--memory', opts.memory, 2, 32),
+        hotBoot:
+          opts.hotBoot === undefined ? undefined : opts.hotBoot === 'true',
         force: opts.force === true,
-      });
+      };
+      const { manager } = await initEmulatorManager();
+      console.log(cyan(`Creating emulator "${name}"...`));
+      await manager.createVirtualDevice(createOptions);
       console.log(green(`Emulator "${name}" created successfully.`));
     });
   }
@@ -1445,15 +1497,25 @@ createEmulatorCmd.action(
 emulatorCommand
   .command('delete <name>')
   .description('Delete a local emulator instance')
-  .action(async (name: string) => {
+  .addOption(
+    new Option('--path, --instance-path <path>', 'Emulator instance path')
+  )
+  .action(async (name: string, opts: { instancePath?: string }) => {
     const event: CommandExecuted = {
       event: EventType.CommandExecuted,
-      args: ['emulator', 'delete'],
+      args: [
+        'emulator',
+        'delete',
+        ...(opts.instancePath !== undefined ? ['--instance-path'] : []),
+      ],
     };
     await withEmulatorTrace(event, async () => {
       const { manager } = await initEmulatorManager();
       console.log(cyan(`Deleting emulator "${name}"...`));
-      const deletedName = await manager.deleteVirtualDevice(name);
+      const deletedName = await manager.deleteVirtualDevice(
+        name,
+        opts.instancePath
+      );
       console.log(green(`Emulator "${deletedName}" deleted successfully.`));
     });
   });
