@@ -12,6 +12,14 @@
   </p>
 </div>
 
+> [!IMPORTANT]
+> **本仓库是上游项目的派生副本（fork），并非官方仓库，与华为及 OpenHarmony SIG 无隶属关系。**
+>
+> - **来源**：[openharmony-sig/deveco-cli](https://gitcode.com/openharmony-sig/deveco-cli)（OpenHarmony SIG）
+> - **版权**：Copyright (c) 2026 Huawei Device Co., Ltd.
+> - **许可**：[MIT](./LICENSE)（许可证全文随本副本保留）
+> - **本副本的改动、未包含的产物与上游同步方式**：见 [NOTICE.md](./NOTICE.md)
+
 `DevEco CLI` 将 `DevEco Studio` 工具链统一封装为一个 `CLI`，内置 `ohpm`、`hvigor`、`hdc`、`emulator`、`hilog`，同时集成 HarmonyOS 技能安装、项目脚手架、本地 HarmonyOS 文档检索和 `MCP` 服务。
 
 > 关于数据采集与隐私（遥测打点内容、存储加密、上报及关闭方式），请参阅 [PRIVACY.md](./PRIVACY.md)。
