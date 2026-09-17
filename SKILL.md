@@ -87,7 +87,7 @@ Search/read local HarmonyOS docs.
 
 ### `devecocli run` `[Outside sandbox]`
 Build, install, and launch. After a successful ability launch (and after a successful `--apply`), runs a **default smoke check**. Success prints `Smoke: PASS`; failures print `Smoke: FAIL_CRASH` or `Smoke: FAIL_BLANK` (crash log path via `crash_log:`, blank screenshot via `screenshot:`) and exit non-zero. Smoke is skipped when there is no ability to launch, and for `--hotreload` / `--hotreload-apply`.
-- `--module <module>`: Target module (auto-selected if only one runnable).
+- `--module <m1> [m2...]`: Target module(s) (auto-selected if only one runnable).
 - `--device <name|serial>`: Target device (Req if multiple connected).
 - `--product <product>` / `--build-mode <mode>`: Defaults: `default` / `debug`.
 - `--ability <ability>`: Default from `module.json5`.
