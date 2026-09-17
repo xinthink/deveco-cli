@@ -13,7 +13,6 @@ import { EventType, toTraceErrorCode, type Telemetry, type McpToolCall, type Tra
 import { readProcessRss, formatBytesMb } from '../../src/utils/process-rss.js';
 import { ArktsCheckTool, CppCheckTool, ClangdLspTool } from './tools/index.js';
 import { detectStandardProtocol, findHarmonyProject, isSupportedCppFile } from './utils/common.js';
-import { CommonUtils } from '../../src/utils/common-utils.js';
 import { initMcpLogger, disposeMcpLogger, flushMcpLogger, getMcpLogFilePath, mcpLog } from './utils/mcp-logger.js';
 import { ArktsLspManager } from './lsp/ArktsLspManager.js';
 import { ClangdLspManager } from './lsp/ClangdLspManager.js';
@@ -356,44 +355,6 @@ export class DevecoCliMcpServer {
   }
 
   /**
-   * 路径 containment 校验：
-   * - 有 projectPath 时：相对路径或工程内绝对路径放行；工程外/跨盘/`..` 穿越/symlink 逃逸拒绝
-   * - 无 projectPath 时：仅拒绝绝对路径（无工程根无法判定归属）
-   * 通过返回 null，失败返回错误响应。
-   */
-  private validateContainment(
-    files: string[]
-  ): { content: { type: string; text: string }[]; isError: boolean } | null {
-    const projectPath = this.config.projectPath;
-    if (projectPath) {
-      const containmentErrors: string[] = [];
-      for (const file of files) {
-        const result = CommonUtils.isPathContainedWithSymlink(file, projectPath);
-        if (!result.contained) {
-          mcpLog.warn(`Containment check failed: ${result.reason}`);
-          containmentErrors.push(result.reason!);
-        }
-      }
-      if (containmentErrors.length > 0) {
-        return {
-          content: [{ type: 'text', text: containmentErrors.join('\n') }],
-          isError: true,
-        };
-      }
-      return null;
-    }
-    const absolutePaths = files.filter((f) => path.isAbsolute(f));
-    if (absolutePaths.length > 0) {
-      mcpLog.warn(`Absolute paths rejected (no project root): ${absolutePaths.join(', ')}`);
-      return {
-        content: [{ type: 'text', text: absolutePaths.map((f) => `Absolute path is not allowed: ${f}`).join('\n') }],
-        isError: true,
-      };
-    }
-    return null;
-  }
-
-  /**
    * `check` 工具的统一入口：按文件扩展名分桶，分别调对应 LSP 工具，再合并结果。
    */
   private async handleCheckCall(
@@ -677,66 +638,6 @@ export class DevecoCliMcpServer {
       }
       return this.cppLspTool!.handleCallHierarchy({ file, line, character, direction });
     });
-  }
-
-  /** `codeAction` 工具入口。 */
-  private async handleCodeActionCall(
-    args: Record<string, unknown>
-  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
-    const { file, line, character } = this.extractPositionArgs(args);
-    if (!file) {
-      return { content: [{ type: 'text', text: 'Missing or invalid parameters. Required: file (string), line (number), character (number).' }], isError: true };
-    }
-    return this.routeArktsRequest('codeAction', () => this.arktsCheckTool!.handleCodeAction({ file, line, character }));
-  }
-
-  /** `rename` 工具入口。 */
-  private async handleRenameCall(
-    args: Record<string, unknown>
-  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
-    const { file, line, character } = this.extractPositionArgs(args);
-    const newName = (args as { newName?: unknown }).newName;
-    if (!file || typeof newName !== 'string' || newName.trim().length === 0) {
-      return { content: [{ type: 'text', text: 'Missing or invalid parameters. Required: file (string), line (number), character (number), newName (non-empty string).' }], isError: true };
-    }
-    return this.routeArktsRequest('rename', () => this.arktsCheckTool!.handleRename({ file, line, character, newName }));
-  }
-
-  /** `typeHierarchy` 工具入口。 */
-  private async handleTypeHierarchyCall(
-    args: Record<string, unknown>
-  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
-    const { file, line, character } = this.extractPositionArgs(args);
-    const direction = (args as { direction?: unknown }).direction;
-    if (!file) {
-      return { content: [{ type: 'text', text: 'Missing or invalid parameters. Required: file (string), line (number), character (number).' }], isError: true };
-    }
-    if (direction !== 'supertypes' && direction !== 'subtypes') {
-      return { content: [{ type: 'text', text: 'Parameter direction must be "supertypes" or "subtypes".' }], isError: true };
-    }
-    return this.routeArktsRequest(`typeHierarchy(${direction})`, () => this.arktsCheckTool!.handleTypeHierarchy({ file, line, character, direction }));
-  }
-
-  /** `completionItemResolve` 工具入口。 */
-  private async handleCompletionItemResolveCall(
-    args: Record<string, unknown>
-  ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
-    const item = (args as { item?: unknown }).item;
-    if (item == null) {
-      return { content: [{ type: 'text', text: 'Missing parameter: item (completion item object required).' }], isError: true };
-    }
-    return this.routeArktsRequest('completionItemResolve', () => this.arktsCheckTool!.handleCompletionItemResolve(item));
-  }
-
-  /** 从 args 中提取 file/line/character，失败返回 file=null。 */
-  private extractPositionArgs(args: Record<string, unknown>): { file: string | null; line: number; character: number } {
-    const file = (args as { file?: unknown }).file;
-    const line = (args as { line?: unknown }).line;
-    const character = (args as { character?: unknown }).character;
-    if (typeof file !== 'string' || typeof line !== 'number' || typeof character !== 'number') {
-      return { file: null, line: 0, character: 0 };
-    }
-    return { file, line, character };
   }
 
   /**
@@ -1114,55 +1015,6 @@ export class DevecoCliMcpServer {
       this.ensureCppProjectReady().catch((err) =>
         mcpLog.warn('Failed to re-init C++ project during restart:', err),
       );
-    }
-  }
-
-  /**
-   * Update project path — 路径变更时重置状态并自动重新初始化
-   */
-  setProjectPath(projectPath: string): void {
-    this.config.projectPath = projectPath;
-
-    // 清理旧 Tool（无论是否有初始化在运行，都需要清理）
-    if (this.arktsCheckTool) {
-      this.arktsCheckTool.shutdown().catch(err => {
-        mcpLog.warn('Failed to shutdown ArktsCheckTool during setProjectPath:', err);
-      });
-      this.arktsCheckTool = null;
-    }
-    this.cppCheckTool = null;
-    this.cppLspTool = null;
-    if (this.cppLspManager) {
-      this.cppLspManager.dispose().catch(err => {
-        mcpLog.warn('Failed to dispose ClangdLspManager during setProjectPath:', err);
-      });
-      this.cppLspManager = null;
-    }
-
-    // 关键：处理两种情况（ArkTS）
-    if (this.initPromise) {
-      this.needsReinit = true;
-      mcpLog.info('Project path changed while ArkTS init is running, will reinit after current init completes');
-    } else {
-      this.projectState = ProjectLifecycle.IDLE;
-      this.ensureProjectReady().catch(err => {
-        mcpLog.warn('Failed to re-init project after setProjectPath:', err);
-      });
-    }
-
-    // C++ 路径：同样处理两种情况
-    if (this.cppInitPromise) {
-      this.cppNeedsReinit = true;
-      mcpLog.info('Project path changed while C++ init is running, will reinit after current init completes');
-    } else {
-      this.cppProjectState = CppLifecycle.IDLE_CPP;
-      this.cppHasNoCppCode = false;
-      this.cppInitRetryCount = 0;
-      this.cppSyncSkippedDueToLock = false;
-      this.cppSyncSkipStartedAt = 0;
-      this.ensureCppProjectReady().catch(err => {
-        mcpLog.warn('Failed to re-init C++ project after setProjectPath:', err);
-      });
     }
   }
 

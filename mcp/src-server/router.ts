@@ -179,17 +179,17 @@ export class ToolRouter {
 function classifyMcpToolError(result: ToolCallResult): string {
   const text = result.content.map((c) => c.text).join('\n');
   if (
-    /not ready|未初始化|初始中|稍后重试|please retry|retry \d+s|syncing|initializing|初始化失败|C\+\+ project initialization failed/i.test(
+    /not ready|not initialized|initializing|please retry|retry \d+s|syncing|C\+\+ project initialization failed/i.test(
       text
     )
   ) {
     return 'NotReady';
   }
-  if (/No project detected|PROJECT_PATH|工程路径/i.test(text)) {
+  if (/No project detected|PROJECT_PATH|no project path/i.test(text)) {
     return 'NoProject';
   }
   if (
-    /Missing.*parameter|invalid parameters|Unknown feature|must be|不能同时|Must specify|无效/i.test(
+    /Missing.*parameter|invalid parameters|Unknown feature|must be|Must specify|cannot be used together|invalid/i.test(
       text
     )
   ) {
@@ -199,7 +199,7 @@ function classifyMcpToolError(result: ToolCallResult): string {
     return 'TooManyFiles';
   }
   if (
-    /不存在|does not exist|not exist|not found|No valid|不是 \.ets|not a supported|Unsupported/i.test(
+    /does not exist|not exist|not found|No valid|not a .ets|not a supported|Unsupported/i.test(
       text
     )
   ) {
